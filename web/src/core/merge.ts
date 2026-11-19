@@ -69,11 +69,7 @@ function mergeRecords<T>(kind: RecordKind<T>, base: readonly T[], ours: readonly
 	if (deepEqual(base, theirs)) return { merged: [...ours], conflicts: [] };
 	if (deepEqual(base, ours)) return { merged: [...theirs], conflicts: [] };
 
-	const byKey = (records: readonly T[]) => {
-		const keys = kind.keys(records);
-		return new Map(records.map((r, i) => [keys[i]!, r]));
-	};
-	const [baseMap, oursMap, theirsMap] = [byKey(base), byKey(ours), byKey(theirs)];
+	const [baseMap, oursMap, theirsMap] = [base, ours, theirs].map((records) => byKey(kind.keys, records)) as [Map<string, T>, Map<string, T>, Map<string, T>];
 	// ours' order first, then records only theirs has, so the result is deterministic
 	const keys = new Set([...oursMap.keys(), ...theirsMap.keys()]);
 	const merged: T[] = [];
@@ -107,9 +103,22 @@ function accountKeys(accounts: readonly Account[]): string[] {
 	});
 }
 
-const TRANSACTIONS: RecordKind<Transaction> = { keys: (ts) => ts.map((t) => t.id), compareEdited: (a, b) => a.edited - b.edited };
-const CATEGORIES: RecordKind<Category> = { keys: (cs) => cs.map((c) => c.id), compareEdited: () => 0 };
-const ACCOUNTS: RecordKind<Account> = { keys: accountKeys, compareEdited: (a, b) => a.edited - b.edited };
+/** How records of each kind are matched between versions: one unique key per record, in order. */
+export const RECORD_KEYS = {
+	transactions: (ts: readonly Transaction[]): string[] => ts.map((t) => t.id),
+	categories: (cs: readonly Category[]): string[] => cs.map((c) => c.id),
+	accounts: accountKeys,
+};
+
+/** Records by key, see `RECORD_KEYS` */
+export function byKey<T>(keys: (records: readonly T[]) => string[], records: readonly T[]): Map<string, T> {
+	const k = keys(records);
+	return new Map(records.map((r, i) => [k[i]!, r]));
+}
+
+const TRANSACTIONS: RecordKind<Transaction> = { keys: RECORD_KEYS.transactions, compareEdited: (a, b) => a.edited - b.edited };
+const CATEGORIES: RecordKind<Category> = { keys: RECORD_KEYS.categories, compareEdited: () => 0 };
+const ACCOUNTS: RecordKind<Account> = { keys: RECORD_KEYS.accounts, compareEdited: (a, b) => a.edited - b.edited };
 
 /** Removes top-level transactions whose id is now a sub-transaction of a merged group. */
 function dropTransactionsMovedIntoGroups(

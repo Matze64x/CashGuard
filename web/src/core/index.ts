@@ -5,3 +5,4 @@ export * from './ids';
 export * from './model';
 export * from './money';
 export * from './merge';
+export * from './sync';
