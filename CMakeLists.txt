@@ -71,3 +71,12 @@ if (CMAKE_IMPORT_LIBRARY_SUFFIX)
 		COMMAND_EXPAND_LISTS
 	)
 endif()
+
+# Format conformance test shared with the web client (web/tests/fixtures). Run with: ctest --test-dir bDebug
+option(CASHGUARD_BUILD_TESTS "Build the tests" ON)
+if (CASHGUARD_BUILD_TESTS)
+	enable_testing()
+	add_executable(cashguard_roundtrip_test tests/roundtrip_test.cpp)
+	target_link_libraries(cashguard_roundtrip_test cashguard_core)
+	add_test(NAME format_roundtrip COMMAND cashguard_roundtrip_test "${PROJECT_SOURCE_DIR}/web/tests/fixtures")
+endif()

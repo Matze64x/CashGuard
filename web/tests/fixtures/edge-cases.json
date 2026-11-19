@@ -1,0 +1,738 @@
+{
+    "Version": "cgt_0.4.0",
+    "Categories": [
+        {
+            "ID": "9429729637773252097",
+            "Name": "Salary",
+            "Color": "#2E7D32FF"
+        },
+        {
+            "ID": "9342932888125276142",
+            "Name": "Other Income",
+            "Color": "#66BB6AFF"
+        },
+        {
+            "ID": "9620831526905110888",
+            "Name": "Rent",
+            "Color": "#6D4C41FF"
+        },
+        {
+            "ID": "229929222610611220",
+            "Name": "Utilities",
+            "Color": "#8D6E63FF"
+        },
+        {
+            "ID": "14105911672514627278",
+            "Name": "Groceries",
+            "Color": "#F9A825FF"
+        },
+        {
+            "ID": "5911909988500677110",
+            "Name": "Household",
+            "Color": "#FFCA28FF"
+        },
+        {
+            "ID": "14182010311883755195",
+            "Name": "Restaurants & Cafés",
+            "Color": "#EF6C00FF"
+        },
+        {
+            "ID": "718595567996053182",
+            "Name": "Transport",
+            "Color": "#1565C0FF"
+        },
+        {
+            "ID": "3212272320034238235",
+            "Name": "Insurance",
+            "Color": "#455A64FF"
+        },
+        {
+            "ID": "3159946563710759407",
+            "Name": "Subscriptions",
+            "Color": "#7B1FA2FF"
+        },
+        {
+            "ID": "10243956389486618690",
+            "Name": "Entertainment",
+            "Color": "#AB47BCFF"
+        },
+        {
+            "ID": "4828267834948240477",
+            "Name": "Health",
+            "Color": "#C62828FF"
+        },
+        {
+            "ID": "3235994231618962479",
+            "Name": "Clothing",
+            "Color": "#EC407AFF"
+        },
+        {
+            "ID": "4127761648239687419",
+            "Name": "Travel",
+            "Color": "#00ACC1FF"
+        },
+        {
+            "ID": "7009903147899120807",
+            "Name": "Gifts & Donations",
+            "Color": "#D81B60FF"
+        },
+        {
+            "ID": "11615415874387169759",
+            "Name": "Education",
+            "Color": "#3949ABFF"
+        },
+        {
+            "ID": "3128610778074277112",
+            "Name": "Cash Withdrawal",
+            "Color": "#9E9E9EFF"
+        },
+        {
+            "ID": "18446744073709547373",
+            "Name": "Unused (removable)",
+            "Color": "#00000080"
+        },
+        {
+            "ID": "13869252925753857257",
+            "Name": "",
+            "Color": "#FFFFFFFF"
+        }
+    ],
+    "Accounts": [
+        {
+            "Name": "Checking account",
+            "Amount": "+16221.91",
+            "Edited": "18.11.2026 18:30:00"
+        },
+        {
+            "Name": "Savings account",
+            "Amount": "+32443.80",
+            "Edited": "06.11.2026 18:30:00"
+        },
+        {
+            "Name": "Credit card",
+            "Amount": "-315.58",
+            "Edited": "15.11.2026 18:30:00"
+        },
+        {
+            "Name": "Wallet (cash)",
+            "Amount": "+105.71",
+            "Edited": "04.10.2026 18:30:00"
+        }
+    ],
+    "Transactions": [
+        {
+            "ID": "5023474463931576727",
+            "Date": "18.11.2026",
+            "Category": "14182010311883755195",
+            "Amount": "-22.36",
+            "Description": "Sushi bar",
+            "Added": "21.11.2026 12:53:22",
+            "Edited": "07.12.2026 09:31:55"
+        },
+        {
+            "ID": "8077217619815393127",
+            "Date": "18.11.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-82.82",
+            "Description": "Supermarket",
+            "Added": "21.11.2026 10:15:04",
+            "Edited": "03.12.2026 14:49:00"
+        },
+        {
+            "ID": "3348796504369719753",
+            "Date": "18.11.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-33.10",
+            "Description": "Supermarket",
+            "Added": "19.11.2026 12:45:07",
+            "Edited": "19.11.2026 12:45:07"
+        },
+        {
+            "ID": "7324922079420586875",
+            "Date": "17.11.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-22.57",
+            "Description": "Farmers' market",
+            "Added": "20.11.2026 17:20:11",
+            "Edited": "20.11.2026 17:20:11"
+        },
+        {
+            "ID": "10115949208249344299",
+            "Date": "15.11.2026",
+            "Category": "3212272320034238235",
+            "Amount": "-18.45",
+            "Description": "Liability insurance",
+            "Added": "15.11.2026 20:27:47",
+            "Edited": "15.11.2026 20:27:47"
+        },
+        {
+            "ID": "1684433910453289216",
+            "Date": "13.11.2026",
+            "Category": "14182010311883755195",
+            "Amount": "-14.74",
+            "Description": "Burger & Co",
+            "Added": "13.11.2026 18:02:50",
+            "Edited": "13.11.2026 18:02:50"
+        },
+        {
+            "ID": "3068231204299892401",
+            "Date": "10.11.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-32.17",
+            "Description": "Supermarket",
+            "Added": "11.11.2026 14:28:38",
+            "Edited": "11.11.2026 14:28:38"
+        },
+        {
+            "ID": "13986842039206732100",
+            "Date": "10.11.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-87.67",
+            "Description": "Supermarket",
+            "Added": "10.11.2026 15:00:12",
+            "Edited": "10.11.2026 15:00:12"
+        },
+        {
+            "ID": "1852941948858751605",
+            "Date": "09.11.2026",
+            "Category": "3159946563710759407",
+            "Amount": "-10.99",
+            "Description": "Music subscription",
+            "Added": "09.11.2026 12:33:26",
+            "Edited": "09.11.2026 12:33:26"
+        },
+        {
+            "ID": "1054311701702965684",
+            "Date": "08.11.2026",
+            "Category": "10243956389486618690",
+            "Amount": "-34.12",
+            "Description": "Concert tickets",
+            "Added": "08.11.2026 14:30:01",
+            "Edited": "08.11.2026 14:30:01"
+        },
+        {
+            "ID": "10387975786104315501",
+            "Date": "06.11.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-60.74",
+            "Description": "Organic market",
+            "Added": "07.11.2026 16:10:42",
+            "Edited": "14.12.2026 01:36:17"
+        },
+        {
+            "ID": "16544910857050110613",
+            "Date": "06.11.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-37.07",
+            "Description": "Supermarket",
+            "Added": "07.11.2026 12:49:08",
+            "Edited": "28.11.2026 03:27:29"
+        },
+        {
+            "ID": "12437139689511362794",
+            "Date": "05.11.2026",
+            "Category": "229929222610611220",
+            "Amount": "-39.99",
+            "Description": "Internet & Phone",
+            "Added": "07.11.2026 19:37:10",
+            "Edited": "07.11.2026 19:37:10"
+        },
+        {
+            "ID": "8785749203774304317",
+            "Date": "05.11.2026",
+            "Category": "14182010311883755195",
+            "Amount": "-33.05",
+            "Description": "Sushi bar",
+            "Added": "05.11.2026 10:22:57",
+            "Edited": "05.11.2026 10:22:57"
+        },
+        {
+            "ID": "12117349646001491108",
+            "Date": "03.11.2026",
+            "Category": "7009903147899120807",
+            "Amount": "-48.92",
+            "Description": "Wedding gift",
+            "Added": "03.11.2026 18:34:16",
+            "Edited": "03.11.2026 18:34:16"
+        },
+        {
+            "ID": "15295518324381070635",
+            "Date": "02.11.2026",
+            "Category": "9342932888125276142",
+            "Amount": "+10000.00",
+            "Description": "Large amount: inheritance",
+            "Added": "05.11.2026 18:06:06",
+            "Edited": "14.11.2026 07:58:14"
+        },
+        {
+            "ID": "15632918136696361528",
+            "Date": "01.11.2026",
+            "Category": "10243956389486618690",
+            "Amount": "+0.00",
+            "Description": "Zero amount (free event)",
+            "Added": "04.11.2026 08:34:53",
+            "Edited": "04.11.2026 08:34:53"
+        },
+        {
+            "ID": "18004308132722474152",
+            "Date": "01.11.2026",
+            "Category": "4127761648239687419",
+            "Amount": "-9999.99",
+            "Description": "Large amount: used car",
+            "Added": "02.11.2026 08:17:51",
+            "Edited": "02.11.2026 08:17:51"
+        },
+        {
+            "ID": "3330247463866676197",
+            "Date": "01.11.2026",
+            "Category": "13869252925753857257",
+            "Amount": "-0.01",
+            "Description": "One cent, category with empty name",
+            "Added": "01.11.2026 12:39:29",
+            "Edited": "01.11.2026 12:39:29"
+        },
+        {
+            "ID": "9578622062480557781",
+            "Date": "12.10.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-87.47",
+            "Description": "Supermarket weekly shop (split)",
+            "Added": "12.10.2026 07:17:42",
+            "Edited": "12.10.2026 07:17:42",
+            "Transactions": [
+                {
+                    "ID": "11684620469475351587",
+                    "Date": "12.10.2026",
+                    "Category": "4828267834948240477",
+                    "Amount": "-7.45",
+                    "Description": "Painkillers",
+                    "Added": "15.10.2026 21:09:57",
+                    "Edited": "15.10.2026 21:09:57"
+                },
+                {
+                    "ID": "15949324587730644695",
+                    "Date": "12.10.2026",
+                    "Category": "5911909988500677110",
+                    "Amount": "-18.90",
+                    "Description": "Cleaning supplies",
+                    "Added": "12.10.2026 16:40:31",
+                    "Edited": "12.10.2026 16:40:31"
+                },
+                {
+                    "ID": "17922483627609773212",
+                    "Date": "12.10.2026",
+                    "Category": "9342932888125276142",
+                    "Amount": "+3.25",
+                    "Description": "Bottle deposit refund",
+                    "Added": "12.10.2026 14:17:40",
+                    "Edited": "12.10.2026 14:17:40"
+                },
+                {
+                    "ID": "16353852446918918909",
+                    "Date": "12.10.2026",
+                    "Category": "14105911672514627278",
+                    "Amount": "-64.37",
+                    "Description": "Food",
+                    "Added": "12.10.2026 10:30:53",
+                    "Edited": "12.10.2026 10:30:53"
+                }
+            ]
+        },
+        {
+            "ID": "10425011056528506064",
+            "Date": "07.10.2026",
+            "Category": "11615415874387169759",
+            "Amount": "-3.50",
+            "Description": "A very long description to test column widths and truncation: lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet ",
+            "Added": "07.10.2026 19:41:56",
+            "Edited": "07.10.2026 19:41:56"
+        },
+        {
+            "ID": "1181501251395796211",
+            "Date": "06.10.2026",
+            "Category": "5911909988500677110",
+            "Amount": "-12.00",
+            "Description": "Ampersand & <angle brackets> & 100% / slash",
+            "Added": "07.10.2026 15:37:24",
+            "Edited": "07.10.2026 15:37:24"
+        },
+        {
+            "ID": "9543399844680500572",
+            "Date": "05.10.2026",
+            "Category": "14182010311883755195",
+            "Amount": "-8.70",
+            "Description": "Unicode: Müsli, Crème brûlée, 寿司, Ελληνικά, 🍕",
+            "Added": "05.10.2026 07:50:44",
+            "Edited": "05.10.2026 07:50:44"
+        },
+        {
+            "ID": "17944052441636176731",
+            "Date": "04.10.2026",
+            "Category": "7009903147899120807",
+            "Amount": "-15.00",
+            "Description": "Quotes \"inside\" and a backslash \\ and a tab\tcharacter",
+            "Added": "07.10.2026 16:32:47",
+            "Edited": "28.10.2026 08:44:02"
+        },
+        {
+            "ID": "5249229933011706161",
+            "Date": "03.10.2026",
+            "Category": "0",
+            "Amount": "-4.20",
+            "Description": "",
+            "Added": "04.10.2026 18:15:36",
+            "Edited": "04.10.2026 18:15:36"
+        },
+        {
+            "ID": "5443237576549546743",
+            "Date": "21.09.2026",
+            "Category": "0",
+            "Amount": "-10.79",
+            "Description": "Unknown card payment",
+            "Added": "22.09.2026 07:19:29",
+            "Edited": "22.09.2026 07:19:29"
+        },
+        {
+            "ID": "18310649976990225415",
+            "Date": "20.09.2026",
+            "Category": "5911909988500677110",
+            "Amount": "-44.89",
+            "Description": "Online order #4711",
+            "Added": "20.09.2026 13:43:18",
+            "Edited": "11.10.2026 01:10:15",
+            "Transactions": [
+                {
+                    "ID": "2915751880043852847",
+                    "Date": "29.09.2026",
+                    "Category": "5911909988500677110",
+                    "Amount": "+34.99",
+                    "Description": "Return: desk lamp",
+                    "Added": "30.09.2026 14:04:07",
+                    "Edited": "03.11.2026 13:48:05"
+                },
+                {
+                    "ID": "10057739409392373844",
+                    "Date": "20.09.2026",
+                    "Category": "11615415874387169759",
+                    "Amount": "-24.90",
+                    "Description": "Book: C++ Templates",
+                    "Added": "23.09.2026 22:37:28",
+                    "Edited": "23.09.2026 22:37:28"
+                },
+                {
+                    "ID": "5842231837247828550",
+                    "Date": "20.09.2026",
+                    "Category": "5911909988500677110",
+                    "Amount": "-34.99",
+                    "Description": "Desk lamp",
+                    "Added": "20.09.2026 16:55:42",
+                    "Edited": "20.09.2026 16:55:42"
+                },
+                {
+                    "ID": "9002780529284878252",
+                    "Date": "20.09.2026",
+                    "Category": "3235994231618962479",
+                    "Amount": "-19.99",
+                    "Description": "Socks (5 pack)",
+                    "Added": "20.09.2026 15:49:36",
+                    "Edited": "20.09.2026 15:49:36"
+                }
+            ]
+        },
+        {
+            "ID": "2066977962060929627",
+            "Date": "08.09.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-2.30",
+            "Description": "Same date, added one second later",
+            "Added": "08.09.2026 12:00:01",
+            "Edited": "08.09.2026 12:00:01"
+        },
+        {
+            "ID": "16678436987860065599",
+            "Date": "08.09.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-2.20",
+            "Description": "Same date & Added timestamp (B)",
+            "Added": "08.09.2026 12:00:00",
+            "Edited": "08.09.2026 12:00:00"
+        },
+        {
+            "ID": "10502500669220421878",
+            "Date": "08.09.2026",
+            "Category": "14105911672514627278",
+            "Amount": "-2.10",
+            "Description": "Same date & Added timestamp (A)",
+            "Added": "08.09.2026 12:00:00",
+            "Edited": "08.09.2026 12:00:00"
+        },
+        {
+            "ID": "12788876480992734930",
+            "Date": "15.08.2026",
+            "Category": "4828267834948240477",
+            "Amount": "-55.00",
+            "Description": "Entered three weeks late, edited later",
+            "Added": "05.09.2026 21:13:07",
+            "Edited": "24.09.2026 08:00:01"
+        },
+        {
+            "ID": "5095044277810065976",
+            "Date": "07.08.2026",
+            "Category": "14182010311883755195",
+            "Amount": "-21.50",
+            "Description": "Group with a single sub-transaction",
+            "Added": "09.08.2026 09:13:57",
+            "Edited": "09.08.2026 09:13:57",
+            "Transactions": [
+                {
+                    "ID": "7466709972200940390",
+                    "Date": "07.08.2026",
+                    "Category": "14182010311883755195",
+                    "Amount": "-21.50",
+                    "Description": "Dinner",
+                    "Added": "09.08.2026 16:39:45",
+                    "Edited": "09.08.2026 16:39:45"
+                }
+            ]
+        },
+        {
+            "ID": "9924570867409522729",
+            "Date": "03.07.2026",
+            "Category": "4127761648239687419",
+            "Amount": "-1396.25",
+            "Description": "Vacation Italy",
+            "Added": "03.07.2026 18:11:43",
+            "Edited": "03.07.2026 18:11:43",
+            "Transactions": [
+                {
+                    "ID": "11525678494999048696",
+                    "Date": "08.07.2026",
+                    "Category": "3128610778074277112",
+                    "Amount": "-100.00",
+                    "Description": "ATM Napoli",
+                    "Added": "08.07.2026 11:36:04",
+                    "Edited": "08.07.2026 11:36:04"
+                },
+                {
+                    "ID": "2207586930073664224",
+                    "Date": "07.07.2026",
+                    "Category": "7009903147899120807",
+                    "Amount": "-27.95",
+                    "Description": "Souvenirs (limoncello)",
+                    "Added": "08.07.2026 11:59:30",
+                    "Edited": "11.08.2026 22:33:16"
+                },
+                {
+                    "ID": "3826139057468697462",
+                    "Date": "06.07.2026",
+                    "Category": "10243956389486618690",
+                    "Amount": "-36.00",
+                    "Description": "Pompeii tickets",
+                    "Added": "06.07.2026 16:40:04",
+                    "Edited": "06.07.2026 16:40:04"
+                },
+                {
+                    "ID": "3523730594828291042",
+                    "Date": "05.07.2026",
+                    "Category": "14182010311883755195",
+                    "Amount": "-12.80",
+                    "Description": "Gelato & espresso",
+                    "Added": "07.07.2026 18:21:19",
+                    "Edited": "07.07.2026 18:21:19"
+                },
+                {
+                    "ID": "13735171377701598907",
+                    "Date": "05.07.2026",
+                    "Category": "718595567996053182",
+                    "Amount": "-23.40",
+                    "Description": "Ferry to Capri",
+                    "Added": "05.07.2026 08:57:06",
+                    "Edited": "01.08.2026 16:41:36"
+                },
+                {
+                    "ID": "12304453996816401670",
+                    "Date": "04.07.2026",
+                    "Category": "14182010311883755195",
+                    "Amount": "-48.50",
+                    "Description": "Trattoria da Gigi",
+                    "Added": "05.07.2026 17:29:07",
+                    "Edited": "05.07.2026 17:29:07"
+                },
+                {
+                    "ID": "3547126460595142588",
+                    "Date": "04.07.2026",
+                    "Category": "4127761648239687419",
+                    "Amount": "-735.00",
+                    "Description": "Hotel Sorrento (5 nights)",
+                    "Added": "04.07.2026 07:15:22",
+                    "Edited": "04.07.2026 07:15:22"
+                },
+                {
+                    "ID": "11913817907487666293",
+                    "Date": "03.07.2026",
+                    "Category": "4127761648239687419",
+                    "Amount": "-412.60",
+                    "Description": "Flights MUC–NAP",
+                    "Added": "03.07.2026 10:40:18",
+                    "Edited": "03.07.2026 10:40:18"
+                }
+            ]
+        },
+        {
+            "ID": "381545454704973803",
+            "Date": "11.06.2026",
+            "Category": "5911909988500677110",
+            "Amount": "+0.00",
+            "Description": "Empty group (no sub-transactions)",
+            "Added": "14.06.2026 19:55:15",
+            "Edited": "14.06.2026 19:55:15",
+            "Transactions": []
+        },
+        {
+            "ID": "14463210639575782340",
+            "Date": "24.05.2026",
+            "Category": "0",
+            "Amount": "-46.60",
+            "Description": "Shared dinner, friends paid back",
+            "Added": "27.05.2026 22:36:20",
+            "Edited": "27.05.2026 22:36:20",
+            "Transactions": [
+                {
+                    "ID": "7698937950531786220",
+                    "Date": "28.05.2026",
+                    "Category": "9342932888125276142",
+                    "Amount": "+46.60",
+                    "Description": "Paid back: Chris",
+                    "Added": "28.05.2026 21:23:43",
+                    "Edited": "28.05.2026 21:23:43"
+                },
+                {
+                    "ID": "7332754700971499464",
+                    "Date": "26.05.2026",
+                    "Category": "9342932888125276142",
+                    "Amount": "+46.60",
+                    "Description": "Paid back: Ben",
+                    "Added": "27.05.2026 11:50:23",
+                    "Edited": "12.06.2026 07:01:06"
+                },
+                {
+                    "ID": "9429503305432662960",
+                    "Date": "25.05.2026",
+                    "Category": "9342932888125276142",
+                    "Amount": "+46.60",
+                    "Description": "Paid back: Anna",
+                    "Added": "28.05.2026 12:59:45",
+                    "Edited": "28.05.2026 12:59:45"
+                },
+                {
+                    "ID": "2056694762478834447",
+                    "Date": "24.05.2026",
+                    "Category": "14182010311883755195",
+                    "Amount": "-186.40",
+                    "Description": "Restaurant bill for 4",
+                    "Added": "24.05.2026 19:39:55",
+                    "Edited": "24.05.2026 19:39:55"
+                }
+            ]
+        },
+        {
+            "ID": "16346491822453709817",
+            "Date": "06.02.2026",
+            "Category": "0",
+            "Amount": "-21.04",
+            "Description": "Misc",
+            "Added": "06.02.2026 17:20:40",
+            "Edited": "06.02.2026 17:20:40"
+        },
+        {
+            "ID": "1467370779859028666",
+            "Date": "15.11.2025",
+            "Category": "0",
+            "Amount": "-14.90",
+            "Description": "Unknown card payment",
+            "Added": "15.11.2025 17:41:36",
+            "Edited": "24.11.2025 21:50:28"
+        },
+        {
+            "ID": "11202963640001464658",
+            "Date": "27.10.2025",
+            "Category": "0",
+            "Amount": "-10.79",
+            "Description": "Unknown card payment",
+            "Added": "29.10.2025 16:52:14",
+            "Edited": "29.10.2025 16:52:14"
+        },
+        {
+            "ID": "547854674408561123",
+            "Date": "07.02.2025",
+            "Category": "0",
+            "Amount": "-27.60",
+            "Description": "Misc",
+            "Added": "09.02.2025 08:28:58",
+            "Edited": "09.02.2025 08:28:58"
+        },
+        {
+            "ID": "3289457608720158047",
+            "Date": "03.01.2025",
+            "Category": "0",
+            "Amount": "-6.53",
+            "Description": "Unknown card payment",
+            "Added": "04.01.2025 22:12:36",
+            "Edited": "04.01.2025 22:12:36"
+        },
+        {
+            "ID": "11548931262746817229",
+            "Date": "29.12.2024",
+            "Category": "0",
+            "Amount": "-6.46",
+            "Description": "Unknown card payment",
+            "Added": "29.12.2024 15:05:09",
+            "Edited": "29.12.2024 15:05:09"
+        },
+        {
+            "ID": "4451889405353467697",
+            "Date": "01.09.2024",
+            "Category": "0",
+            "Amount": "-1.81",
+            "Description": "PayPal",
+            "Added": "03.09.2024 19:27:17",
+            "Edited": "03.09.2024 19:27:17"
+        },
+        {
+            "ID": "13079588767979699734",
+            "Date": "29.02.2024",
+            "Category": "7009903147899120807",
+            "Amount": "-29.00",
+            "Description": "Leap day present",
+            "Added": "29.02.2024 15:24:26",
+            "Edited": "29.02.2024 15:24:26"
+        },
+        {
+            "ID": "17194214105457627304",
+            "Date": "31.12.2023",
+            "Category": "3128610778074277112",
+            "Amount": "-73.45",
+            "Description": "Opening balance (cash correction)",
+            "Added": "03.01.2024 13:28:22",
+            "Edited": "03.01.2024 13:28:22"
+        },
+        {
+            "ID": "4060466290638760689",
+            "Date": "31.12.2023",
+            "Category": "9342932888125276142",
+            "Amount": "+2000.00",
+            "Description": "Opening balance",
+            "Added": "31.12.2023 07:30:28",
+            "Edited": "31.12.2023 07:30:28"
+        },
+        {
+            "ID": "8769010811128872898",
+            "Date": "14.07.2019",
+            "Category": "9342932888125276142",
+            "Amount": "+250.00",
+            "Description": "Very old transaction (outside graph window)",
+            "Added": "15.07.2019 18:19:47",
+            "Edited": "10.08.2019 08:58:09"
+        }
+    ]
+}
