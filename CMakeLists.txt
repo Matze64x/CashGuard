@@ -10,22 +10,32 @@ add_subdirectory("${SPDLOG_DIR}")
 
 find_package(OpenGL REQUIRED)
 
-set(SOURCE_FILES
+# Data model and file format, without UI; shared by the app and the tests.
+add_library(cashguard_core OBJECT
 	src/account_model.cpp
-	src/application.cpp
 	src/category_model.cpp
 	src/cg_file_handler.cpp
+	src/transaction.cpp
+	src/transaction_model.cpp
+	src/util/color.cpp
+	src/util/random_generator.cpp
+)
+target_include_directories(cashguard_core PUBLIC
+	"${PROJECT_SOURCE_DIR}/include"
+	"${PROJECT_SOURCE_DIR}/dependencies/"
+	"${PROJECT_SOURCE_DIR}/dependencies/imgui/"
+	"${SPDLOG_DIR}/include")
+target_link_libraries(cashguard_core PUBLIC spdlog::spdlog)
+
+set(SOURCE_FILES
+	src/application.cpp
 	src/dialogs.cpp
 	src/graphs.cpp
 	src/inputs.cpp
-	src/transaction.cpp
 	src/transaction_filter.cpp
-	src/transaction_model.cpp
 	src/transaction_table.cpp
 	src/ui.cpp
 	src/window.cpp
-	src/util/color.cpp
-	src/util/random_generator.cpp
 	"${PROJECT_SOURCE_DIR}/dependencies/imgui/imgui.cpp"
 	"${PROJECT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_sdl3.cpp"
 	"${PROJECT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_opengl3.cpp"
@@ -48,6 +58,7 @@ target_include_directories(CashGuard PRIVATE
 	"${SPDLOG_DIR}/include")
 
 target_link_libraries(CashGuard
+	cashguard_core
 	OpenGL::GL
 	SDL3::SDL3
 	spdlog::spdlog
