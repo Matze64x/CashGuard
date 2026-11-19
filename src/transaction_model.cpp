@@ -14,26 +14,32 @@ const std::shared_ptr<const Transaction> TransactionModel::at(int32_t index) con
 	return transactions[index];
 }
 
+static void update_category_usage_counts(std::unordered_map<uint64_t, int32_t>& category_usage_counts, const Transaction& transaction, int32_t delta)
+{
+	auto update = [&](uint64_t category_id) {
+		int32_t& count = category_usage_counts[category_id];
+		count += delta;
+		if (count <= 0) category_usage_counts.erase(category_id);
+	};
+	update(transaction.category_id);
+	if (const TransactionGroup* transaction_group = dynamic_cast<const TransactionGroup*>(&transaction))
+	{
+		for (const Transaction& sub_transaction : transaction_group->get_transactions()) update(sub_transaction.category_id);
+	}
+}
+
 void TransactionModel::add(const std::shared_ptr<const Transaction> transaction)
 {
 	int32_t index = 0;
 	while (index < transactions.size() && *transaction < *transactions[index]) index++;
 	transactions.insert(transactions.begin() + index, transaction);
-	category_usage_counts[transaction->category_id]++;
-	if (const std::shared_ptr<const TransactionGroup> transaction_group = std::dynamic_pointer_cast<const TransactionGroup>(transaction))
-	{
-		for (const Transaction& sub_transaction : transaction_group->get_transactions()) category_usage_counts[sub_transaction.category_id]++;
-	}
+	update_category_usage_counts(category_usage_counts, *transaction, 1);
 	dirty = true;
 }
 
 void TransactionModel::remove(int32_t index)
 {
-	category_usage_counts[transactions[index]->category_id]++;
-	if (const std::shared_ptr<const TransactionGroup> transaction_group = std::dynamic_pointer_cast<const TransactionGroup>(transactions[index]))
-	{
-		for (const Transaction& sub_transaction : transaction_group->get_transactions()) category_usage_counts[sub_transaction.category_id]++;
-	}
+	update_category_usage_counts(category_usage_counts, *transactions[index], -1);
 	transactions.erase(transactions.begin() + index);
 	dirty = true;
 }
@@ -80,6 +86,7 @@ const std::vector<std::shared_ptr<const Transaction>>& TransactionModel::get_tra
 void TransactionModel::clear()
 {
 	transactions.clear();
+	category_usage_counts.clear();
 	dirty = true;
 }
 
@@ -113,7 +120,7 @@ bool TransactionModel::get_auto_complete_transaction(const std::string& descript
 
 Amount TransactionModel::get_total_amount() const
 {
-	int32_t total_amount = 0;
+	int64_t total_amount = 0;
 	for (const std::shared_ptr<const Transaction> t : transactions) total_amount += t->amount.value;
 	return Amount(total_amount);
 }

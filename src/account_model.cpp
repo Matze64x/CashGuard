@@ -60,7 +60,7 @@ const std::vector<Account>& AccountModel::get_data() const
 
 Amount AccountModel::get_total_amount() const
 {
-	int32_t amount = 0;
+	int64_t amount = 0;
 	for (const Account& account : accounts) amount += account.amount.value;
 	return Amount(amount);
 }
