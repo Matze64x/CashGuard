@@ -3,7 +3,22 @@
 	import { formatDate, formatEuro, plural } from './display';
 	import type { ImportCandidate } from './workspace.svelte';
 
-	let { candidate, onapply, onclose }: { candidate: ImportCandidate; onapply: () => void; onclose: () => void } = $props();
+	let { candidate, onapply, onkeep, onclose }: { candidate: ImportCandidate; onapply: () => void; onkeep: () => void; onclose: () => void } = $props();
+
+	const TEXTS = {
+		import: { title: 'Import', intro: 'Importing changes your data:', apply: 'Import', cancel: 'Cancel', broken: "The file can't be imported:" },
+		sync: { title: 'Changes in', intro: 'The file changed. Applying the changes changes your data:', apply: 'Apply', cancel: 'Not now', broken: "The file can't be read:" },
+		open: {
+			title: 'Open',
+			intro: 'You have changes that aren’t in your previous file yet. They are carried over into this file:',
+			apply: 'Open',
+			cancel: 'Cancel',
+			broken: "The file can't be opened:",
+		},
+	} as const;
+	const text = $derived(TEXTS[candidate.mode]);
+	// desktop: when the file looks wrong, offer to keep the app's data and replace the file with it
+	const canKeep = $derived(candidate.mode === 'sync' && (!candidate.ok || candidate.plan.warnings.length > 0));
 
 	let dialog: HTMLDialogElement;
 	$effect(() => {
@@ -20,9 +35,9 @@
 	};
 
 	const WARNINGS: Record<ImportWarning, string> = {
-		'empty-file': 'This file is empty. Importing it removes all your data.',
-		'unrelated-file': 'This file has nothing in common with the file you imported before. Is it the right file?',
-		'many-deletions': 'Importing removes many transactions. Is this an old copy of the file?',
+		'empty-file': 'This file is empty. Applying it removes all your data.',
+		'unrelated-file': 'This file has nothing in common with the version you had before. Is it the right file?',
+		'many-deletions': 'This removes many transactions. Is this an old copy of the file?',
 	};
 
 	function describe(counts: ChangeCounts, what: string): string | null {
@@ -57,16 +72,19 @@
 </script>
 
 <dialog bind:this={dialog} aria-labelledby="import-title" {onclose}>
-	<h2 id="import-title">Import “{candidate.fileName}”</h2>
+	<h2 id="import-title">{text.title} “{candidate.fileName}”</h2>
 	{#if !candidate.ok}
-		<p class="error">The file can't be imported:</p>
+		<p class="error">{text.broken}</p>
 		<ul class="issues">
 			{#each candidate.errors.slice(0, 20) as issue, i (i)}
 				<li><code>{issue.path || 'file'}</code> {issue.message}</li>
 			{/each}
 			{#if candidate.errors.length > 20}<li>… and {candidate.errors.length - 20} more</li>{/if}
 		</ul>
-		<div class="buttons"><button onclick={onclose}>Close</button></div>
+		<div class="buttons">
+			{#if canKeep}<button onclick={onkeep}>Replace it with my data</button>{/if}
+			<button onclick={onclose}>{candidate.mode === 'sync' ? 'Not now' : 'Close'}</button>
+		</div>
 	{:else}
 		{#each warnings as warning (warning)}
 			<p class="warning" role="alert">{warning}</p>
@@ -74,7 +92,7 @@
 		{#if changes.length === 0}
 			<p>Nothing new: your data already contains everything in this file.</p>
 		{:else}
-			<p>Importing changes your data:</p>
+			<p>{text.intro}</p>
 			<ul>
 				{#each changes as line (line)}<li>{line}</li>{/each}
 			</ul>
@@ -93,11 +111,12 @@
 				</ul>
 			</details>
 		{/if}
-		<p class="hint">You can undo the import afterwards.</p>
+		{#if candidate.mode === 'import'}<p class="hint">You can undo the import afterwards.</p>{/if}
 		<div class="buttons">
+			{#if canKeep}<button onclick={onkeep}>Replace it with my data</button>{/if}
 			<!-- with warnings, cancelling is the suggested action -->
-			<button class:primary={warnings.length > 0} onclick={onclose}>Cancel</button>
-			<button class:primary={warnings.length === 0} class:danger={warnings.length > 0} onclick={onapply}>Import</button>
+			<button class:primary={warnings.length > 0} onclick={onclose}>{text.cancel}</button>
+			<button class:primary={warnings.length === 0} class:danger={warnings.length > 0} onclick={onapply}>{text.apply}</button>
 		</div>
 	{/if}
 </dialog>
@@ -139,6 +158,7 @@
 	}
 	.buttons {
 		display: flex;
+		flex-wrap: wrap;
 		justify-content: flex-end;
 		gap: 0.5rem;
 	}

@@ -1,0 +1,24 @@
+[package]
+name = "cashguard"
+version = "0.1.0"
+description = "CashGuard desktop app"
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+name = "cashguard_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.6", features = [] }
+
+[dependencies]
+log = "0.4"
+tauri = { version = "2.12.7", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+notify = "8"
+
+[dev-dependencies]
+tempfile = "3"

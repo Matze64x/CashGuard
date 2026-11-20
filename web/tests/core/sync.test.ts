@@ -3,6 +3,8 @@ import {
 	cents,
 	EMPTY_DATA,
 	INITIAL_SYNC_STATE,
+	needsWrite,
+	planFileSync,
 	planImport,
 	sortNewestFirst,
 	summarizeChanges,
@@ -148,5 +150,42 @@ describe('import warnings', () => {
 	it('no warning for normal changes', () => {
 		expect(planImport(state, data([tx('1'), tx('2'), tx('3'), tx('4'), tx('5'), tx('7')])).warnings).toEqual([]);
 		expect(planImport(INITIAL_SYNC_STATE, EMPTY_DATA).warnings).toEqual([]);
+	});
+});
+
+describe('planFileSync (desktop: the app reads and writes the file itself)', () => {
+	const synced = imported(data([tx('1'), tx('2')]));
+
+	it('nothing to do while neither side changed', () => {
+		expect(planFileSync(synced, data([tx('1'), tx('2')]))).toEqual({ kind: 'unchanged' });
+	});
+
+	it('only the working copy changed: write it', () => {
+		expect(planFileSync({ ...synced, working: data([tx('1')]) }, data([tx('1'), tx('2')]))).toEqual({ kind: 'write' });
+	});
+
+	it('the file changed unremarkably: import automatically, nothing to write back', () => {
+		const result = planFileSync(synced, data([tx('1'), tx('2'), tx('3')]));
+		expect(result).toMatchObject({ kind: 'import', automatic: true });
+		if (result.kind === 'import') expect(needsWrite(result.plan.next)).toBe(false);
+	});
+
+	it('both changed: import automatically, then write the merged result back', () => {
+		const result = planFileSync({ ...synced, working: data([tx('1'), tx('2'), tx('4')]) }, data([tx('1'), tx('2'), tx('3')]));
+		expect(result).toMatchObject({ kind: 'import', automatic: true });
+		if (result.kind === 'import') {
+			expect(ids(result.plan.next.working)).toEqual(['1', '2', '3', '4']);
+			expect(needsWrite(result.plan.next)).toBe(true);
+		}
+	});
+
+	it('conflicts or warnings: ask the user', () => {
+		const conflicting = planFileSync({ ...synced, working: data([tx('1', -5, 1), tx('2')]) }, data([tx('1', -7, 2), tx('2')]));
+		expect(conflicting).toMatchObject({ kind: 'import', automatic: false });
+		expect(planFileSync(synced, EMPTY_DATA)).toMatchObject({ kind: 'import', automatic: false });
+	});
+
+	it('the first sync without a base is an import', () => {
+		expect(planFileSync(INITIAL_SYNC_STATE, data([tx('1')]))).toMatchObject({ kind: 'import', automatic: true });
 	});
 });

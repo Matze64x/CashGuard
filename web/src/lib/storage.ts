@@ -6,6 +6,8 @@ export interface StoredSnapshot {
 	readonly base: string | null;
 	readonly exported: string | null;
 	readonly fileName: string | null;
+	/** Desktop app only: the path of the synced file */
+	readonly filePath?: string | null;
 }
 
 export interface StoredWorkspace {
@@ -15,7 +17,10 @@ export interface StoredWorkspace {
 }
 
 const KEY = 'cashguard-workspace-v2';
-const CHANNEL = 'cashguard-workspace';
+
+// One channel for sending and receiving: a channel doesn't receive its own messages, so a tab is
+// only told about saves of other tabs (a second channel object in the same tab would hear them).
+const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('cashguard-workspace');
 
 export async function loadWorkspace(): Promise<StoredWorkspace | undefined> {
 	return get<StoredWorkspace>(KEY);
@@ -24,16 +29,13 @@ export async function loadWorkspace(): Promise<StoredWorkspace | undefined> {
 /** Saves and tells other open tabs of the app, so they reload instead of overwriting it later. */
 export async function saveWorkspace(workspace: StoredWorkspace): Promise<void> {
 	await set(KEY, workspace);
-	const channel = new BroadcastChannel(CHANNEL);
-	channel.postMessage('saved');
-	channel.close();
+	channel?.postMessage('saved');
 }
 
 /** Calls `onChange` when another tab saved the workspace. Returns a function to stop listening. */
 export function watchWorkspace(onChange: () => void): () => void {
-	const channel = new BroadcastChannel(CHANNEL);
-	channel.onmessage = onChange;
-	return () => channel.close();
+	channel?.addEventListener('message', onChange);
+	return () => channel?.removeEventListener('message', onChange);
 }
 
 /** Asks the browser not to evict the data under storage pressure (iOS evicts unused site data). */

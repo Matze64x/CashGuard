@@ -2,7 +2,7 @@
 	import type { CashGuardData, Category, Id } from '../core';
 	import { formatDate, formatEuro } from './display';
 
-	let { data }: { data: CashGuardData } = $props();
+	let { data, emptyHint }: { data: CashGuardData; emptyHint: string } = $props();
 
 	const categories = $derived(new Map<Id, Category>(data.categories.map((c) => [c.id, c])));
 	// "#RRGGBBAA": CSS accepts 8-digit hex colors directly; "no category" (id 0) has no entry
@@ -24,7 +24,7 @@
 			</span>
 		</li>
 	{:else}
-		<li class="empty">No transactions yet. Import your CashGuard file to get started.</li>
+		<li class="empty">No transactions yet. {emptyHint}</li>
 	{/each}
 </ul>
 

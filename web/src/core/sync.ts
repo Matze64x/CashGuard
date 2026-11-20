@@ -118,3 +118,28 @@ export function planImport(state: SyncState, theirs: CashGuardData): ImportPlan 
 		next: { working: result.data, base: theirs, exported: null },
 	};
 }
+
+/**
+ * What to do with the synced file when the app can read and write it directly (desktop app):
+ * - 'unchanged': the file and the working copy are both still at the base
+ * - 'write': only the working copy changed; write it to the file
+ * - 'import': the file changed; merge it in (automatically if the merge is unremarkable, else ask
+ *   the user), then write the result if it differs from the file
+ */
+export type FileSyncPlan =
+	| { readonly kind: 'unchanged' }
+	| { readonly kind: 'write' }
+	| { readonly kind: 'import'; readonly plan: ImportPlan; readonly automatic: boolean };
+
+export function planFileSync(state: SyncState, file: CashGuardData): FileSyncPlan {
+	if (state.base && deepEqual(file, state.base)) return deepEqual(state.working, state.base) ? { kind: 'unchanged' } : { kind: 'write' };
+	const plan = planImport(state, file);
+	const { transactions, categories, accounts } = plan.merge.conflicts;
+	const automatic = plan.warnings.length === 0 && transactions.length + categories.length + accounts.length === 0;
+	return { kind: 'import', plan, automatic };
+}
+
+/** Whether the working copy has content the file doesn't (after an import, the file is the base). */
+export function needsWrite(state: SyncState): boolean {
+	return !deepEqual(state.working, state.base);
+}

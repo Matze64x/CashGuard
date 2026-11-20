@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { totalAmount } from './core';
 	import { formatEuro, plural } from './lib/display';
+	import { errorMessage } from './lib/errors';
 	import ImportDialog from './lib/ImportDialog.svelte';
 	import TransactionList from './lib/TransactionList.svelte';
 	import { Workspace, type ImportCandidate } from './lib/workspace.svelte';
@@ -8,14 +9,21 @@
 	const workspace = new Workspace();
 	let loadError = $state<string | null>(null);
 	$effect(() => {
-		const stop = workspace.start().catch((e: Error) => {
-			loadError = e.message;
+		const stop = workspace.start().catch((e: unknown) => {
+			loadError = errorMessage(e);
 			return () => {};
 		});
 		return () => void stop.then((f) => f());
 	});
 
-	let candidate = $state<ImportCandidate | null>(null);
+	// raw: a proxy would break the identity check of `candidate.from` in the workspace
+	let candidate = $state.raw<ImportCandidate | null>(null);
+	// desktop app: a sync with the file that needs a decision comes from the workspace
+	const shownCandidate = $derived(candidate ?? workspace.prompt);
+	function closeDialog() {
+		candidate = null;
+		workspace.prompt = null;
+	}
 	// another tab changed the data: a planned import is based on old data, so drop it
 	$effect(() => {
 		void workspace.revision;
@@ -35,7 +43,7 @@
 			const text = await action();
 			notice = text ? { text, error: false } : null;
 		} catch (e) {
-			notice = { text: `Something went wrong: ${(e as Error).message}`, error: true };
+			notice = { text: `Something went wrong: ${errorMessage(e)}`, error: true };
 		}
 	}
 
@@ -53,14 +61,36 @@
 	}
 
 	function applyImport() {
-		const chosen = candidate;
-		candidate = null;
+		const chosen = shownCandidate;
+		closeDialog();
 		if (chosen?.ok) {
 			void run(async () => {
 				await workspace.applyImport(chosen);
-				return 'Imported.';
+				return workspace.isDesktop ? null : 'Imported.';
 			});
 		}
+	}
+
+	function keepMine() {
+		const chosen = shownCandidate;
+		closeDialog();
+		if (chosen) {
+			void run(async () => {
+				await workspace.keepMine(chosen);
+				return 'The file now has your data again.';
+			});
+		}
+	}
+
+	function openFile() {
+		void run(async () => {
+			candidate = await workspace.chooseFileToOpen();
+			return null;
+		});
+	}
+
+	function createFile() {
+		void run(async () => ((await workspace.createFile()) ? 'Created. Changes are saved to the file from now on.' : null));
 	}
 
 	function undoImport() {
@@ -87,20 +117,28 @@
 <header>
 	<div class="title">
 		<h1>CashGuard</h1>
-		{#if workspace.fileName}<span class="file">{workspace.fileName}</span>{/if}
+		{#if workspace.fileName}<span class="file" title={workspace.filePath ?? workspace.fileName}>{workspace.fileName}</span>{/if}
 	</div>
 	<div class="actions">
-		{#if workspace.canUndoImport}
-			<button disabled={busy} onclick={undoImport}>Undo import</button>
+		{#if workspace.isDesktop}
+			<button disabled={busy} onclick={openFile}>Open file…</button>
+			<button disabled={busy} onclick={createFile}>New file…</button>
+		{:else}
+			{#if workspace.canUndoImport}
+				<button disabled={busy} onclick={undoImport}>Undo import</button>
+			{/if}
+			<button disabled={busy} onclick={() => fileInput.click()}>Import</button>
+			<button class="primary" disabled={busy} aria-label={exportLabel} title={exportLabel} onclick={exportFile}>
+				Export{#if workspace.unexportedCount > 0}<span class="count" aria-hidden="true">{workspace.unexportedCount}</span>{/if}
+			</button>
 		{/if}
-		<button disabled={busy} onclick={() => fileInput.click()}>Import</button>
-		<button class="primary" disabled={busy} aria-label={exportLabel} title={exportLabel} onclick={exportFile}>
-			Export{#if workspace.unexportedCount > 0}<span class="count" aria-hidden="true">{workspace.unexportedCount}</span>{/if}
-		</button>
 	</div>
 </header>
 
 <main>
+	{#if workspace.syncError}
+		<p class="notice error" role="alert">Syncing with the file failed: {workspace.syncError}</p>
+	{/if}
 	{#if notice}
 		<p class="notice" class:error={notice.error} role={notice.error ? 'alert' : 'status'}>{notice.text}</p>
 	{/if}
@@ -111,12 +149,12 @@
 			<span class="balance">{formatEuro(totalAmount(workspace.data.transactions))}</span>
 			<span class="muted">{plural(workspace.data.transactions.length, 'transaction')}</span>
 		</section>
-		<TransactionList data={workspace.data} />
+		<TransactionList data={workspace.data} emptyHint={workspace.isDesktop ? 'Open your CashGuard file to get started.' : 'Import your CashGuard file to get started.'} />
 	{/if}
 </main>
 
-{#if candidate}
-	<ImportDialog {candidate} onapply={applyImport} onclose={() => (candidate = null)} />
+{#if shownCandidate}
+	<ImportDialog candidate={shownCandidate} onapply={applyImport} onkeep={keepMine} onclose={closeDialog} />
 {/if}
 
 <style>
