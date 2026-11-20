@@ -5,7 +5,7 @@
  * A group (a transaction split into parts) counts as one transaction with its own date, category,
  * description and total: the parts are details that only show when the transaction is opened.
  */
-import { addMonths, civilDate, dateParts, daysInMonth, type CivilDate } from './dates';
+import { addDays, addMonths, civilDate, dateParts, daysBetween, daysInMonth, type CivilDate } from './dates';
 import type { Id } from './ids';
 import { cents, sumCents, type Cents } from './money';
 import type { Category, Transaction } from './model';
@@ -191,6 +191,9 @@ export interface Share<K> {
 	readonly count: number;
 }
 
+/** Sort order: larger sizes first, ties by key (for a stable order) */
+const largestFirst = (sizeA: number, sizeB: number, keyA: string, keyB: string) => sizeB - sizeA || (keyA < keyB ? -1 : keyA > keyB ? 1 : 0);
+
 /** Totals per key (e.g. category), largest amount (without sign) first; ties by key */
 function totalsBy<K extends string>(transactions: readonly Transaction[], keyOf: (t: Transaction) => K): Share<K>[] {
 	const totals = new Map<K, { total: number; count: number }>();
@@ -202,7 +205,7 @@ function totalsBy<K extends string>(transactions: readonly Transaction[], keyOf:
 	}
 	return [...totals]
 		.map(([key, { total, count }]) => ({ key, total: cents(total), count }))
-		.sort((a, b) => Math.abs(b.total) - Math.abs(a.total) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+		.sort((a, b) => largestFirst(Math.abs(a.total), Math.abs(b.total), a.key, b.key));
 }
 
 export const totalsByCategory = (transactions: readonly Transaction[]): Share<Id>[] => totalsBy(transactions, (t) => t.categoryId);
@@ -226,4 +229,74 @@ export function monthlyByCategory(
 		(byCategory.get(t.categoryId) ?? other)[i]! += t.amount;
 	}
 	return { byCategory: new Map([...byCategory].map(([id, values]) => [id, values.map(cents)])), other: other.map(cents) };
+}
+
+// ------------------------------------------------------------------------------------- comparisons
+
+export interface PeriodComparison {
+	/** The period, cut at `today` if it isn't over yet */
+	readonly current: Period;
+	/** The same stretch of time right before it */
+	readonly previous: Period;
+	/** Whether `current` was cut at today */
+	readonly cut: boolean;
+	/** How many months `current` stands for, for averages per month */
+	readonly months: number;
+}
+
+/**
+ * The period to compare with: the same length right before. Whole months are compared with as many
+ * whole months (Mar–May with Dec–Feb), other periods with as many days. A period that isn't over
+ * yet is compared like for like: "this month" on the 20th is the 1st–20th, compared with the
+ * 1st–20th of the month before. Null if that would leave the supported years.
+ */
+export function comparePeriod(period: Period, today: CivilDate): PeriodComparison | null {
+	const { from, to } = period;
+	const cut = from <= today && today < to;
+	const end = cut ? today : to;
+	try {
+		if (monthOf(from).from === from && monthOf(to).to === to) {
+			const span = monthNumber(to) - monthNumber(from) + 1;
+			// (addMonths clamps to the month's end, e.g. 31.03. → 28.02.)
+			const previous = { from: addMonths(from, -span), to: cut ? addMonths(end, -span) : monthOf(addMonths(to, -span)).to };
+			return { current: { from, to: end }, previous, cut, months: monthsBetween(from, end).length };
+		}
+		const days = daysBetween(from, to) + 1;
+		const before = addDays(from, -days);
+		const elapsed = daysBetween(from, end);
+		return { current: { from, to: end }, previous: { from: before, to: addDays(before, elapsed) }, cut, months: (elapsed + 1) / 30.4375 };
+	} catch {
+		return null;
+	}
+}
+
+/** The last 12 complete months before `today`'s month */
+export function lastTwelveMonths(today: CivilDate): Period {
+	const thisMonth = monthOf(today).from;
+	return { from: addMonths(thisMonth, -12), to: addDays(thisMonth, -1) };
+}
+
+export interface Comparison<K> {
+	readonly key: K;
+	readonly current: Cents;
+	readonly previous: Cents;
+}
+
+/** Totals of two periods side by side, largest (in either period) first */
+export function compareTotals<K extends string>(current: readonly Share<K>[], previous: readonly Share<K>[]): Comparison<K>[] {
+	const rows = new Map<K, { current: Cents; previous: Cents }>();
+	for (const s of current) rows.set(s.key, { current: s.total, previous: cents(0) });
+	for (const s of previous) rows.set(s.key, { current: rows.get(s.key)?.current ?? cents(0), previous: s.total });
+	const size = (r: { current: Cents; previous: Cents }) => Math.max(Math.abs(r.current), Math.abs(r.previous));
+	return [...rows].map(([key, r]) => ({ key, ...r })).sort((a, b) => largestFirst(size(a), size(b), a.key, b.key));
+}
+
+/** Per calendar year, the totals of its 12 months (index 0 = January) */
+export function monthlyByYear(transactions: readonly Transaction[], years: readonly number[]): Map<number, Cents[]> {
+	const sums = new Map(years.map((year) => [year, Array.from({ length: 12 }, () => 0)]));
+	for (const t of transactions) {
+		const months = sums.get(Number(t.date.slice(0, 4)));
+		if (months) months[Number(t.date.slice(5, 7)) - 1]! += t.amount;
+	}
+	return new Map([...sums].map(([year, values]) => [year, values.map(cents)]));
 }

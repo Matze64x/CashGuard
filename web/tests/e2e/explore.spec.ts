@@ -155,3 +155,70 @@ test('an empty description can not be searched for', async ({ page }) => {
 	const empty = breakdown.getByRole('button', { name: /^\(no description\):/ });
 	await expect(empty).toBeDisabled();
 });
+
+test('the comparison: last 12 months by default, the chosen period otherwise; rows filter', async ({ page }) => {
+	const comparison = page.getByRole('region', { name: 'Comparison' });
+	await expect(comparison).toContainText('(the last 12 complete months) compared with');
+
+	// a month of the fixture's data (over, so compared as a whole)
+	await page.keyboard.press('f');
+	const dialog = page.getByRole('dialog', { name: 'Filter' });
+	await dialog.getByLabel('From', { exact: true }).fill('1.10.2026');
+	await dialog.getByLabel('To', { exact: true }).fill('31.10.2026');
+	await page.keyboard.press('Enter');
+	await expect(comparison).toContainText('October 2026 compared with September 2026');
+	await expect(comparison.getByRole('row', { name: /^Total/ })).toBeVisible();
+
+	const first = comparison.getByRole('rowheader').first().getByRole('button');
+	const name = (await first.textContent())!.trim();
+	await first.focus();
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('list', { name: 'Active filters' })).toContainText(name);
+	await expect(comparison.getByRole('columnheader', { name: 'Description' })).toBeVisible();
+
+	// an open period can't be compared
+	await page.getByRole('button', { name: /Remove filter: October 2026/ }).click();
+	await page.keyboard.press('Escape');
+	await page.keyboard.press('f');
+	await dialog.getByLabel('From', { exact: true }).fill('1.11.2026');
+	await page.keyboard.press('Enter');
+	await expect(comparison).toContainText('Choose a period with a start and an end');
+});
+
+test('year over year: the years with data, cumulative on request', async ({ page }) => {
+	const yoy = page.getByRole('region', { name: 'Year over year' });
+	// the fixture's newest data is from 2026
+	await expect(yoy.getByRole('list', { name: 'Years' })).toContainText('2026');
+	await yoy.getByRole('checkbox', { name: 'Cumulative' }).check();
+	await expect(yoy.locator('svg').first()).toBeVisible();
+	await page.getByRole('radio', { name: 'Income', exact: true }).check();
+	await expect(yoy.getByRole('heading')).toHaveText('Income year over year');
+});
+
+test('year over year: a click in a month column picks that month; empty months show no NaN', async ({ page }) => {
+	const yoy = page.getByRole('region', { name: 'Year over year' });
+	const svg = yoy.locator('svg').first();
+	await svg.scrollIntoViewIfNeeded();
+	const box = (await svg.boundingBox())!;
+	// narrow charts label only some months: take the last labelled one
+	const label = svg.locator('text').filter({ hasText: /^[A-Z][a-z]{2}$/ }).last();
+	const short = (await label.textContent())!;
+	const month = new Date(`${short} 1, 2000`).toLocaleDateString('en-GB', { month: 'long' });
+	const at = (await label.boundingBox())!;
+	// just above the axis: the year with the smallest value there
+	await page.mouse.click(at.x + at.width / 2, at.y - 12);
+	await expect(page.getByRole('list', { name: 'Active filters' })).toContainText(new RegExp(`^\\s*${month} \\d{4}`));
+	// hovering the last months (December is still empty this year, unless it's December)
+	await page.mouse.move(box.x + box.width - 12, box.y + box.height / 2);
+	await page.waitForTimeout(300);
+	await expect(page.locator('body')).not.toContainText('NaN');
+});
+
+test('an unfinished period is compared like for like', async ({ page }) => {
+	const now = new Date();
+	test.skip(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() === now.getDate(), 'today is the month’s last day');
+	await page.keyboard.press('f');
+	await page.getByRole('dialog').getByRole('combobox', { name: 'Period' }).selectOption('This month');
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('region', { name: 'Comparison' })).toContainText('the same days of the period before');
+});

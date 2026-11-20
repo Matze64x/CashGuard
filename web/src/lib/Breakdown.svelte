@@ -5,9 +5,10 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { ofSide, sumCents, totalsByCategory, totalsByDescription, type Cents, type Id, type Side, type Transaction } from '../core';
-	import { categoryColor, categoryLabel, formatEuro, plural } from './display';
+	import { ofSide, sumCents, totalsByCategory, totalsByDescription, type Side, type Transaction } from '../core';
+	import { categoryLabel, formatEuro, plural } from './display';
 	import { filter } from './filter.svelte';
+	import { rowTarget, ShortList } from './rows.svelte';
 	import type { Workspace } from './workspace.svelte';
 
 	let {
@@ -24,51 +25,16 @@
 		actions?: Snippet;
 	} = $props();
 
-	const LIMIT = 10;
-	let showAll = $state(false);
-
 	const categories = $derived(new Map(workspace.data.categories.map((c) => [c.id, c])));
 	const sided = $derived(ofSide(transactions, side));
 	const single = $derived(filter.current.categories.length === 1 ? filter.current.categories[0]! : null);
-
-	// a different list starts short again
-	$effect(() => {
-		void single;
-		void side;
-		showAll = false;
-	});
-
-	interface Row {
-		key: string;
-		label: string;
-		color?: string;
-		total: Cents;
-		count: number;
-		/** null: nothing to choose (an empty description can't be searched for) */
-		choose: (() => void) | null;
-	}
-	const rows = $derived.by((): Row[] => {
-		if (single !== null)
-			return totalsByDescription(sided).map((s) => ({
-				key: s.key,
-				label: s.key || '(no description)',
-				total: s.total,
-				count: s.count,
-				choose: s.key ? () => filter.set({ text: s.key }) : null,
-			}));
-		return totalsByCategory(sided).map((s) => ({
-			key: s.key,
-			label: categoryLabel(s.key, categories.get(s.key)),
-			color: categoryColor(categories.get(s.key)),
-			total: s.total,
-			count: s.count,
-			choose: () => filter.set({ categories: [s.key as Id] }),
-		}));
-	});
+	const rows = $derived(
+		(single !== null ? totalsByDescription(sided) : totalsByCategory(sided)).map((s) => ({ ...s, ...rowTarget(s.key, single !== null, categories) })),
+	);
+	const list = new ShortList(() => [single, side]);
 	// all rows have the side's sign, so the total is never 0 while there are rows
 	const total = $derived(sumCents(rows.map((r) => r.total)));
 	const largest = $derived(Math.max(1, ...rows.map((r) => Math.abs(r.total))));
-	const visible = $derived(showAll ? rows : rows.slice(0, LIMIT));
 	const percent = new Intl.NumberFormat('de-DE', { style: 'percent', maximumFractionDigits: 0 });
 
 	const heading = $derived(
@@ -84,14 +50,14 @@
 	<p class="empty">Nothing here for the current filter.</p>
 {:else}
 	<ul class="rows">
-		{#each visible as row (row.key)}
+		{#each list.take(rows) as row (row.key)}
 			{@const share = percent.format(row.total / total)}
 			<li>
 				<button
 					class="row"
 					onclick={row.choose}
 					disabled={!row.choose}
-					title={!row.choose ? undefined : single !== null ? `Search for “${row.label}”` : 'Show only this category'}
+					title={row.title}
 					aria-label={`${row.label}: ${formatEuro(row.total)}, ${share}, ${plural(row.count, 'transaction')}`}
 				>
 					<span class="label">
@@ -107,8 +73,8 @@
 			</li>
 		{/each}
 	</ul>
-	{#if rows.length > LIMIT}
-		<button class="more" onclick={() => (showAll = !showAll)}>{showAll ? 'Show fewer' : `Show all ${rows.length}`}</button>
+	{#if rows.length > ShortList.LIMIT}
+		<button class="more" onclick={() => (list.showAll = !list.showAll)}>{list.showAll ? 'Show fewer' : `Show all ${rows.length}`}</button>
 	{/if}
 {/if}
 

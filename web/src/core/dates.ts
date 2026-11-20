@@ -148,3 +148,12 @@ export function parseDateInput(text: string, style: DateStyle, reference: CivilD
 	const d = Number(day);
 	return isValidDate(y, m, d) ? makeDate(y, m, d) : null;
 }
+
+/** Days from `a` to `b` (negative if `b` is earlier) */
+export function daysBetween(a: CivilDate, b: CivilDate): number {
+	const utc = (d: CivilDate) => {
+		const { year, month, day } = dateParts(d);
+		return Date.UTC(year, month - 1, day);
+	};
+	return Math.round((utc(b) - utc(a)) / 86_400_000);
+}

@@ -4,9 +4,22 @@
 	within one category), and the totals of what the filter selects.
 -->
 <script lang="ts">
-	import { applyFilter, isFiltered, monthsBetween, ofSide, sumCents, today, type Cents, type CivilDate, type Side } from '../core';
+	import {
+		applyFilter,
+		isFiltered,
+		monthsBetween,
+		ofSide,
+		sumCents,
+		today,
+		type Cents,
+		type CivilDate,
+		type Filter,
+		type Side,
+	} from '../core';
 	import Breakdown from './Breakdown.svelte';
 	import Timeline from './charts/Timeline.svelte';
+	import YearOverYear from './charts/YearOverYear.svelte';
+	import Comparison from './Comparison.svelte';
 	import { describePeriod, formatEuro, plural } from './display';
 	import { filter } from './filter.svelte';
 	import FilterBar from './FilterBar.svelte';
@@ -28,6 +41,11 @@
 	] as const;
 
 	const result = $derived(applyFilter(workspace.data.transactions, workspace.data.categories, filter.current));
+	// what the filter selects apart from its period, for the charts over time (they show all months
+	// for context): as text, so it only changes (and is only filtered again) when more than the
+	// period changes, which is what clicking a chart does
+	const restOfFilter = $derived(JSON.stringify({ ...filter.current, from: null, to: null } satisfies Filter));
+	const withoutPeriod = $derived(applyFilter(workspace.data.transactions, workspace.data.categories, JSON.parse(restOfFilter) as Filter).transactions);
 	const income = $derived(sumCents(ofSide(result.transactions, 'income').map((t) => t.amount)));
 	const expenses = $derived(sumCents(ofSide(result.transactions, 'expense').map((t) => t.amount)));
 	// the months the totals cover, for the monthly average: the period as far as there is data (so
@@ -50,7 +68,7 @@
 	<FilterBar {workspace} {active} onleave={() => showButton.focus()} />
 
 	<section class="panel" aria-label="Timeline">
-		<Timeline {workspace} {side} />
+		<Timeline {workspace} matching={withoutPeriod} {side} />
 	</section>
 
 	<div class="columns">
@@ -87,6 +105,14 @@
 			</button>
 		</section>
 	</div>
+
+	<section class="panel" aria-label="Year over year">
+		<YearOverYear {workspace} matching={withoutPeriod} {side} />
+	</section>
+
+	<section class="panel" aria-label="Comparison">
+		<Comparison {workspace} {side} />
+	</section>
 </div>
 
 <style>

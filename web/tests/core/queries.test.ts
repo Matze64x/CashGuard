@@ -4,8 +4,11 @@ import {
 	applyFilter,
 	cents,
 	chartPeriod,
+	compareTotals,
+	lastTwelveMonths,
 	isFiltered,
 	monthlyByCategory,
+	monthlyByYear,
 	monthlyTotals,
 	monthOf,
 	monthsBetween,
@@ -13,6 +16,8 @@ import {
 	NO_FILTER,
 	ofSide,
 	periodPresets,
+	comparePeriod,
+	daysBetween,
 	totalsByCategory,
 	totalsByDescription,
 	yearOf,
@@ -173,5 +178,57 @@ describe('sides', () => {
 		const mixed = build([tx('2026-01-01', 'in', 100), tx('2026-01-02', 'out', -100), tx('2026-01-03', 'zero', 0)]);
 		expect(ofSide(mixed.transactions, 'expense').map((t) => t.description)).toEqual(['out']);
 		expect(ofSide(mixed.transactions, 'income').map((t) => t.description)).toEqual(['in']);
+	});
+});
+
+describe('comparisons', () => {
+	it('finds the period before: whole months by months, others by days', () => {
+		const later = d('2100-01-01');
+		const before = (from: string, to: string) => comparePeriod({ from: d(from), to: d(to) }, later)?.previous;
+		expect(before('2026-03-01', '2026-05-31')).toEqual({ from: '2025-12-01', to: '2026-02-28' });
+		expect(before('2026-03-01', '2026-03-31')).toEqual({ from: '2026-02-01', to: '2026-02-28' });
+		expect(before('2024-03-01', '2024-03-31')).toEqual({ from: '2024-02-01', to: '2024-02-29' });
+		expect(before('2026-04-01', '2026-04-30')).toEqual({ from: '2026-03-01', to: '2026-03-31' });
+		expect(before('2026-03-10', '2026-03-19')).toEqual({ from: '2026-02-28', to: '2026-03-09' });
+		// starts mid-month, ends at a month's end: by days
+		expect(before('2024-03-15', '2024-03-31')).toEqual({ from: '2024-02-27', to: '2024-03-14' });
+		expect(comparePeriod({ from: d('1678-01-01'), to: d('1678-12-31') }, later)).toBeNull();
+		expect(lastTwelveMonths(d('2026-03-15'))).toEqual({ from: '2025-03-01', to: '2026-02-28' });
+	});
+
+	it('compares an unfinished period like for like', () => {
+		const today = d('2026-11-20');
+		expect(comparePeriod({ from: d('2026-11-01'), to: d('2026-11-30') }, today)).toEqual({
+			current: { from: '2026-11-01', to: '2026-11-20' },
+			previous: { from: '2026-10-01', to: '2026-10-20' },
+			cut: true,
+			months: 1,
+		});
+		const year = comparePeriod({ from: d('2026-01-01'), to: d('2026-12-31') }, today)!;
+		expect(year.previous).toEqual({ from: '2025-01-01', to: '2025-11-20' });
+		expect(year.months).toBe(11);
+		// 31 days, 10 of them over: compared with the first 10 of the 31 days before
+		const days = comparePeriod({ from: d('2026-11-11'), to: d('2026-12-11') }, today)!;
+		expect(days.previous).toEqual({ from: '2026-10-11', to: '2026-10-20' });
+		expect(days.months).toBeCloseTo(10 / 30.4375);
+		// not started yet, or over: as it is
+		expect(comparePeriod({ from: d('2027-01-01'), to: d('2027-01-31') }, today)?.cut).toBe(false);
+		expect(daysBetween(d('2024-02-28'), d('2024-03-01'))).toBe(2);
+	});
+
+	it('puts two periods side by side', () => {
+		const now = [{ key: 'a', total: cents(-500), count: 1 }, { key: 'b', total: cents(-100), count: 1 }];
+		const before = [{ key: 'b', total: cents(-900), count: 2 }, { key: 'c', total: cents(-50), count: 1 }];
+		expect(compareTotals(now, before)).toEqual([
+			{ key: 'b', current: -100, previous: -900 },
+			{ key: 'a', current: -500, previous: 0 },
+			{ key: 'c', current: 0, previous: -50 },
+		]);
+	});
+
+	it('sums the months of each year', () => {
+		const byYear = monthlyByYear(data.transactions, [2025, 2026]);
+		expect(byYear.get(2025)).toEqual(Array(12).fill(0));
+		expect(byYear.get(2026)!.slice(0, 3)).toEqual([-82000, 300000 - 3775, 0]);
 	});
 });

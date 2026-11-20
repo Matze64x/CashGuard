@@ -11,7 +11,6 @@
 	import type { EChartsType } from 'echarts/core';
 	import { untrack } from 'svelte';
 	import {
-		applyFilter,
 		chartPeriod,
 		monthlyByCategory,
 		monthlyTotals,
@@ -22,18 +21,27 @@
 		totalsByCategory,
 		type Cents,
 		type CivilDate,
-		type Filter,
 		type Id,
+		type Side,
 		type Transaction,
 	} from '../../core';
-	import { categoryColor, categoryLabel, describePeriod, formatDate, formatEuro, plural } from '../display';
+	import { categoryColor, categoryLabel, describePeriod, formatDate, formatEuro, formatMonth, plural } from '../display';
 	import Segmented from '../ui/Segmented.svelte';
 	import { filter } from '../filter.svelte';
 	import type { Workspace } from '../workspace.svelte';
 	import Chart from './Chart.svelte';
 	import { theme } from './theme.svelte';
 
-	let { workspace, side }: { workspace: Workspace; side: 'expense' | 'income' } = $props();
+	let {
+		workspace,
+		matching,
+		side,
+	}: {
+		workspace: Workspace;
+		/** What the filter selects apart from its period (the chart shows all months for context) */
+		matching: readonly Transaction[];
+		side: Side;
+	} = $props();
 
 	let view = $state<'totals' | 'categories'>('totals');
 	const VIEWS = [
@@ -47,15 +55,6 @@
 	const range = $derived(chartPeriod(all, today()));
 	const months = $derived(range.period ? monthsBetween(range.period.from, range.period.to) : []);
 
-	// everything the filter selects except its period (the chart shows all months for context);
-	// kept while only the period changes, which is what clicking the chart does
-	let cached: { key: string; all: readonly Transaction[]; matching: readonly Transaction[] } | null = null;
-	const matching = $derived.by(() => {
-		const rest: Filter = { ...filter.current, from: null, to: null };
-		const key = JSON.stringify(rest);
-		if (cached?.key !== key || cached.all !== all) cached = { key, all, matching: applyFilter(all, workspace.data.categories, rest).transactions };
-		return cached.matching;
-	});
 	const totals = $derived(monthlyTotals(matching, all, months));
 
 	// by category: the side's transactions of the largest categories, as positive amounts
@@ -78,13 +77,8 @@
 			other: other.map((v) => Math.abs(v)),
 		};
 	});
-	const labels = $derived(months.map(monthLabel));
+	const labels = $derived(months.map((month) => formatMonth(month, { year: '2-digit' })));
 
-	function monthLabel(month: CivilDate): string {
-		const [year, m] = month.split('-').map(Number) as [number, number];
-		// en-US: "Sep 24" (en-GB writes "Sept 24")
-		return new Date(year, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-	}
 
 	// the highlighted months: the filter's period, as far as it overlaps the chart
 	const selection = $derived.by(() => {

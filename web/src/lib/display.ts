@@ -36,11 +36,7 @@ export function describePeriod(from: CivilDate | null, to: CivilDate | null): st
 		if (year.from === from && year.to === to) return String(dateParts(from).year);
 		// whole months: "Oct – Nov 2026", "Nov 2025 – Feb 2026"
 		if (monthOf(from).from === from && monthOf(to).to === to) {
-			const short = (date: CivilDate, withYear: boolean) => {
-				const { year: y, month: m } = dateParts(date);
-				// en-US: "Sep" (en-GB writes "Sept")
-				return new Date(y, m - 1, 1).toLocaleDateString('en-US', withYear ? { month: 'short', year: 'numeric' } : { month: 'short' });
-			};
+			const short = (date: CivilDate, withYear: boolean) => formatMonth(date, withYear ? { year: 'numeric' } : {});
 			const sameYear = dateParts(from).year === dateParts(to).year;
 			return `${short(from, !sameYear)} – ${short(to, true)}`;
 		}
@@ -68,3 +64,15 @@ export function categoryLabel(id: Id, category: { name: string } | undefined): s
 export function categoryColor(category: { color: string } | undefined): string {
 	return category?.color ?? '#9E9E9EFF';
 }
+
+/** A month's name: `formatMonth(date)` = "Sep", with `{ year: '2-digit' }` "Sep 26" (en-US: en-GB writes "Sept") */
+export function formatMonth(date: CivilDate, options: Intl.DateTimeFormatOptions = {}): string {
+	const { year, month } = dateParts(date);
+	return new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'short', ...options });
+}
+
+/** Signed euros for changes: "+12,00 €", "-3,50 €", "0,00 €" */
+export function formatEuroChange(amount: Cents): string {
+	return euroChange.format(amount / 100); // display only
+}
+const euroChange = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', signDisplay: 'exceptZero' });
