@@ -86,3 +86,60 @@ export function today(): CivilDate {
 	const d = new Date();
 	return civilDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
+
+/** The date `days` days later (or earlier, if negative). Throws outside the supported years. */
+export function addDays(date: CivilDate, days: number): CivilDate {
+	const { year, month, day } = dateParts(date);
+	const d = new Date(Date.UTC(year, month - 1, day + days));
+	return civilDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+}
+
+/** The same day `months` months later (or earlier), clamped to the month's end (31.01. + 1 → 28./29.02.). */
+export function addMonths(date: CivilDate, months: number): CivilDate {
+	const { year, month, day } = dateParts(date);
+	const index = year * 12 + (month - 1) + months;
+	const y = Math.floor(index / 12);
+	const m = index - y * 12 + 1;
+	const last = m === 2 && isLeapYear(y) ? 29 : DAYS_IN_MONTH[m - 1]!;
+	return civilDate(y, m, Math.min(day, last));
+}
+
+/** How dates are shown and typed (a user setting; the file always uses DD.MM.YYYY). */
+export type DateStyle = 'DD.MM.YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
+export const DATE_STYLES: readonly DateStyle[] = ['DD.MM.YYYY', 'DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'];
+
+export function formatDateAs(date: CivilDate, style: DateStyle): string {
+	const { year, month, day } = dateParts(date);
+	const [d, m, y] = [pad(day), pad(month), String(year)];
+	switch (style) {
+		case 'DD.MM.YYYY':
+			return `${d}.${m}.${y}`;
+		case 'DD/MM/YYYY':
+			return `${d}/${m}/${y}`;
+		case 'MM/DD/YYYY':
+			return `${m}/${d}/${y}`;
+		case 'YYYY-MM-DD':
+			return `${y}-${m}-${d}`;
+	}
+}
+
+/**
+ * Parses a typed date in the given style. Any of . / - or space separate the parts, and parts may
+ * be left out from the end of the date: "5" is the 5th of `reference`'s month, "5.3" the 5th of March
+ * in `reference`'s year (for DD.MM.YYYY). Two-digit years are 20xx. A full "YYYY-MM-DD" is always
+ * accepted. Returns null for anything else, including dates outside the supported years.
+ */
+export function parseDateInput(text: string, style: DateStyle, reference: CivilDate): CivilDate | null {
+	const parts = text.trim().replace(/[./\-\s]+$/, '').split(/[./\-\s]+/);
+	if (parts.length > 3 || !parts.every((p) => /^\d{1,4}$/.test(p))) return null;
+	let day: string | undefined, month: string | undefined, year: string | undefined;
+	if (parts.length === 3 && parts[0]!.length === 4) [year, month, day] = parts;
+	else if (style === 'YYYY-MM-DD') [day, month, year] = [...parts].reverse(); // "5" is the day, "3-5" month and day
+	else if (style === 'MM/DD/YYYY') [month, day, year] = parts.length === 1 ? [undefined, parts[0]] : parts;
+	else [day, month, year] = parts;
+	const ref = dateParts(reference);
+	const y = year === undefined ? ref.year : year.length <= 2 ? 2000 + Number(year) : year.length === 4 ? Number(year) : NaN;
+	const m = month === undefined ? ref.month : Number(month);
+	const d = Number(day);
+	return isValidDate(y, m, d) ? makeDate(y, m, d) : null;
+}

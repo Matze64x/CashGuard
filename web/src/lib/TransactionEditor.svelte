@@ -6,7 +6,6 @@
 <script lang="ts">
 	import {
 		cents,
-		civilDate,
 		lastUseOf,
 		MAX_YEAR,
 		MIN_YEAR,
@@ -21,6 +20,7 @@
 	import { formatEuro } from './display';
 	import { shortcuts } from './shortcuts.svelte';
 	import AmountInput from './ui/AmountInput.svelte';
+	import DateInput from './ui/DateInput.svelte';
 	import DescriptionInput from './ui/DescriptionInput.svelte';
 	import Modal from './ui/Modal.svelte';
 
@@ -45,7 +45,7 @@
 	interface Part {
 		key: number;
 		id?: Id;
-		date: string;
+		date: CivilDate | null;
 		description: string;
 		categoryId: Id;
 		amount: Cents | null;
@@ -54,7 +54,7 @@
 	// the form keeps its own copy; `initial` only seeds it
 	// svelte-ignore state_referenced_locally
 	const start = initial;
-	let date = $state<string>(start.date);
+	let date = $state<CivilDate | null>(start.date);
 	let description = $state(start.description);
 	let categoryId = $state<Id>(start.categoryId);
 	// an empty new transaction starts without an amount, so it has to be entered
@@ -67,16 +67,6 @@
 
 	const categories = $derived([...data.categories].sort((a, b) => a.name.localeCompare(b.name)));
 	const partsTotal = $derived(parts && parts.every((p) => p.amount !== null) ? sumCents(parts.map((p) => p.amount!)) : null);
-
-	function validDate(text: string): CivilDate | null {
-		const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-		if (!match) return null;
-		try {
-			return civilDate(Number(match[1]), Number(match[2]), Number(match[3]));
-		} catch {
-			return null;
-		}
-	}
 
 	/** Fill in category and amount of a new transaction from the last time this description was used. */
 	function prefill(picked: string) {
@@ -100,7 +90,7 @@
 
 	function save(another: boolean) {
 		error = null;
-		const day = validDate(date);
+		const day = date;
 		if (!day) return void (error = `Enter a valid date between ${MIN_YEAR} and ${MAX_YEAR}.`);
 		if (!parts) {
 			if (amount === null) return void (error = 'Enter an amount.');
@@ -109,7 +99,7 @@
 		if (parts.length === 0) return void (error = "Add a part, or choose “Don't split”.");
 		const subTransactions = [];
 		for (const [i, part] of parts.entries()) {
-			const partDay = validDate(part.date);
+			const partDay = part.date;
 			if (!partDay) return void (error = `Part ${i + 1}: enter a valid date.`);
 			if (part.amount === null) return void (error = `Part ${i + 1}: enter an amount.`);
 			subTransactions.push({ ...(part.id && { id: part.id }), date: partDay, description: part.description.trim(), categoryId: part.categoryId, amount: part.amount });
@@ -138,7 +128,7 @@
 			<DescriptionInput id="tx-description" bind:value={description} {data} autofocus onpick={prefill} />
 
 			<label for="tx-date">Date</label>
-			<input id="tx-date" type="date" min={`${MIN_YEAR}-01-01`} max={`${MAX_YEAR}-12-31`} bind:value={date} required />
+			<DateInput id="tx-date" bind:value={date} />
 
 			<label for="tx-category">Category</label>
 			<select id="tx-category" bind:value={categoryId}>
@@ -157,7 +147,7 @@
 				<legend>Parts <span class="total">Total {partsTotal === null ? '–' : formatEuro(partsTotal)}</span></legend>
 				{#each parts as part, i (part.key)}
 					<div class="part">
-						<input class="p-date" type="date" aria-label={`Part ${i + 1} date`} min={`${MIN_YEAR}-01-01`} max={`${MAX_YEAR}-12-31`} bind:value={part.date} />
+						<div class="p-date"><DateInput label={`Part ${i + 1} date`} bind:value={part.date} /></div>
 						<div class="p-description">
 							<DescriptionInput id={`part-${part.key}-description`} label={`Part ${i + 1} description`} bind:value={part.description} {data} />
 						</div>

@@ -4,6 +4,7 @@
 	import { plural } from './lib/display';
 	import { errorMessage } from './lib/errors';
 	import ImportDialog from './lib/ImportDialog.svelte';
+	import SettingsDialog from './lib/SettingsDialog.svelte';
 	import { displayKeys, shortcuts } from './lib/shortcuts.svelte';
 	import TransactionsView from './lib/TransactionsView.svelte';
 	import ShortcutHelp from './lib/ui/ShortcutHelp.svelte';
@@ -46,6 +47,8 @@
 		notice = { text, error: false, undo };
 	}
 
+	let settingsOpen = $state(false);
+
 	function undo() {
 		void run(async () => {
 			const label = await workspace.undo();
@@ -71,6 +74,7 @@
 			{ keys: ['?'], description: 'Show the keyboard shortcuts', group: 'General', inDialog: true, when: () => !shortcuts.helpOpen, run: () => (shortcuts.helpOpen = true) },
 			{ keys: ['Mod+z'], description: 'Undo the last change', group: 'General', when: () => !busy, run: undo },
 			{ keys: ['Mod+Shift+z', 'Mod+y'], description: 'Redo', group: 'General', when: () => !busy, run: redo },
+			{ keys: ['Mod+,'], description: 'Settings', group: 'General', inFields: true, run: () => (settingsOpen = true) },
 			...SECTIONS.map((s) => ({ keys: [s.keys], description: `Go to ${s.label.toLowerCase()}`, group: 'General', run: () => (section = s.id) })),
 			...(workspace.isDesktop
 				? [{ keys: ['Mod+o'], description: 'Open another file', group: 'File', inFields: true, when: () => !busy, run: openFile }]
@@ -186,7 +190,15 @@
 		{#each SECTIONS as s (s.id)}
 			<button class="tab" aria-current={section === s.id ? 'page' : undefined} title={displayKeys(s.keys)} onclick={() => (section = s.id)}>{s.label}</button>
 		{/each}
-		<button class="tab help" aria-label="Keyboard shortcuts" title="?" onclick={() => (shortcuts.helpOpen = true)}>?</button>
+		<button class="tab icon first-icon" aria-label="Keyboard shortcuts" title="?" onclick={() => (shortcuts.helpOpen = true)}>?</button>
+		<button class="tab icon" aria-label="Settings" title={displayKeys('Mod+,')} onclick={() => (settingsOpen = true)}>
+			<svg viewBox="0 0 24 24" aria-hidden="true"
+				><path
+					fill="currentColor"
+					d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.67 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.12.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.05.24.25.42.49.42h3.84c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.48 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7"
+				/></svg
+			>
+		</button>
 	</nav>
 </header>
 
@@ -219,6 +231,10 @@
 
 {#if shortcuts.helpOpen}
 	<ShortcutHelp onclose={() => (shortcuts.helpOpen = false)} />
+{/if}
+
+{#if settingsOpen}
+	<SettingsDialog onclose={() => (settingsOpen = false)} />
 {/if}
 
 {#if shownCandidate}
@@ -291,8 +307,17 @@
 		background: var(--accent-soft);
 		font-weight: 600;
 	}
-	.tab.help {
+	.tab.first-icon {
 		margin-left: auto;
+	}
+	.tab.icon {
+		min-width: 2.25rem;
+		display: grid;
+		place-items: center;
+	}
+	.tab svg {
+		width: 1.15rem;
+		height: 1.15rem;
 	}
 	.link {
 		border: none;

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+	addDays,
+	addMonths,
 	civilDate,
+	DATE_STYLES,
+	formatDateAs,
+	MAX_YEAR,
+	parseDateInput,
+	type CivilDate,
 	compareIds,
 	formatFileDate,
 	formatFileDateTime,
@@ -71,5 +78,47 @@ describe('ids', () => {
 			taken.add(id);
 		}
 		expect(taken.size).toBe(1000);
+	});
+});
+
+describe('date arithmetic', () => {
+	const d = (text: string) => text as CivilDate;
+	it('adds days across months and years', () => {
+		expect(addDays(d('2026-12-31'), 1)).toBe('2027-01-01');
+		expect(addDays(d('2024-03-01'), -1)).toBe('2024-02-29');
+	});
+	it('adds months, clamped to the end of the month', () => {
+		expect(addMonths(d('2026-01-31'), 1)).toBe('2026-02-28');
+		expect(addMonths(d('2024-01-31'), 1)).toBe('2024-02-29');
+		expect(addMonths(d('2026-01-15'), -1)).toBe('2025-12-15');
+	});
+	it('refuses to leave the supported years', () => {
+		expect(() => addDays(d(`${MAX_YEAR}-12-31`), 1)).toThrow(RangeError);
+	});
+});
+
+describe('typed dates', () => {
+	const ref = '2026-11-20' as CivilDate;
+	it('formats in every style', () => {
+		const date = '2026-03-05' as CivilDate;
+		expect(DATE_STYLES.map((s) => formatDateAs(date, s))).toEqual(['05.03.2026', '05/03/2026', '03/05/2026', '2026-03-05']);
+	});
+	it('round-trips every style', () => {
+		for (const style of DATE_STYLES) expect(parseDateInput(formatDateAs('2001-02-03' as CivilDate, style), style, ref)).toBe('2001-02-03');
+	});
+	it('fills in left-out parts from the reference date', () => {
+		expect(parseDateInput('5', 'DD.MM.YYYY', ref)).toBe('2026-11-05');
+		expect(parseDateInput('5.3.', 'DD.MM.YYYY', ref)).toBe('2026-03-05');
+		expect(parseDateInput('5.3.25', 'DD.MM.YYYY', ref)).toBe('2025-03-05');
+		expect(parseDateInput('3/5', 'MM/DD/YYYY', ref)).toBe('2026-03-05');
+		expect(parseDateInput('5', 'MM/DD/YYYY', ref)).toBe('2026-11-05');
+		expect(parseDateInput('3-5', 'YYYY-MM-DD', ref)).toBe('2026-03-05');
+	});
+	it('always accepts a full ISO date', () => {
+		expect(parseDateInput('2025-03-05', 'MM/DD/YYYY', ref)).toBe('2025-03-05');
+	});
+	it('rejects invalid input', () => {
+		for (const text of ['', 'today', '31.2.2026', '1.13.2026', '1.1.300', '1.1.1600', '1.1.2026.1', '5,3'])
+			expect(parseDateInput(text, 'DD.MM.YYYY', ref), text).toBeNull();
 	});
 });
