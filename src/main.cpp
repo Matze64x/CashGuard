@@ -8,7 +8,7 @@
 
 int main(int argc, char** argv)
 {
-	char* sdl_pref_file_path = SDL_GetPrefPath("itzMatze", "CashGuard");
+	char* sdl_pref_file_path = SDL_GetPrefPath("Matze64x", "CashGuard");
 	if (!sdl_pref_file_path) return 10;
 	std::filesystem::path pref_file_path = std::filesystem::path(std::string(sdl_pref_file_path));
 	SDL_free(sdl_pref_file_path);
