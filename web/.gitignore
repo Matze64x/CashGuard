@@ -25,3 +25,4 @@ dist-ssr
 tests/generated/
 tests/e2e-results/
 playwright-report/
+dist-pages
