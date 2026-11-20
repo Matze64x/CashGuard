@@ -17,7 +17,6 @@
 		monthOf,
 		monthsBetween,
 		ofSide,
-		today,
 		totalsByCategory,
 		type Cents,
 		type CivilDate,
@@ -27,6 +26,7 @@
 	} from '../../core';
 	import { categoryColor, categoryLabel, describePeriod, formatDate, formatEuro, formatMonth, plural } from '../display';
 	import Segmented from '../ui/Segmented.svelte';
+	import { clock } from '../clock.svelte';
 	import { filter } from '../filter.svelte';
 	import type { Workspace } from '../workspace.svelte';
 	import Chart from './Chart.svelte';
@@ -52,7 +52,7 @@
 	const TOP_CATEGORIES = 8;
 
 	const all = $derived(workspace.data.transactions);
-	const range = $derived(chartPeriod(all, today()));
+	const range = $derived(chartPeriod(all, clock.today));
 	const months = $derived(range.period ? monthsBetween(range.period.from, range.period.to) : []);
 
 	const totals = $derived(monthlyTotals(matching, all, months));

@@ -1,0 +1,325 @@
+<!--
+	How each category's expenses (or income) developed, for what the filter selects apart from its
+	period: a line per category through its whole months (the last 24) or years (up to 10; for
+	irregular categories like vacations, whose single months say little), scaled to its own amounts so
+	ups and downs show, with its average dashed. Next to it the average and the latest whole month or
+	year compared with it. A row filters by its category, like the breakdown.
+-->
+<script lang="ts">
+	import { addMonths, categoryTotalsOverTime, chartPeriod, monthOf, monthsBetween, ofSide, type Cents, type CivilDate, type Id, type Side, type Transaction } from '../core';
+	import { clock } from './clock.svelte';
+	import { formatEuro, formatMonth } from './display';
+	import { rowTarget, ShortList } from './rows.svelte';
+	import Segmented from './ui/Segmented.svelte';
+	import type { Workspace } from './workspace.svelte';
+
+	let {
+		workspace,
+		matching,
+		side,
+	}: {
+		workspace: Workspace;
+		/** What the filter selects apart from its period */
+		matching: readonly Transaction[];
+		side: Side;
+	} = $props();
+
+	let unit = $state<'month' | 'year'>('month');
+	const UNITS = [
+		{ value: 'month', label: 'Months' },
+		{ value: 'year', label: 'Years' },
+	] as const;
+
+	const now = $derived(clock.today);
+	const thisYear = $derived(Number(now.slice(0, 4)));
+	// where the data starts, leaving out probably mistyped dates like the timeline does
+	const range = $derived(chartPeriod(workspace.data.transactions, now));
+	const firstMonth = $derived(range.period?.from ?? now);
+	/** The first date with data: the month (or year) it falls in is only whole if the data starts on its first day */
+	const oldest = $derived(range.oldest ?? now);
+
+	/** The months or years shown, the current one last; which are partial (not whole), and their names */
+	const buckets = $derived.by(() => {
+		if (unit === 'month') {
+			const start = addMonths(monthOf(now).from, -23);
+			const months = monthsBetween(start > firstMonth ? start : firstMonth, now);
+			return {
+				keys: months.map((m) => m.slice(0, 7)),
+				labels: months.map((m) => formatMonth(m, { year: 'numeric' })),
+				partial: months.map((m, i) => i === months.length - 1 || m < oldest),
+				of: (date: CivilDate) => date.slice(0, 7),
+			};
+		}
+		const firstYear = Math.max(thisYear - 9, Number(firstMonth.slice(0, 4)));
+		const years = Array.from({ length: thisYear - firstYear + 1 }, (_, i) => String(firstYear + i));
+		return { keys: years, labels: years, partial: years.map((y, i) => i === years.length - 1 || `${y}-01-01` < oldest), of: (date: CivilDate) => date.slice(0, 4) };
+	});
+
+	interface Trend {
+		key: Id;
+		/** Amounts without sign, per bucket */
+		values: number[];
+		/** The whole buckets from the category's first use on: what the line and the average use */
+		whole: { value: number; i: number }[];
+		/** Whether the category is first used in the current bucket */
+		isNew: boolean;
+	}
+	const trends = $derived.by((): Trend[] => {
+		const last = buckets.keys.length - 1;
+		return (
+			[...categoryTotalsOverTime(ofSide(matching, side), buckets.keys, buckets.of)]
+				.map(([key, totals]) => {
+					const values = totals.map(Math.abs);
+					const first = values.findIndex((v) => v > 0);
+					const whole = values.map((value, i) => ({ value, i })).filter(({ i }) => i >= first && !buckets.partial[i]);
+					return { key, values, whole, isNew: first === last, sum: values.reduce((a, b) => a + b, 0) };
+				})
+				// only categories used in the buckets shown, the largest (in them) first
+				.filter((t) => t.sum > 0)
+				.sort((a, b) => b.sum - a.sum || (a.key < b.key ? -1 : 1))
+		);
+	});
+	const list = new ShortList(() => [side, unit]);
+	const categories = $derived(new Map(workspace.data.categories.map((c) => [c.id, c])));
+
+	/** The average of the whole buckets, and the latest whole one compared with it; null without data in any */
+	function summary(trend: Trend) {
+		const average = trend.whole.reduce((sum, b) => sum + b.value, 0) / Math.max(1, trend.whole.length);
+		const last = trend.whole.at(-1);
+		if (!last || average === 0) return null;
+		return { average, last: last.value, lastLabel: buckets.labels[last.i]!, ratio: last.value / average - 1 };
+	}
+
+	/**
+	 * The line and its dots, and the average's height. Coordinates: x 10 per bucket, y 0–100 from the
+	 * top, spanning the line's own lowest to highest value, but at least 40 % of the highest, so
+	 * small changes look small.
+	 */
+	function sparkline(trend: Trend, average: number | null) {
+		const { whole } = trend;
+		const lowest = Math.min(...whole.map((p) => p.value));
+		const highest = Math.max(...whole.map((p) => p.value));
+		const span = Math.max(highest - lowest, highest * 0.4);
+		const low = (highest + lowest - span) / 2;
+		const y = (v: number) => (span === 0 ? 50 : 92 - ((v - low) / span) * 84);
+		const x = (i: number) => i * 10 + 5;
+		return {
+			line: whole.map((p) => `${x(p.i)},${y(p.value)}`).join(' '),
+			points: whole.map((p) => ({ x: x(p.i), y: y(p.value) })),
+			average: average === null || whole.length === 0 ? null : { from: x(whole[0]!.i), y: y(average) },
+		};
+	}
+
+	const percent = new Intl.NumberFormat('de-DE', { style: 'percent', maximumFractionDigits: 0, signDisplay: 'exceptZero' });
+	const euros = (value: number) => formatEuro(Math.round(value) as Cents);
+	/** Less spending (or more income) than usual is good */
+	const good = (ratio: number) => (side === 'expense' ? ratio < 0 : ratio > 0);
+	/** The current month/year so far (not part of the line) */
+	/** Why there's no average: the category is new, or only used in partial months/years so far */
+	const missing = (trend: Trend) => (trend.isNew ? `new this ${unit}` : `no whole ${unit} with it yet`);
+	const soFar = (trend: Trend) => {
+		const value = trend.values.at(-1) ?? 0;
+		return value > 0 ? `${buckets.labels.at(-1)} so far: ${euros(value)}` : '';
+	};
+</script>
+
+<div class="header">
+	<h2>{side === 'expense' ? 'Expenses' : 'Income'} over time, by category</h2>
+	<Segmented bind:value={unit} options={UNITS} label="Months or years" />
+</div>
+<p class="hint">
+	Whole {unit}s only; each line is scaled to its own amounts, dashed: the average.{unit === 'year'
+		? ' Years suit irregular categories like vacations.'
+		: ''} Click a category to show only it.
+</p>
+
+{#if trends.length === 0}
+	<p class="hint">Nothing here for the current filter.</p>
+{:else}
+	<ul class="trends">
+		{#each list.take(trends) as trend (trend.key)}
+			{@const target = rowTarget(trend.key, false, categories)}
+			{@const s = summary(trend)}
+			{@const line = sparkline(trend, s?.average ?? null)}
+			{@const current = soFar(trend)}
+			<li>
+				<button
+					class="trend"
+					onclick={target.choose}
+					title={target.title}
+					aria-label={`${target.label}: ${
+						s ? `on average ${euros(s.average)} per ${unit}; ${s.lastLabel}: ${euros(s.last)}, ${percent.format(s.ratio)}` : missing(trend)
+					}${current ? `; ${current}` : ''}`}
+				>
+					<span class="name"><span class="dot" style:background={target.color}></span><span class="label">{target.label}</span></span>
+					<svg class="spark" viewBox={`0 0 ${trend.values.length * 10} 100`} preserveAspectRatio="none" aria-hidden="true">
+						{#if line.average}
+							<line class="average-line" x1={line.average.from} x2={trend.values.length * 10} y1={line.average.y} y2={line.average.y} vector-effect="non-scaling-stroke" />
+						{/if}
+						<polyline points={line.line} stroke={target.color} vector-effect="non-scaling-stroke" />
+						<!-- a dot per month/year: a line without length, whose round ends stay round however the
+							 chart is stretched -->
+						{#each line.points as point}
+							<line class="point" x1={point.x} x2={point.x} y1={point.y} y2={point.y} stroke={target.color} vector-effect="non-scaling-stroke" />
+						{/each}
+						<!-- each month/year's amount on hover (on phones, the current one shows as text) -->
+						{#each trend.values as value, i}
+							<rect x={i * 10} y="0" width="10" height="100" fill="transparent"><title>{buckets.labels[i]}: {euros(value)}</title></rect>
+						{/each}
+					</svg>
+					{#if s}
+						<span class="average"><span class="muted">Ø per {unit}</span> {euros(s.average)}</span>
+						<span class="last">
+							<span class="muted">{s.lastLabel}</span>
+							{euros(s.last)}
+							<span class="percent" class:good={Math.abs(s.ratio) >= 0.005 && good(s.ratio)} class:bad={Math.abs(s.ratio) >= 0.005 && !good(s.ratio)}>
+								{percent.format(s.ratio)}
+							</span>
+						</span>
+					{:else}
+						<span class="average muted">{missing(trend)}</span>
+						<span class="last"></span>
+					{/if}
+					{#if current}<span class="so-far muted">{current}</span>{/if}
+				</button>
+			</li>
+		{/each}
+	</ul>
+	{#if trends.length > ShortList.LIMIT}
+		<button class="more" onclick={() => (list.showAll = !list.showAll)}>{list.showAll ? 'Show fewer' : `Show all ${trends.length}`}</button>
+	{/if}
+{/if}
+
+<style>
+	.header {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
+	}
+	h2 {
+		margin: 0;
+		font-size: 1.1rem;
+	}
+	.hint {
+		margin: 0.4rem 0 0.75rem;
+		color: var(--muted);
+		font-size: 0.85rem;
+	}
+	.trends {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.15rem;
+	}
+	.trend {
+		width: 100%;
+		display: grid;
+		grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) 9.5rem 12rem;
+		gap: 0.25rem 1rem;
+		align-items: center;
+		padding: 0.35rem 0.5rem;
+		border: none;
+		border-radius: 0.5rem;
+		background: none;
+		text-align: left;
+		min-height: 0;
+		font-variant-numeric: tabular-nums;
+	}
+	.trend:hover {
+		background: var(--accent-soft);
+	}
+	.name {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		min-width: 0;
+	}
+	.label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.dot {
+		width: 0.65rem;
+		height: 0.65rem;
+		border-radius: 50%;
+		flex: none;
+	}
+	.spark {
+		width: 100%;
+		height: 2.2rem;
+		display: block;
+		overflow: visible;
+	}
+	.spark polyline,
+	.spark line {
+		fill: none;
+		stroke-width: 2.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.spark .point {
+		stroke-width: 6;
+	}
+	.spark .average-line {
+		stroke: var(--muted);
+		stroke-width: 1;
+		stroke-dasharray: 2 4;
+		opacity: 0.6;
+	}
+	.average,
+	.last {
+		text-align: right;
+		white-space: nowrap;
+	}
+	.muted {
+		color: var(--muted);
+		font-size: 0.85rem;
+	}
+	.percent {
+		display: inline-block;
+		min-width: 3rem;
+		font-size: 0.85rem;
+	}
+	.good {
+		color: var(--positive);
+	}
+	.bad {
+		color: var(--negative);
+	}
+	.more {
+		margin-top: 0.5rem;
+	}
+	/* the current month/year so far: on hover on computers, as text on phones (no hover there) */
+	.so-far {
+		display: none;
+	}
+	/* phones: name and numbers above the chart */
+	@media (max-width: 40rem) {
+		.trend {
+			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-areas: 'name last' 'spark spark' 'average average' 'so-far so-far';
+		}
+		.name {
+			grid-area: name;
+		}
+		.spark {
+			grid-area: spark;
+		}
+		.average {
+			grid-area: average;
+			text-align: left;
+		}
+		.last {
+			grid-area: last;
+		}
+		.so-far {
+			display: block;
+			grid-area: so-far;
+		}
+	}
+</style>

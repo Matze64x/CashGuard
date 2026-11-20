@@ -10,15 +10,15 @@
 		monthsBetween,
 		ofSide,
 		sumCents,
-		today,
 		type Cents,
 		type CivilDate,
 		type Filter,
 		type Side,
 	} from '../core';
 	import Breakdown from './Breakdown.svelte';
+	import { clock } from './clock.svelte';
 	import Timeline from './charts/Timeline.svelte';
-	import YearOverYear from './charts/YearOverYear.svelte';
+	import CategoryTrends from './CategoryTrends.svelte';
 	import Comparison from './Comparison.svelte';
 	import { describePeriod, formatEuro, plural } from './display';
 	import { filter } from './filter.svelte';
@@ -54,7 +54,7 @@
 		const all = workspace.data.transactions; // newest first
 		const { from, to } = filter.current;
 		const start = later(from ?? result.transactions.at(-1)?.date, all.at(-1)?.date);
-		const end = earlier(to ?? result.transactions[0]?.date, later(all[0]?.date, today()));
+		const end = earlier(to ?? result.transactions[0]?.date, later(all[0]?.date, clock.today));
 		return start && end && start <= end ? monthsBetween(start, end).length : 0;
 	});
 	// (dates compare as text; a missing one doesn't count)
@@ -106,8 +106,8 @@
 		</section>
 	</div>
 
-	<section class="panel" aria-label="Year over year">
-		<YearOverYear {workspace} matching={withoutPeriod} {side} />
+	<section class="panel" aria-label="Trends">
+		<CategoryTrends {workspace} matching={withoutPeriod} {side} />
 	</section>
 
 	<section class="panel" aria-label="Comparison">

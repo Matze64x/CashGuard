@@ -123,7 +123,10 @@ const OUTLIER_GAP_MONTHS = 5 * 12;
  * gap of more than 5 years without transactions, and anything more than 2 years in the future.
  * `period` is null without (other) transactions.
  */
-export function chartPeriod(transactions: readonly Transaction[], today: CivilDate): { period: Period | null; outside: Transaction[] } {
+export function chartPeriod(
+	transactions: readonly Transaction[],
+	today: CivilDate,
+): { period: Period | null; outside: Transaction[]; /** The oldest date that counts (the period starts at its month) */ oldest: CivilDate | null } {
 	const latest = monthNumber(today) + 24;
 	// oldest first, without the far future
 	const dated = [...transactions].reverse();
@@ -136,8 +139,8 @@ export function chartPeriod(transactions: readonly Transaction[], today: CivilDa
 	const outside = [...kept.slice(0, first), ...future];
 	const oldest = kept[first]?.date;
 	const newest = kept.at(-1)?.date;
-	if (!oldest || !newest) return { period: null, outside };
-	return { period: { from: monthOf(oldest).from, to: monthOf(newest > today ? newest : today).to }, outside };
+	if (!oldest || !newest) return { period: null, outside, oldest: null };
+	return { period: { from: monthOf(oldest).from, to: monthOf(newest > today ? newest : today).to }, outside, oldest };
 }
 
 export interface MonthTotals {
@@ -291,12 +294,19 @@ export function compareTotals<K extends string>(current: readonly Share<K>[], pr
 	return [...rows].map(([key, r]) => ({ key, ...r })).sort((a, b) => largestFirst(size(a), size(b), a.key, b.key));
 }
 
-/** Per calendar year, the totals of its 12 months (index 0 = January) */
-export function monthlyByYear(transactions: readonly Transaction[], years: readonly number[]): Map<number, Cents[]> {
-	const sums = new Map(years.map((year) => [year, Array.from({ length: 12 }, () => 0)]));
+/**
+ * Per category, the totals per bucket (e.g. "2026-03" for months or "2026" for years): `bucketOf`
+ * gives a date's bucket, `buckets` the ones to sum up (others are left out).
+ */
+export function categoryTotalsOverTime(transactions: readonly Transaction[], buckets: readonly string[], bucketOf: (date: CivilDate) => string): Map<Id, Cents[]> {
+	const index = new Map(buckets.map((b, i) => [b, i]));
+	const sums = new Map<Id, number[]>();
 	for (const t of transactions) {
-		const months = sums.get(Number(t.date.slice(0, 4)));
-		if (months) months[Number(t.date.slice(5, 7)) - 1]! += t.amount;
+		const i = index.get(bucketOf(t.date));
+		if (i === undefined) continue;
+		let values = sums.get(t.categoryId);
+		if (!values) sums.set(t.categoryId, (values = buckets.map(() => 0)));
+		values[i]! += t.amount;
 	}
-	return new Map([...sums].map(([year, values]) => [year, values.map(cents)]));
+	return new Map([...sums].map(([id, values]) => [id, values.map(cents)]));
 }

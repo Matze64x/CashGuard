@@ -12,7 +12,6 @@
 		lastTwelveMonths,
 		ofSide,
 		sumCents,
-		today,
 		totalsByCategory,
 		totalsByDescription,
 		type Cents,
@@ -20,6 +19,7 @@
 		type Side,
 		type Transaction,
 	} from '../core';
+	import { clock } from './clock.svelte';
 	import { describePeriod, formatEuro, formatEuroChange } from './display';
 	import { filter } from './filter.svelte';
 	import { rowTarget, ShortList } from './rows.svelte';
@@ -29,8 +29,8 @@
 
 	const comparison = $derived.by(() => {
 		const { from, to } = filter.current;
-		if (from && to) return comparePeriod({ from, to }, today());
-		return from || to ? null : comparePeriod(lastTwelveMonths(today()), today());
+		if (from && to) return comparePeriod({ from, to }, clock.today);
+		return from || to ? null : comparePeriod(lastTwelveMonths(clock.today), clock.today);
 	});
 
 	/** What the filter selects in a period, of the side */

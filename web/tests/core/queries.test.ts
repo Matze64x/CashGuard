@@ -8,7 +8,7 @@ import {
 	lastTwelveMonths,
 	isFiltered,
 	monthlyByCategory,
-	monthlyByYear,
+	categoryTotalsOverTime,
 	monthlyTotals,
 	monthOf,
 	monthsBetween,
@@ -117,9 +117,9 @@ describe('months', () => {
 	});
 
 	it('spans the data up to today', () => {
-		expect(chartPeriod(data.transactions, d('2026-04-02'))).toEqual({ period: { from: '2026-01-01', to: '2026-04-30' }, outside: [] });
+		expect(chartPeriod(data.transactions, d('2026-04-02'))).toEqual({ period: { from: '2026-01-01', to: '2026-04-30' }, outside: [], oldest: '2026-01-05' });
 		expect(chartPeriod(data.transactions, d('2025-01-01')).period).toEqual({ from: '2026-01-01', to: '2026-02-28' });
-		expect(chartPeriod([], d('2026-01-01'))).toEqual({ period: null, outside: [] });
+		expect(chartPeriod([], d('2026-01-01'))).toEqual({ period: null, outside: [], oldest: null });
 	});
 
 	it('leaves out dates that are probably typos', () => {
@@ -226,9 +226,15 @@ describe('comparisons', () => {
 		]);
 	});
 
-	it('sums the months of each year', () => {
-		const byYear = monthlyByYear(data.transactions, [2025, 2026]);
-		expect(byYear.get(2025)).toEqual(Array(12).fill(0));
-		expect(byYear.get(2026)!.slice(0, 3)).toEqual([-82000, 300000 - 3775, 0]);
-	});
+	it('sums per category and bucket', () => {
+		const byMonth = categoryTotalsOverTime(data.transactions, ['2026-01', '2026-02'], (date) => date.slice(0, 7));
+		expect(byMonth.get(FOOD)).toEqual([-2000, 0]);
+		expect(byMonth.get(RENT)).toEqual([-80000, 0]);
+		expect(byMonth.get(NO_CATEGORY)).toEqual([0, 300000 - 3775]);
+		const byYear = categoryTotalsOverTime(data.transactions, ['2025', '2026'], (date) => date.slice(0, 4));
+		expect(byYear.get(RENT)).toEqual([0, -80000]);
+		// transactions outside the buckets don't count; categories without any are left out
+		const february = categoryTotalsOverTime(data.transactions, ['2026-02'], (date) => date.slice(0, 7));
+		expect([...february.keys()]).toEqual([NO_CATEGORY]);	});
+
 });
