@@ -26,7 +26,7 @@
 	function openNew() {
 		// a color that isn't used yet, if there is one
 		const used = new Set(workspace.data.categories.map((c) => c.color));
-		const color = (CATEGORY_COLORS.find((c) => !used.has(c.color)) ?? CATEGORY_COLORS[0]!).color;
+		const color = CATEGORY_COLORS.find((c) => !used.has(c)) ?? CATEGORY_COLORS[0]!;
 		editing = { id: null, name: '', color };
 	}
 

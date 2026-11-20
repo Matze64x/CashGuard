@@ -19,6 +19,23 @@ test.beforeEach(async ({ page }) => {
 	await expect(page.getByText('No transactions yet')).toBeVisible();
 });
 
+test('a custom category color as hex', async ({ page }) => {
+	await page.keyboard.press('g');
+	await page.keyboard.press('c');
+	await page.keyboard.press('n');
+	await page.keyboard.type('Custom');
+	const hex = page.getByLabel('Color', { exact: true });
+	await hex.focus();
+	await hex.fill('#3a7');
+	await page.keyboard.press('Enter');
+	const row = page.getByRole('option', { name: /Custom/ });
+	await expect(row.locator('.dot')).toHaveCSS('background-color', 'rgb(51, 170, 119)');
+	// editing it again shows the color
+	await page.keyboard.press('Enter');
+	await expect(page.getByLabel('Color', { exact: true })).toHaveValue('#33AA77FF');
+	await expect(page.getByLabel('Choose a color')).toHaveValue('#33aa77');
+});
+
 test('the date format setting applies to the list and the editor', async ({ page }) => {
 	await importFixture(page);
 	await page.keyboard.press(`${MOD}+,`);

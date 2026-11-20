@@ -138,9 +138,7 @@ test('categories and accounts, and the shortcut help', async ({ page }) => {
 	await page.keyboard.press('c');
 	await expect(page.getByRole('heading', { name: 'Categories' })).toBeVisible();
 	await page.keyboard.press('n');
-	await page.keyboard.type('Coffee shops');
-	await page.keyboard.press('Tab'); // into the colors
-	await page.keyboard.press('ArrowRight');
+	await page.keyboard.type('Coffee shops'); // gets an unused default color
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('option', { name: /Coffee shops/ })).toContainText('unused');
 
