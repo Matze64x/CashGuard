@@ -169,8 +169,8 @@ test('categories and accounts, and the shortcut help', async ({ page }) => {
 test('cancelling keeps the scroll position, and switching sections moves the focus there', async ({ page }) => {
 	await page.setViewportSize({ width: 1000, height: 600 });
 	await importFixture(page);
-	await page.mouse.move(500, 400);
-	await page.mouse.wheel(0, 300);
+	// (scrolled directly: mobile WebKit has no mouse wheel)
+	await page.evaluate(() => scrollTo(0, 300));
 	await expect.poll(() => page.evaluate(() => scrollY)).toBe(300);
 	await page.keyboard.press('n');
 	await page.keyboard.press('Escape');

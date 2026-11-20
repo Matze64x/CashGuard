@@ -13,11 +13,6 @@ async function importFixture(page: Page) {
 	await expect(page.getByText('46 transactions')).toBeVisible();
 }
 
-const monthName = (offset: number) => {
-	const now = new Date();
-	return new Date(now.getFullYear(), now.getMonth() + offset, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-};
-
 // errors in the page (e.g. thrown by ECharts in a timer) fail the test
 let pageErrors: Error[] = [];
 test.afterEach(() => expect(pageErrors.map((e) => e.message)).toEqual([]));
@@ -35,24 +30,43 @@ test.beforeEach(async ({ page }) => {
 
 const chart = (page: Page) => page.getByRole('region', { name: 'Timeline' }).locator('svg').first();
 
-/** Clicks the month column at this fraction of the plot's width (1 = the last month) */
-async function clickMonth(page: Page, at: number, shift = false) {
+/**
+ * The labelled months on the chart's x axis ("Oct 26"; narrow charts label only some months), with
+ * the month's full name and the horizontal center of its column
+ */
+async function monthLabels(page: Page): Promise<{ name: string; x: number }[]> {
 	const box = (await chart(page).boundingBox())!;
-	// the plot leaves room for the axis labels on both sides
-	const left = box.x + 60;
-	const right = box.x + box.width - 75;
+	const labels = chart(page).locator('text').filter({ hasText: /^[A-Z][a-z]{2} \d{2}$/ });
+	const found: { name: string; x: number }[] = [];
+	for (const label of await labels.all()) {
+		const at = await label.boundingBox();
+		// the axis, not the zoom slider below it
+		if (!at || at.y > box.y + box.height - 45) continue;
+		const [month, year] = (await label.textContent())!.split(' ');
+		const name = new Date(`${month} 1, 20${year}`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+		found.push({ name, x: at.x + at.width / 2 });
+	}
+	return found;
+}
+
+/** Clicks into a month's column, above its label */
+async function clickMonth(page: Page, x: number, shift = false) {
+	const box = (await chart(page).boundingBox())!;
 	if (shift) await page.keyboard.down('Shift');
-	await page.mouse.click(left + (right - left) * at, box.y + box.height / 3);
+	await page.mouse.click(x, box.y + box.height / 3);
 	if (shift) await page.keyboard.up('Shift');
 }
 
 test('click a month to choose it, Shift+click to extend; the list follows', async ({ page }) => {
 	await expect(chart(page)).toBeVisible();
+	const labels = await monthLabels(page);
+	expect(labels.length).toBeGreaterThan(1);
+	const last = labels.at(-1)!;
 	const chips = page.getByRole('list', { name: 'Active filters' });
-	await clickMonth(page, 1);
-	await expect(chips).toContainText(monthName(0));
-	await expect(page.getByRole('heading', { name: monthName(0) })).toBeVisible();
-	await clickMonth(page, 0.5, true);
+	await clickMonth(page, last.x);
+	await expect(chips).toContainText(last.name);
+	await expect(page.getByRole('heading', { name: last.name })).toBeVisible();
+	await clickMonth(page, labels[0]!.x, true);
 	await expect(chips).toContainText(/ – /);
 
 	const show = page.getByRole('button', { name: /^Show \d+ transactions?$/ });
