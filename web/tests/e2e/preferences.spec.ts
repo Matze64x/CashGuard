@@ -1,4 +1,4 @@
-/** Settings and other preferences, operated with the keyboard. */
+/** Balances, custom colors and the date format, operated with the keyboard. */
 import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
@@ -17,6 +17,31 @@ test.beforeEach(async ({ page }) => {
 	await page.goto('/');
 	MOD = await page.evaluate(() => (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? 'Meta' : 'Control'));
 	await expect(page.getByText('No transactions yet')).toBeVisible();
+});
+
+test('a new transaction can update an account balance, remembered for the next one', async ({ page }) => {
+	await importFixture(page);
+	await page.keyboard.press('n');
+	await page.keyboard.type('Bakery');
+	const dialog = page.getByRole('dialog', { name: 'New transaction' });
+	await dialog.getByLabel('Amount', { exact: true }).fill('3,20');
+	await dialog.getByLabel('Account').selectOption({ label: 'Wallet (cash)' });
+	await expect(dialog).toContainText('105,71 € → 102,51 €');
+	await page.keyboard.press(`${MOD}+Enter`);
+	await expect(page.getByRole('status')).toContainText('Wallet (cash) is now at 102,51 €');
+
+	// the account is preselected next time
+	await page.keyboard.press('n');
+	await expect(dialog.getByLabel('Account')).toHaveValue(/\d/);
+	await expect(dialog).toContainText('102,51 € →');
+	await page.keyboard.press('Escape');
+
+	// one undo takes back both
+	await page.keyboard.press(`${MOD}+z`);
+	await expect(page.getByText('46 transactions')).toBeVisible();
+	await page.keyboard.press('g');
+	await page.keyboard.press('a');
+	await expect(page.getByRole('option', { name: /Wallet/ })).toContainText('105,71 €');
 });
 
 test('a custom category color as hex', async ({ page }) => {

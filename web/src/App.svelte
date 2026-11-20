@@ -221,6 +221,7 @@
 				{workspace}
 				active={section === 'transactions'}
 				{notify}
+				onshowaccounts={() => (section = 'accounts')}
 				emptyHint={workspace.isDesktop ? 'Open your CashGuard file to get started.' : 'Import your CashGuard file to get started, or press n to add one.'}
 			/>
 		</div>

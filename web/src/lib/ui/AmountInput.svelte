@@ -1,6 +1,7 @@
 <!--
 	Amount entry: the number without sign, plus an expense/income toggle (expense by default).
 	Typing "+" or "-" anywhere in the field switches the sign. Accepts "12,50" and "12.50".
+	Focusing the field selects its content, so typing replaces a prefilled amount.
 -->
 <script lang="ts">
 	import { cents, formatAmount, parseAmount, type Cents } from '../../core';
@@ -10,7 +11,8 @@
 		id,
 		label = 'Amount',
 		required = true,
-	}: { value: Cents | null; id: string; label?: string; required?: boolean } = $props();
+		autofocus = false,
+	}: { value: Cents | null; id: string; label?: string; required?: boolean; autofocus?: boolean } = $props();
 
 	const toText = (v: Cents | null) => (v === null ? '' : formatAmount(v).slice(1).replace('.', ','));
 	let negative = $state(value === null ? true : value <= 0);
@@ -61,8 +63,11 @@
 		title="Expense or income (type + or - in the field)"
 		onclick={toggle}>{negative ? '−' : '+'}</button
 	>
+	<!-- svelte-ignore a11y_autofocus -->
 	<input
 		{id}
+		{autofocus}
+		onfocus={(e) => e.currentTarget.select()}
 		type="text"
 		inputmode="decimal"
 		autocomplete="off"

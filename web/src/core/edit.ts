@@ -10,7 +10,7 @@
 import type { CivilDate, UtcSeconds } from './dates';
 import { deepEqual } from './equal';
 import { newId, NO_CATEGORY, type Id } from './ids';
-import type { Cents } from './money';
+import { addCents, sumCents, type Cents } from './money';
 import { normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Transaction } from './model';
 
 /** What the user edits of a transaction; ids and timestamps are managed here. */
@@ -175,6 +175,17 @@ export function updateAccount(data: CashGuardData, index: number, changes: Parti
 	const updated: Account = { ...old, ...changes, edited: amountChanged ? now : old.edited };
 	if (deepEqual(updated, old)) return data;
 	return { ...data, accounts: data.accounts.map((a, i) => (i === index ? updated : a)) };
+}
+
+/** The amount a draft adds to the total (a group: the sum of its parts). */
+export function draftTotal(draft: TransactionDraft): Cents {
+	return draft.subTransactions ? sumCents(draft.subTransactions.map((s) => s.amount)) : draft.amount;
+}
+
+/** Changes an account's balance by `by`, e.g. by a payment just entered. */
+export function adjustAccount(data: CashGuardData, index: number, expected: Account, by: Cents, now: UtcSeconds): CashGuardData {
+	const account = accountAt(data, index, expected);
+	return updateAccount(data, index, { amount: addCents(account.amount, by) }, now);
 }
 
 export function deleteAccount(data: CashGuardData, index: number, expected?: Account): CashGuardData {

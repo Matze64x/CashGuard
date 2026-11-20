@@ -76,7 +76,7 @@
 			{ keys: ['n'], description: 'New account', group: 'Accounts', when: () => active, run: () => (editing = { original: null, name: '', amount: null }) },
 			// these act on the selection, so only while the list (not a button elsewhere) has the focus
 			...[
-				{ keys: ['Enter', 'e'], description: 'Update the selected account', run: () => openEdit(selected) },
+				{ keys: ['Enter', 'e'], description: 'Edit the selected account', run: () => openEdit(selected) },
 				{ keys: ['Delete', 'Backspace'], description: 'Delete the selected account (undo with Mod+Z)', run: () => void remove(selected) },
 			].map((s) => ({ ...s, group: 'Accounts', focusIn: () => listElement, visible: () => active, when: () => active && !!selected })),
 		]),
@@ -124,7 +124,7 @@
 </dl>
 
 {#if editing}
-	<Modal title={editing.original === null ? 'New account' : 'Update account'} onclose={close}>
+	<Modal title={editing.original === null ? 'New account' : 'Edit account'} onclose={close}>
 		<form
 			onsubmit={(e) => {
 				e.preventDefault();
@@ -135,7 +135,8 @@
 			<!-- svelte-ignore a11y_autofocus -->
 			<input id="account-name" type="text" autocomplete="off" bind:value={editing.name} autofocus={editing.original === null} required />
 			<label for="account-amount">Current balance</label>
-			<AmountInput id="account-amount" label="Current balance" bind:value={editing.amount} />
+			<!-- an existing account usually only needs its new balance -->
+			<AmountInput id="account-amount" label="Current balance" bind:value={editing.amount} autofocus={editing.original !== null} />
 			<div class="buttons">
 				<button type="button" onclick={close}>Cancel</button>
 				<button type="submit" class="primary">Save</button>

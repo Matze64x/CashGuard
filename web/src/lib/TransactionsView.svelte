@@ -5,14 +5,19 @@
 <script lang="ts">
 	import {
 		addTransaction,
+		adjustAccount,
 		cents,
 		deleteTransaction,
+		draftTotal,
 		NO_CATEGORY,
+		sumCents,
 		today,
 		toDraft,
 		totalAmount,
 		updateTransaction,
+		type Account,
 		type Category,
+		type Cents,
 		type Id,
 		type Transaction,
 		type TransactionDraft,
@@ -29,16 +34,22 @@
 		active,
 		notify,
 		emptyHint,
+		onshowaccounts,
 	}: {
 		workspace: Workspace;
 		/** Whether this view is the one shown (its shortcuts only apply then) */
 		active: boolean;
 		notify: (text: string, undo?: boolean) => void;
 		emptyHint: string;
+		/** Switches to the accounts */
+		onshowaccounts: () => void;
 	} = $props();
 
 	const data = $derived(workspace.data);
 	const categories = $derived(new Map<Id, Category>(data.categories.map((c) => [c.id, c])));
+
+	// do the accounts still match the transactions? (only worth showing once there are accounts)
+	const accountsDifference = $derived(data.accounts.length === 0 ? null : sumCents(data.accounts.map((a) => a.amount)) - totalAmount(data.transactions));
 
 	let query = $state('');
 	const visible = $derived.by(() => {
@@ -88,7 +99,7 @@
 		list.focus();
 	}
 
-	async function save(draft: TransactionDraft, another: boolean) {
+	async function save(draft: TransactionDraft, another: boolean, account: { index: number; account: Account } | null) {
 		const target = editing;
 		// a second Enter while saving must not add the transaction twice
 		if (!target || saving) return;
@@ -96,12 +107,18 @@
 		const saved = await attempt(notify, async () => {
 			if (target.id === null) {
 				let created: Id | null = null;
+				let balance: Cents | null = null;
+				// one change, so one undo takes back both the transaction and the balance
 				await workspace.edit(`Add “${draft.description || 'transaction'}”`, (d, now) => {
 					const result = addTransaction(d, draft, now);
 					created = result.id;
-					return result.data;
+					if (!account) return result.data;
+					const adjusted = adjustAccount(result.data, account.index, account.account, draftTotal(draft), now);
+					balance = adjusted.accounts[account.index]!.amount;
+					return adjusted;
 				});
 				selectedId = created;
+				if (account && balance !== null) notify(`${account.account.name} is now at ${formatEuro(balance)}.`, true);
 			} else {
 				const id = target.id;
 				await workspace.edit(`Edit “${draft.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, draft, now));
@@ -168,6 +185,11 @@
 	<span class="muted">
 		{query.trim() ? `${plural(visible.length, 'match', 'matches')} of ${data.transactions.length}` : plural(data.transactions.length, 'transaction')}
 	</span>
+	{#if accountsDifference !== null}
+		<button class="accounts" class:off={accountsDifference !== 0} title="Compare with the accounts (g a)" onclick={onshowaccounts}>
+			{accountsDifference === 0 ? '✓ Accounts match' : `Accounts differ by ${formatEuro(accountsDifference as Cents)}`}
+		</button>
+	{/if}
 </section>
 
 <SelectableList
@@ -220,6 +242,7 @@
 	}
 	.summary {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 1rem;
 		padding: 1rem 0.75rem 0.5rem;
@@ -231,6 +254,19 @@
 	}
 	.muted {
 		color: var(--muted);
+	}
+	.accounts {
+		margin-left: auto;
+		border: none;
+		background: none;
+		min-height: 0;
+		padding: 0.2rem 0.4rem;
+		color: var(--positive);
+		font-size: 0.9rem;
+	}
+	.accounts.off {
+		color: var(--negative);
+		font-weight: 600;
 	}
 	.row {
 		display: grid;

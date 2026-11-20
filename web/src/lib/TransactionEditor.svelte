@@ -1,16 +1,19 @@
 <!--
 	Create or edit a transaction, optionally split into parts (a group). Fully keyboard operable:
 	Tab through the fields, Enter or Mod+Enter saves, Mod+Shift+Enter saves and starts the next one,
-	Esc cancels.
+	Esc cancels. A new transaction can also update an account's balance by its amount (the account
+	choice is remembered per device).
 -->
 <script lang="ts">
 	import {
+		addCents,
 		cents,
 		lastUseOf,
 		MAX_YEAR,
 		MIN_YEAR,
 		NO_CATEGORY,
 		sumCents,
+		type Account,
 		type CashGuardData,
 		type Cents,
 		type CivilDate,
@@ -18,6 +21,7 @@
 		type TransactionDraft,
 	} from '../core';
 	import { formatEuro } from './display';
+	import { settings } from './settings.svelte';
 	import { shortcuts } from './shortcuts.svelte';
 	import AmountInput from './ui/AmountInput.svelte';
 	import DateInput from './ui/DateInput.svelte';
@@ -35,10 +39,13 @@
 		data: CashGuardData;
 		initial: TransactionDraft;
 		title: string;
-		/** A new transaction (an existing one is never prefilled from others) */
+		/** A new transaction: may be prefilled from others, and can update an account balance */
 		isNew: boolean;
-		/** `another`: the user wants to enter the next transaction right away */
-		onsave: (draft: TransactionDraft, another: boolean) => void;
+		/**
+		 * `another`: the user wants to enter the next transaction right away. `account`: the account
+		 * whose balance should change by the transaction's amount.
+		 */
+		onsave: (draft: TransactionDraft, another: boolean, account: { index: number; account: Account } | null) => void;
 		onclose: () => void;
 	} = $props();
 
@@ -68,6 +75,12 @@
 	const categories = $derived([...data.categories].sort((a, b) => a.name.localeCompare(b.name)));
 	const partsTotal = $derived(parts && parts.every((p) => p.amount !== null) ? sumCents(parts.map((p) => p.amount!)) : null);
 
+	// the remembered account, if it still exists (-1: don't update a balance)
+	// svelte-ignore state_referenced_locally
+	let accountIndex = $state(isNew && settings.balanceAccount !== null ? data.accounts.findIndex((a) => a.name === settings.balanceAccount) : -1);
+	const account = $derived(data.accounts[accountIndex]);
+	const draftAmount = $derived(parts ? partsTotal : amount);
+
 	/** Fill in category and amount of a new transaction from the last time this description was used. */
 	function prefill(picked: string) {
 		if (!isNew) return;
@@ -90,21 +103,30 @@
 
 	function save(another: boolean) {
 		error = null;
+		const result = draft();
+		if (!result) return;
+		if (isNew) settings.balanceAccount = account?.name ?? null;
+		onsave(result, another, account ? { index: accountIndex, account } : null);
+	}
+
+	/** The form's transaction, or null after showing what's missing */
+	function draft(): TransactionDraft | null {
+		const fail = (message: string) => ((error = message), null);
 		const day = date;
-		if (!day) return void (error = `Enter a valid date between ${MIN_YEAR} and ${MAX_YEAR}.`);
+		if (!day) return fail(`Enter a valid date between ${MIN_YEAR} and ${MAX_YEAR}.`);
 		if (!parts) {
-			if (amount === null) return void (error = 'Enter an amount.');
-			return onsave({ date: day, description: description.trim(), categoryId, amount }, another);
+			if (amount === null) return fail('Enter an amount.');
+			return { date: day, description: description.trim(), categoryId, amount };
 		}
-		if (parts.length === 0) return void (error = "Add a part, or choose “Don't split”.");
+		if (parts.length === 0) return fail("Add a part, or choose “Don't split”.");
 		const subTransactions = [];
 		for (const [i, part] of parts.entries()) {
 			const partDay = part.date;
-			if (!partDay) return void (error = `Part ${i + 1}: enter a valid date.`);
-			if (part.amount === null) return void (error = `Part ${i + 1}: enter an amount.`);
+			if (!partDay) return fail(`Part ${i + 1}: enter a valid date.`);
+			if (part.amount === null) return fail(`Part ${i + 1}: enter an amount.`);
 			subTransactions.push({ ...(part.id && { id: part.id }), date: partDay, description: part.description.trim(), categoryId: part.categoryId, amount: part.amount });
 		}
-		onsave({ date: day, description: description.trim(), categoryId, amount: cents(0), subTransactions }, another);
+		return { date: day, description: description.trim(), categoryId, amount: cents(0), subTransactions };
 	}
 
 	$effect(() =>
@@ -139,6 +161,21 @@
 			{#if !parts}
 				<label for="tx-amount">Amount</label>
 				<AmountInput id="tx-amount" bind:value={amount} />
+			{/if}
+
+			{#if isNew && data.accounts.length > 0}
+				<label for="tx-account">Account</label>
+				<div class="account">
+					<select id="tx-account" bind:value={accountIndex}>
+						<option value={-1}>Don't update a balance</option>
+						{#each data.accounts as a, i (i)}<option value={i}>{a.name || '(unnamed)'}</option>{/each}
+					</select>
+					{#if account}
+						<span class="balance" aria-live="polite">
+							{formatEuro(account.amount)} → {draftAmount === null ? '…' : formatEuro(addCents(account.amount, draftAmount))}
+						</span>
+					{/if}
+				</div>
 			{/if}
 		</div>
 
@@ -187,6 +224,15 @@
 	}
 	label {
 		color: var(--muted);
+	}
+	.account {
+		display: grid;
+		gap: 0.25rem;
+	}
+	.balance {
+		color: var(--muted);
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
 	}
 	.parts {
 		margin: 1rem 0 0;

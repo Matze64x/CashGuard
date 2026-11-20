@@ -3,11 +3,13 @@ import {
 	addAccount,
 	addCategory,
 	addTransaction,
+	adjustAccount,
 	categoryUsage,
 	cents,
 	deleteAccount,
 	deleteCategory,
 	deleteTransaction,
+	draftTotal,
 	EditError,
 	lastUseOf,
 	NO_CATEGORY,
@@ -142,6 +144,20 @@ describe('categories and accounts', () => {
 		const { data, id } = addCategory(empty, 'Food', '#00ff00ff');
 		expect(updateCategory(data, id, { name: 'Food', color: '#00FF00FF' })).toBe(data);
 		expect(deleteTransaction(data, '42' as Id)).toBe(data);
+	});
+
+	it('adjusts a balance by a payment, but only the account it means', () => {
+		const data = addAccount(empty, 'Bank', cents(100), at(1));
+		const bank = data.accounts[0]!;
+		expect(adjustAccount(data, 0, bank, cents(-30), at(4)).accounts[0]).toEqual({ name: 'Bank', amount: 70, edited: 4 });
+		expect(() => adjustAccount(data, 0, { ...bank, name: 'Wallet' }, cents(-30), at(4))).toThrow(EditError);
+		expect(() => adjustAccount(data, 1, bank, cents(-30), at(4))).toThrow(EditError);
+	});
+
+	it('totals a draft, also one split into parts', () => {
+		const base = { date: '2026-01-01' as CivilDate, description: '', categoryId: NO_CATEGORY };
+		expect(draftTotal({ ...base, amount: cents(-5) })).toBe(-5);
+		expect(draftTotal({ ...base, amount: cents(0), subTransactions: [{ ...base, amount: cents(-5) }, { ...base, amount: cents(2) }] })).toBe(-3);
 	});
 });
 

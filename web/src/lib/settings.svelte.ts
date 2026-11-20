@@ -9,15 +9,21 @@ const KEY = 'cashguard-settings-v1';
 
 interface Values {
 	dateStyle: DateStyle;
+	/**
+	 * The account whose balance a new transaction updates, by name (accounts have no ids yet), or
+	 * null. Per device: on the phone it's usually the card just paid with, on the computer none.
+	 */
+	balanceAccount: string | null;
 }
 
-const DEFAULTS: Values = { dateStyle: 'DD.MM.YYYY' };
+const DEFAULTS: Values = { dateStyle: 'DD.MM.YYYY', balanceAccount: null };
 
 function load(): Values {
 	try {
 		const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Values>;
 		return {
 			dateStyle: DATE_STYLES.includes(raw.dateStyle as DateStyle) ? raw.dateStyle! : DEFAULTS.dateStyle,
+			balanceAccount: typeof raw.balanceAccount === 'string' ? raw.balanceAccount : null,
 		};
 	} catch {
 		return { ...DEFAULTS };
@@ -36,6 +42,13 @@ class Settings {
 	}
 	set dateStyle(dateStyle: DateStyle) {
 		this.#set({ dateStyle });
+	}
+
+	get balanceAccount(): string | null {
+		return this.#values.balanceAccount;
+	}
+	set balanceAccount(balanceAccount: string | null) {
+		this.#set({ balanceAccount });
 	}
 
 	#set(changes: Partial<Values>) {
