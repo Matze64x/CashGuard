@@ -29,6 +29,11 @@ function isValidDate(year: number, month: number, day: number): boolean {
 	return day <= (month === 2 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[month - 1]!);
 }
 
+/** The number of days in a month (1–12) */
+export function daysInMonth(year: number, month: number): number {
+	return month === 2 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[month - 1]!;
+}
+
 function pad(value: number, width = 2): string {
 	return value.toString().padStart(width, '0');
 }

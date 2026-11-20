@@ -9,6 +9,8 @@ const base = process.env['CASHGUARD_BASE'] ?? '/';
 // https://vite.dev/config/
 export default defineConfig({
 	base,
+	// ECharts is a chunk of its own (~600 kB), loaded when the first chart is shown
+	build: { chunkSizeWarningLimit: 700 },
 	plugins: [
 		svelte(),
 		// installable web app that works offline; the service worker is registered in main.ts

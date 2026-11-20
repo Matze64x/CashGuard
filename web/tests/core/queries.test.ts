@@ -3,8 +3,11 @@ import {
 	addTransaction,
 	applyFilter,
 	cents,
+	chartPeriod,
 	isFiltered,
+	monthlyTotals,
 	monthOf,
+	monthsBetween,
 	NO_CATEGORY,
 	NO_FILTER,
 	periodPresets,
@@ -95,5 +98,45 @@ describe('periods', () => {
 		expect(presets['Last 3 months']).toEqual({ from: '2025-11-01', to: '2026-01-31' });
 		expect(presets['Last 12 months']).toEqual({ from: '2025-02-01', to: '2026-01-31' });
 		expect(presets['Last year']).toEqual({ from: '2025-01-01', to: '2025-12-31' });
+	});
+});
+
+describe('months', () => {
+	it('lists the months of a period', () => {
+		expect(monthsBetween(d('2025-11-15'), d('2026-02-01'))).toEqual(['2025-11-01', '2025-12-01', '2026-01-01', '2026-02-01']);
+		expect(monthsBetween(d('2026-03-31'), d('2026-03-31'))).toEqual(['2026-03-01']);
+	});
+
+	it('spans the data up to today', () => {
+		expect(chartPeriod(data.transactions, d('2026-04-02'))).toEqual({ period: { from: '2026-01-01', to: '2026-04-30' }, outside: [] });
+		expect(chartPeriod(data.transactions, d('2025-01-01')).period).toEqual({ from: '2026-01-01', to: '2026-02-28' });
+		expect(chartPeriod([], d('2026-01-01'))).toEqual({ period: null, outside: [] });
+	});
+
+	it('leaves out dates that are probably typos', () => {
+		const typos = build([tx('2026-01-05', 'ok', -1), tx('2026-02-05', 'ok', -1), tx('1926-02-05', 'old typo', -1), tx('2062-02-05', 'future typo', -1), tx('2261-12-31', 'last day', -1)]);
+		const { period, outside } = chartPeriod(typos.transactions, d('2026-03-01'));
+		expect(period).toEqual({ from: '2026-01-01', to: '2026-03-31' });
+		expect(outside.map((t) => t.description).sort()).toEqual(['future typo', 'last day', 'old typo']);
+		// next year's planned transactions are fine
+		expect(chartPeriod(build([tx('2027-06-01', 'planned', -1)]).transactions, d('2026-03-01')).period).toEqual({ from: '2027-06-01', to: '2027-06-30' });
+	});
+
+	it('handles the last supported month', () => {
+		expect(monthOf(d('2261-12-31'))).toEqual({ from: '2261-12-01', to: '2261-12-31' });
+		expect(monthsBetween(d('2261-11-02'), d('2261-12-31'))).toEqual(['2261-11-01', '2261-12-01']);
+	});
+
+	it('sums income and expenses per month, with the balance of everything', () => {
+		const months = monthsBetween(d('2025-12-01'), d('2026-03-01'));
+		const food = applyFilter(data.transactions, categories, filter({ text: 'supermarket' })).transactions;
+		expect(monthlyTotals(data.transactions, data.transactions, months)).toEqual([
+			{ month: '2025-12-01', income: 0, expenses: 0, balance: 0 },
+			{ month: '2026-01-01', income: 0, expenses: -82000, balance: -82000 },
+			{ month: '2026-02-01', income: 300000, expenses: -3775, balance: -82000 + 300000 - 3775 },
+			{ month: '2026-03-01', income: 0, expenses: 0, balance: -82000 + 300000 - 3775 },
+		]);
+		// only the matching transactions are summed; the balance stays the real one
+		expect(monthlyTotals(food, data.transactions, months)[1]).toEqual({ month: '2026-01-01', income: 0, expenses: -2000, balance: -82000 });
 	});
 });

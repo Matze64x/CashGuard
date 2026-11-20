@@ -3,6 +3,7 @@
 	import CategoriesView from './lib/CategoriesView.svelte';
 	import { plural } from './lib/display';
 	import { errorMessage } from './lib/errors';
+	import ExploreView from './lib/ExploreView.svelte';
 	import ImportDialog from './lib/ImportDialog.svelte';
 	import SettingsDialog from './lib/SettingsDialog.svelte';
 	import { displayKeys, shortcuts } from './lib/shortcuts.svelte';
@@ -12,6 +13,7 @@
 
 	const SECTIONS = [
 		{ id: 'transactions', label: 'Transactions', keys: 'g t' },
+		{ id: 'explore', label: 'Explore', keys: 'g e' },
 		{ id: 'categories', label: 'Categories', keys: 'g c' },
 		{ id: 'accounts', label: 'Accounts', keys: 'g a' },
 	] as const;
@@ -190,7 +192,9 @@
 		{#each SECTIONS as s (s.id)}
 			<button class="tab" aria-current={section === s.id ? 'page' : undefined} title={displayKeys(s.keys)} onclick={() => (section = s.id)}>{s.label}</button>
 		{/each}
-		<button class="tab icon first-icon" aria-label="Keyboard shortcuts" title="?" onclick={() => (shortcuts.helpOpen = true)}>?</button>
+	</nav>
+	<div class="tools">
+		<button class="tab icon help" aria-label="Keyboard shortcuts" title="?" onclick={() => (shortcuts.helpOpen = true)}>?</button>
 		<button class="tab icon" aria-label="Settings" title={displayKeys('Mod+,')} onclick={() => (settingsOpen = true)}>
 			<svg viewBox="0 0 24 24" aria-hidden="true"
 				><path
@@ -199,7 +203,7 @@
 				/></svg
 			>
 		</button>
-	</nav>
+	</div>
 </header>
 
 <main>
@@ -225,6 +229,9 @@
 				emptyHint={workspace.isDesktop ? 'Open your CashGuard file to get started.' : 'Import your CashGuard file to get started, or press n to add one.'}
 			/>
 		</div>
+		<div hidden={section !== 'explore'}>
+			<ExploreView {workspace} active={section === 'explore'} onshowtransactions={() => (section = 'transactions')} />
+		</div>
 		<div hidden={section !== 'categories'}><CategoriesView {workspace} active={section === 'categories'} {notify} /></div>
 		<div hidden={section !== 'accounts'}><AccountsView {workspace} active={section === 'accounts'} {notify} /></div>
 	{/if}
@@ -246,10 +253,10 @@
 	header {
 		position: sticky;
 		top: 0;
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-areas: 'title actions' 'nav tools';
 		gap: 0.5rem;
-		justify-content: space-between;
 		align-items: center;
 		padding: max(0.75rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.75rem max(1rem, env(safe-area-inset-left));
 		background: var(--surface);
@@ -257,6 +264,7 @@
 		z-index: 1;
 	}
 	.title {
+		grid-area: title;
 		display: flex;
 		align-items: baseline;
 		gap: 0.75rem;
@@ -274,8 +282,15 @@
 		white-space: nowrap;
 	}
 	.actions {
+		grid-area: actions;
 		display: flex;
 		gap: 0.5rem;
+	}
+	.tools {
+		grid-area: tools;
+		justify-self: end;
+		display: flex;
+		gap: 0.25rem;
 	}
 	.count {
 		margin-left: 0.4rem;
@@ -291,9 +306,9 @@
 		padding: 0 env(safe-area-inset-right) max(1rem, env(safe-area-inset-bottom)) env(safe-area-inset-left);
 	}
 	nav {
+		grid-area: nav;
 		display: flex;
 		gap: 0.25rem;
-		width: 100%;
 		overflow-x: auto;
 	}
 	.tab {
@@ -303,13 +318,24 @@
 		color: var(--muted);
 		min-height: 2.25rem;
 	}
+	/* phones: the tools go next to the title, so the tabs fit in a row of their own; the
+	   shortcut help is for keyboards (? still opens it) */
+	@media (max-width: 40rem) {
+		header {
+			grid-template-areas: 'title tools' 'actions actions' 'nav nav';
+		}
+		.tab {
+			padding: 0.45rem 0.45rem;
+			font-size: 0.9rem;
+		}
+		.tools .tab.help {
+			display: none;
+		}
+	}
 	.tab[aria-current='page'] {
 		color: var(--text);
 		background: var(--accent-soft);
 		font-weight: 600;
-	}
-	.tab.first-icon {
-		margin-left: auto;
 	}
 	.tab.icon {
 		min-width: 2.25rem;

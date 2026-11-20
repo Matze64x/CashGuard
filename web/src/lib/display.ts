@@ -34,6 +34,16 @@ export function describePeriod(from: CivilDate | null, to: CivilDate | null): st
 		}
 		const year = yearOf(from);
 		if (year.from === from && year.to === to) return String(dateParts(from).year);
+		// whole months: "Oct – Nov 2026", "Nov 2025 – Feb 2026"
+		if (monthOf(from).from === from && monthOf(to).to === to) {
+			const short = (date: CivilDate, withYear: boolean) => {
+				const { year: y, month: m } = dateParts(date);
+				// en-US: "Sep" (en-GB writes "Sept")
+				return new Date(y, m - 1, 1).toLocaleDateString('en-US', withYear ? { month: 'short', year: 'numeric' } : { month: 'short' });
+			};
+			const sameYear = dateParts(from).year === dateParts(to).year;
+			return `${short(from, !sameYear)} – ${short(to, true)}`;
+		}
 		return `${formatDate(from)} – ${formatDate(to)}`;
 	}
 	if (from) return `from ${formatDate(from)}`;

@@ -5,9 +5,9 @@
  * A group (a transaction split into parts) counts as one transaction with its own date, category,
  * description and total: the parts are details that only show when the transaction is opened.
  */
-import { addDays, addMonths, civilDate, dateParts, type CivilDate } from './dates';
+import { addMonths, civilDate, dateParts, daysInMonth, type CivilDate } from './dates';
 import type { Id } from './ids';
-import { sumCents, type Cents } from './money';
+import { cents, sumCents, type Cents } from './money';
 import type { Category, Transaction } from './model';
 
 export type Kind = 'all' | 'income' | 'expense';
@@ -79,8 +79,7 @@ export interface Period {
 /** The calendar month that contains `date` */
 export function monthOf(date: CivilDate): Period {
 	const { year, month } = dateParts(date);
-	const from = civilDate(year, month, 1);
-	return { from, to: addDays(addMonths(from, 1), -1) };
+	return { from: civilDate(year, month, 1), to: civilDate(year, month, daysInMonth(year, month)) };
 }
 
 /** The calendar year that contains `date` */
@@ -102,4 +101,77 @@ export function periodPresets(today: CivilDate): { label: string; period: Period
 		{ label: 'This year', period: year },
 		{ label: 'Last year', period: lastYear },
 	];
+}
+
+// ------------------------------------------------------------------------------------- months
+
+/** The first days of the months from the one containing `from` to the one containing `to` */
+export function monthsBetween(from: CivilDate, to: CivilDate): CivilDate[] {
+	const start = monthNumber(from);
+	return Array.from({ length: Math.max(0, monthNumber(to) - start + 1) }, (_, i) => civilDate(Math.floor((start + i) / 12), ((start + i) % 12) + 1, 1));
+}
+
+/** Months since year 0, for month arithmetic */
+const monthNumber = (date: CivilDate) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
+
+/** Transactions this far apart from all others are probably typos, e.g. 1926 for 2026 */
+const OUTLIER_GAP_MONTHS = 5 * 12;
+
+/**
+ * The months a chart should cover: from the oldest transaction to the newest one (or `today`, if
+ * later). Dates that are probably typos are left out and listed in `outside`: everything before a
+ * gap of more than 5 years without transactions, and anything more than 2 years in the future.
+ * `period` is null without (other) transactions.
+ */
+export function chartPeriod(transactions: readonly Transaction[], today: CivilDate): { period: Period | null; outside: Transaction[] } {
+	const latest = monthNumber(today) + 24;
+	// oldest first, without the far future
+	const dated = [...transactions].reverse();
+	const future = dated.filter((t) => monthNumber(t.date) > latest);
+	const kept = dated.filter((t) => monthNumber(t.date) <= latest);
+	let first = 0;
+	for (let i = 0; i < kept.length - 1; i++) {
+		if (monthNumber(kept[i + 1]!.date) - monthNumber(kept[i]!.date) > OUTLIER_GAP_MONTHS) first = i + 1;
+	}
+	const outside = [...kept.slice(0, first), ...future];
+	const oldest = kept[first]?.date;
+	const newest = kept.at(-1)?.date;
+	if (!oldest || !newest) return { period: null, outside };
+	return { period: { from: monthOf(oldest).from, to: monthOf(newest > today ? newest : today).to }, outside };
+}
+
+export interface MonthTotals {
+	/** The month's first day */
+	readonly month: CivilDate;
+	/** Sum of the positive amounts */
+	readonly income: Cents;
+	/** Sum of the negative amounts (negative) */
+	readonly expenses: Cents;
+	/** The balance of `all` transactions at the end of the month */
+	readonly balance: Cents;
+}
+
+/**
+ * Income and expenses per month of the `matching` transactions, and the running balance of `all`
+ * transactions (the real balance, independent of any filter). Both lists are newest first.
+ */
+export function monthlyTotals(matching: readonly Transaction[], all: readonly Transaction[], months: readonly CivilDate[]): MonthTotals[] {
+	// by "YYYY-MM": cheap, this runs for every transaction
+	const index = new Map(months.map((m, i) => [m.slice(0, 7), i]));
+	const income = months.map(() => 0);
+	const expenses = months.map(() => 0);
+	for (const t of matching) {
+		const i = index.get(t.date.slice(0, 7));
+		if (i === undefined) continue;
+		if (t.amount > 0) income[i]! += t.amount;
+		else expenses[i]! += t.amount;
+	}
+	// running balance: everything up to each month's end, walking `all` from its oldest end
+	let next = all.length - 1;
+	let balance = 0;
+	return months.map((month, i) => {
+		const key = month.slice(0, 7);
+		while (next >= 0 && all[next]!.date.slice(0, 7) <= key) balance += all[next--]!.amount;
+		return { month, income: cents(income[i]!), expenses: cents(expenses[i]!), balance: cents(balance) };
+	});
 }
