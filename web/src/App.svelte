@@ -1,10 +1,20 @@
 <script lang="ts">
-	import { totalAmount } from './core';
-	import { formatEuro, plural } from './lib/display';
+	import AccountsView from './lib/AccountsView.svelte';
+	import CategoriesView from './lib/CategoriesView.svelte';
+	import { plural } from './lib/display';
 	import { errorMessage } from './lib/errors';
 	import ImportDialog from './lib/ImportDialog.svelte';
-	import TransactionList from './lib/TransactionList.svelte';
+	import { displayKeys, shortcuts } from './lib/shortcuts.svelte';
+	import TransactionsView from './lib/TransactionsView.svelte';
+	import ShortcutHelp from './lib/ui/ShortcutHelp.svelte';
 	import { Workspace, type ImportCandidate } from './lib/workspace.svelte';
+
+	const SECTIONS = [
+		{ id: 'transactions', label: 'Transactions', keys: 'g t' },
+		{ id: 'categories', label: 'Categories', keys: 'g c' },
+		{ id: 'accounts', label: 'Accounts', keys: 'g a' },
+	] as const;
+	let section = $state<(typeof SECTIONS)[number]['id']>('transactions');
 
 	const workspace = new Workspace();
 	let loadError = $state<string | null>(null);
@@ -30,7 +40,46 @@
 		candidate = null;
 	});
 
-	let notice = $state<{ text: string; error: boolean } | null>(null);
+	/** `undo`: offer to undo the last edit (e.g. after deleting) */
+	let notice = $state<{ text: string; error: boolean; undo?: boolean } | null>(null);
+	function notify(text: string, undo = false) {
+		notice = { text, error: false, undo };
+	}
+
+	function undo() {
+		void run(async () => {
+			const label = await workspace.undo();
+			return label ? `Undone: ${label}` : 'Nothing to undo.';
+		});
+	}
+
+	function redo() {
+		void run(async () => {
+			const label = await workspace.redo();
+			return label ? `Redone: ${label}` : 'Nothing to redo.';
+		});
+	}
+
+	$effect(() => {
+		window.addEventListener('keydown', shortcuts.handle);
+		return () => window.removeEventListener('keydown', shortcuts.handle);
+	});
+
+	$effect(() =>
+		shortcuts.add([
+			// also in dialogs (outside text fields), so the help can show e.g. the editor's keys
+			{ keys: ['?'], description: 'Show the keyboard shortcuts', group: 'General', inDialog: true, when: () => !shortcuts.helpOpen, run: () => (shortcuts.helpOpen = true) },
+			{ keys: ['Mod+z'], description: 'Undo the last change', group: 'General', when: () => !busy, run: undo },
+			{ keys: ['Mod+Shift+z', 'Mod+y'], description: 'Redo', group: 'General', when: () => !busy, run: redo },
+			...SECTIONS.map((s) => ({ keys: [s.keys], description: `Go to ${s.label.toLowerCase()}`, group: 'General', run: () => (section = s.id) })),
+			...(workspace.isDesktop
+				? [{ keys: ['Mod+o'], description: 'Open another file', group: 'File', inFields: true, when: () => !busy, run: openFile }]
+				: [
+						{ keys: ['Mod+o'], description: 'Import the synced file', group: 'File', inFields: true, when: () => !busy, run: () => fileInput.click() },
+						{ keys: ['Mod+s'], description: 'Export the file', group: 'File', inFields: true, when: () => !busy, run: exportFile },
+					]),
+		]),
+	);
 	$effect(() => {
 		if (!notice || notice.error) return;
 		const timer = setTimeout(() => (notice = null), 5000);
@@ -133,6 +182,12 @@
 			</button>
 		{/if}
 	</div>
+	<nav aria-label="Sections">
+		{#each SECTIONS as s (s.id)}
+			<button class="tab" aria-current={section === s.id ? 'page' : undefined} title={displayKeys(s.keys)} onclick={() => (section = s.id)}>{s.label}</button>
+		{/each}
+		<button class="tab help" aria-label="Keyboard shortcuts" title="?" onclick={() => (shortcuts.helpOpen = true)}>?</button>
+	</nav>
 </header>
 
 <main>
@@ -140,18 +195,31 @@
 		<p class="notice error" role="alert">Syncing with the file failed: {workspace.syncError}</p>
 	{/if}
 	{#if notice}
-		<p class="notice" class:error={notice.error} role={notice.error ? 'alert' : 'status'}>{notice.text}</p>
+		<p class="notice" class:error={notice.error} role={notice.error ? 'alert' : 'status'}>
+			{notice.text}
+			{#if notice.undo && workspace.undoLabel}<button class="link" onclick={undo}>Undo <kbd>{displayKeys('Mod+z')}</kbd></button>{/if}
+		</p>
 	{/if}
 	{#if loadError}
 		<p class="notice error" role="alert">Your data can't be loaded, so nothing can be changed right now. {loadError}</p>
 	{:else if workspace.ready}
-		<section class="summary">
-			<span class="balance">{formatEuro(totalAmount(workspace.data.transactions))}</span>
-			<span class="muted">{plural(workspace.data.transactions.length, 'transaction')}</span>
-		</section>
-		<TransactionList data={workspace.data} emptyHint={workspace.isDesktop ? 'Open your CashGuard file to get started.' : 'Import your CashGuard file to get started.'} />
+		<!-- each view stays mounted (keeps its selection and search); only the shown one is active -->
+		<div hidden={section !== 'transactions'}>
+			<TransactionsView
+				{workspace}
+				active={section === 'transactions'}
+				{notify}
+				emptyHint={workspace.isDesktop ? 'Open your CashGuard file to get started.' : 'Import your CashGuard file to get started, or press n to add one.'}
+			/>
+		</div>
+		<div hidden={section !== 'categories'}><CategoriesView {workspace} active={section === 'categories'} {notify} /></div>
+		<div hidden={section !== 'accounts'}><AccountsView {workspace} active={section === 'accounts'} {notify} /></div>
 	{/if}
 </main>
+
+{#if shortcuts.helpOpen}
+	<ShortcutHelp onclose={() => (shortcuts.helpOpen = false)} />
+{/if}
 
 {#if shownCandidate}
 	<ImportDialog candidate={shownCandidate} onapply={applyImport} onkeep={keepMine} onclose={closeDialog} />
@@ -205,19 +273,34 @@
 		margin: 0 auto;
 		padding: 0 env(safe-area-inset-right) max(1rem, env(safe-area-inset-bottom)) env(safe-area-inset-left);
 	}
-	.summary {
+	nav {
 		display: flex;
-		align-items: baseline;
-		gap: 1rem;
-		padding: 1.25rem 0.75rem 0.75rem;
+		gap: 0.25rem;
+		width: 100%;
+		overflow-x: auto;
 	}
-	.balance {
-		font-size: 2rem;
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
-	}
-	.muted {
+	.tab {
+		border: none;
+		border-radius: 0.5rem;
+		background: none;
 		color: var(--muted);
+		min-height: 2.25rem;
+	}
+	.tab[aria-current='page'] {
+		color: var(--text);
+		background: var(--accent-soft);
+		font-weight: 600;
+	}
+	.tab.help {
+		margin-left: auto;
+	}
+	.link {
+		border: none;
+		background: none;
+		color: var(--accent);
+		font-weight: 600;
+		min-height: 0;
+		padding: 0 0.4rem;
 	}
 	.notice {
 		margin: 0.75rem 0.75rem 0;

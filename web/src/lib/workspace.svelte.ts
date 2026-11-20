@@ -14,6 +14,7 @@
 import {
 	INITIAL_SYNC_STATE,
 	needsWrite,
+	nowUtcSeconds,
 	parseCashGuard,
 	planFileSync,
 	planImport,
@@ -24,6 +25,7 @@ import {
 	type ImportPlan,
 	type Issue,
 	type SyncState,
+	type UtcSeconds,
 } from '../core';
 import * as desktop from './desktop';
 import { errorMessage } from './errors';
@@ -85,6 +87,12 @@ function fromStored(stored: StoredSnapshot): Snapshot {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+interface UndoEntry {
+	readonly before: CashGuardData;
+	readonly after: CashGuardData;
+	readonly label: string;
+}
+
 export class Workspace {
 	readonly isDesktop = desktop.isDesktop;
 
@@ -104,6 +112,15 @@ export class Workspace {
 	readonly filePath = $derived(this.#current.filePath);
 	readonly unexportedCount = $derived(totalChanges(unexportedChanges(this.#current.sync)));
 	readonly canUndoImport = $derived(this.#beforeImport !== null);
+
+	/**
+	 * Edits that can be undone (Mod+Z) and redone. Only valid while the data hasn't changed otherwise
+	 * (sync, import, another tab): then the labels are null and undo/redo clear the stacks.
+	 */
+	#undo = $state.raw<readonly UndoEntry[]>([]);
+	#redo = $state.raw<readonly UndoEntry[]>([]);
+	readonly undoLabel = $derived(this.#undo.at(-1)?.after === this.#current.sync.working ? this.#undo.at(-1)!.label : null);
+	readonly redoLabel = $derived(this.#redo.at(-1)?.before === this.#current.sync.working ? this.#redo.at(-1)!.label : null);
 
 	#unwatchFile: (() => void) | null = null;
 	/** Operations on the file run one at a time, so they can't interleave */
@@ -193,6 +210,69 @@ export class Workspace {
 		if (!(await saveFile(serializeCashGuard(sync.working), fileName ?? DEFAULT_FILE_NAME))) return false;
 		await this.#commit({ ...this.#current, sync: { ...sync, exported: sync.working } }, this.#beforeImport);
 		return true;
+	}
+
+	// ------------------------------------------------------------------ editing
+
+	/**
+	 * Applies an edit (a pure function from `core/edit.ts`) to the working copy and saves it; the
+	 * desktop app also writes it to the file. `label` describes it for undo, e.g. 'Delete “Rent”'.
+	 * Throws (and changes nothing) if the edit is invalid.
+	 */
+	edit(label: string, change: (data: CashGuardData, now: UtcSeconds) => CashGuardData): Promise<void> {
+		return this.#serial(async () => {
+			const before = this.#current.sync.working;
+			const after = change(before, nowUtcSeconds());
+			if (after === before) return;
+			await this.#replaceWorking(after);
+			this.#undo = [...this.#undo.slice(-49), { before, after, label }];
+			this.#redo = [];
+		});
+	}
+
+	/** Undoes the last edit. Returns its label, or null if there's nothing (valid) to undo. */
+	undo(): Promise<string | null> {
+		return this.#serial(async () => {
+			const last = this.#undo.at(-1);
+			if (!last) return null;
+			// a sync or import changed the data since: undoing would also revert that, so don't
+			if (this.#current.sync.working !== last.after) {
+				this.#undo = [];
+				this.#redo = [];
+				return null;
+			}
+			await this.#replaceWorking(last.before);
+			this.#undo = this.#undo.slice(0, -1);
+			this.#redo = [...this.#redo, last];
+			return last.label;
+		});
+	}
+
+	redo(): Promise<string | null> {
+		return this.#serial(async () => {
+			const next = this.#redo.at(-1);
+			if (!next || this.#current.sync.working !== next.before) {
+				this.#redo = [];
+				return null;
+			}
+			await this.#replaceWorking(next.after);
+			this.#redo = this.#redo.slice(0, -1);
+			this.#undo = [...this.#undo, next];
+			return next.label;
+		});
+	}
+
+	/** Must run inside `#serial`. An edit invalidates "undo import" (it would discard the edit). */
+	async #replaceWorking(working: CashGuardData): Promise<void> {
+		await this.#commit({ ...this.#current, sync: { ...this.#current.sync, working } }, null);
+		if (!this.isDesktop) return;
+		try {
+			this.prompt = await this.#syncLoop();
+			this.syncError = null;
+		} catch (e) {
+			// the edit is saved in the app; writing the file is retried on the next change
+			this.syncError = errorMessage(e);
+		}
 	}
 
 	// ------------------------------------------------------------------ desktop: linked file

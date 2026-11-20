@@ -76,3 +76,34 @@ button:focus-visible {
 	outline: 2px solid var(--accent);
 	outline-offset: 2px;
 }
+
+input,
+select,
+textarea {
+	font: inherit;
+	color: var(--text);
+	background: var(--surface);
+	border: 1px solid var(--control-border);
+	border-radius: 0.5rem;
+	padding: 0.4rem 0.6rem;
+	min-height: 2.5rem;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+input[aria-invalid='true'] {
+	border-color: var(--negative);
+}
+
+kbd {
+	font: 0.85em ui-monospace, monospace;
+	border: 1px solid var(--control-border);
+	border-radius: 0.3rem;
+	padding: 0 0.3rem;
+}

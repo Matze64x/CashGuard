@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ChangeCounts, Conflict, ConflictReason, ImportWarning, Transaction } from '../core';
 	import { formatDate, formatEuro, plural } from './display';
+	import Modal from './ui/Modal.svelte';
 	import type { ImportCandidate } from './workspace.svelte';
 
 	let { candidate, onapply, onkeep, onclose }: { candidate: ImportCandidate; onapply: () => void; onkeep: () => void; onclose: () => void } = $props();
@@ -19,13 +20,6 @@
 	const text = $derived(TEXTS[candidate.mode]);
 	// desktop: when the file looks wrong, offer to keep the app's data and replace the file with it
 	const canKeep = $derived(candidate.mode === 'sync' && (!candidate.ok || candidate.plan.warnings.length > 0));
-
-	let dialog: HTMLDialogElement;
-	$effect(() => {
-		dialog.showModal();
-		// closing on unmount returns the focus to where it was before
-		return () => dialog.close();
-	});
 
 	const REASONS: Record<ConflictReason, string> = {
 		'changed-on-both-sides': 'changed on both devices; the later change is kept',
@@ -71,8 +65,7 @@
 	const warnings = $derived(candidate.ok ? candidate.plan.warnings.map((w) => WARNINGS[w]) : []);
 </script>
 
-<dialog bind:this={dialog} aria-labelledby="import-title" {onclose}>
-	<h2 id="import-title">{text.title} “{candidate.fileName}”</h2>
+<Modal title={`${text.title} “${candidate.fileName}”`} {onclose}>
 	{#if !candidate.ok}
 		<p class="error">{text.broken}</p>
 		<ul class="issues">
@@ -119,25 +112,9 @@
 			<button class:primary={warnings.length === 0} class:danger={warnings.length > 0} onclick={onapply}>{text.apply}</button>
 		</div>
 	{/if}
-</dialog>
+</Modal>
 
 <style>
-	dialog {
-		max-width: min(36rem, calc(100vw - 2rem));
-		border: 1px solid var(--border);
-		border-radius: 0.75rem;
-		background: var(--surface);
-		color: var(--text);
-		padding: 1.25rem;
-	}
-	dialog::backdrop {
-		background: rgb(0 0 0 / 0.4);
-	}
-	h2 {
-		margin-top: 0;
-		font-size: 1.2rem;
-		overflow-wrap: anywhere;
-	}
 	.issues {
 		max-height: 40vh;
 		overflow: auto;
