@@ -1,22 +1,47 @@
 <!--
 	Income (up) and expenses (down) per month for what the filter selects, apart from its period, in
 	light colors, with the month's net as a narrow solid bar in front and the running balance of all
-	transactions as a line on top (both can be switched off). The filter's period is highlighted;
-	clicking a month sets it (Shift+click extends it). Made for the mouse and touch: the same period
+	transactions as a line on top (both can be switched off). Or, "by category": the expenses (or
+	income) of the largest categories stacked per month, clicking one filters by it. The filter's
+	period is highlighted; clicking a month sets it (Shift+click extends it). Made for the mouse and touch: the same period
 	can be set with the keyboard in the filter dialog. Shows the last 24 months (12 on phones) at
 	first; the wheel, pinching or the slider zoom.
 -->
 <script lang="ts">
 	import type { EChartsType } from 'echarts/core';
 	import { untrack } from 'svelte';
-	import { applyFilter, chartPeriod, monthlyTotals, monthOf, monthsBetween, today, type CivilDate, type Filter, type Transaction } from '../../core';
-	import { describePeriod, formatDate, formatEuro, plural } from '../display';
+	import {
+		applyFilter,
+		chartPeriod,
+		monthlyByCategory,
+		monthlyTotals,
+		monthOf,
+		monthsBetween,
+		ofSide,
+		today,
+		totalsByCategory,
+		type Cents,
+		type CivilDate,
+		type Filter,
+		type Id,
+		type Transaction,
+	} from '../../core';
+	import { categoryColor, categoryLabel, describePeriod, formatDate, formatEuro, plural } from '../display';
+	import Segmented from '../ui/Segmented.svelte';
 	import { filter } from '../filter.svelte';
 	import type { Workspace } from '../workspace.svelte';
 	import Chart from './Chart.svelte';
 	import { theme } from './theme.svelte';
 
-	let { workspace }: { workspace: Workspace } = $props();
+	let { workspace, side }: { workspace: Workspace; side: 'expense' | 'income' } = $props();
+
+	let view = $state<'totals' | 'categories'>('totals');
+	const VIEWS = [
+		{ value: 'totals', label: 'Income & expenses' },
+		{ value: 'categories', label: 'By category' },
+	] as const;
+	/** How many categories get their own color; the rest are "Other" */
+	const TOP_CATEGORIES = 8;
 
 	const all = $derived(workspace.data.transactions);
 	const range = $derived(chartPeriod(all, today()));
@@ -32,6 +57,27 @@
 		return cached.matching;
 	});
 	const totals = $derived(monthlyTotals(matching, all, months));
+
+	// by category: the side's transactions of the largest categories, as positive amounts
+	const stacks = $derived.by(() => {
+		if (view !== 'categories') return null;
+		const sided = ofSide(matching, side);
+		const all = totalsByCategory(sided);
+		const top = all.slice(0, TOP_CATEGORIES).map((s) => s.key);
+		const { byCategory, other } = monthlyByCategory(sided, months, top);
+		const names = new Map(workspace.data.categories.map((c) => [c.id, c]));
+		return {
+			/** Whether there are more categories than shown on their own */
+			more: all.length > TOP_CATEGORIES,
+			series: top.map((id) => ({
+				id,
+				name: categoryLabel(id, names.get(id)),
+				color: categoryColor(names.get(id)),
+				values: byCategory.get(id)!.map((v) => Math.abs(v)),
+			})),
+			other: other.map((v) => Math.abs(v)),
+		};
+	});
 	const labels = $derived(months.map(monthLabel));
 
 	function monthLabel(month: CivilDate): string {
@@ -93,10 +139,19 @@
 		});
 		// a click anywhere in a month's column selects it, not just on its bars
 		instance.getZr().on('click', (event) => {
+			// by category, a click on a bar filters by its category (below) instead
+			if (view === 'categories' && event.target) return;
 			const point = [event.offsetX, event.offsetY];
 			if (!instance.containPixel({ gridIndex: 0 }, point)) return;
 			const [index] = instance.convertFromPixel({ gridIndex: 0 }, point) as unknown as number[];
 			if (index !== undefined) select(Math.round(index), (event.event as MouseEvent | undefined)?.shiftKey ?? false);
+		});
+		instance.on('click', (params) => {
+			if (view !== 'categories') return;
+			const { seriesId, dataIndex, event } = params as { seriesId?: string; dataIndex: number; event?: { event?: MouseEvent } };
+			if (seriesId?.startsWith('category-')) filter.set({ categories: [seriesId.slice('category-'.length) as Id] });
+			// "Other" is no single category: the month, as a click next to the bars
+			else select(dataIndex, event?.event?.shiftKey ?? false);
 		});
 	}
 
@@ -108,6 +163,8 @@
 	const option = $derived.by(() => {
 		const c = theme.colors;
 		const axis = { axisLine: { lineStyle: { color: c.border } }, axisLabel: { color: c.muted }, splitLine: { lineStyle: { color: c.border } } };
+		// the filter's period
+		const highlight = { silent: true, itemStyle: { color: c['accent-soft'] }, data: selection ? [[{ xAxis: labels[selection.start] }, { xAxis: labels[selection.end] }]] : [] };
 		return {
 			animation: false,
 			grid: { left: 8, right: 8, top: 16, bottom: 56 },
@@ -136,27 +193,38 @@
 				borderColor: c.border,
 				textStyle: { color: c.text },
 				formatter: (params: { dataIndex: number }[]) => {
-					const t = totals[params[0]?.dataIndex ?? -1];
-					return t ? tooltipHtml(t.month, t.income, t.expenses, t.balance) : '';
+					const i = params[0]?.dataIndex ?? -1;
+					const t = totals[i];
+					if (!t) return '';
+					return stacks ? categoryTooltip(t.month, i) : tooltipHtml(t.month, t.income, t.expenses, t.balance);
 				},
 			},
 			xAxis: { type: 'category', data: labels, ...axis, splitLine: { show: false }, axisTick: { show: false } },
 			yAxis: [
 				{ type: 'value', ...axis, axisLabel: { color: c.muted, formatter: (v: number) => axisEuros.format(v) } },
-				{ type: 'value', show: showBalance, ...axis, splitLine: { show: false }, axisLabel: { color: c.accent, formatter: (v: number) => axisEuros.format(v) } },
+				{ type: 'value', show: !stacks && showBalance, ...axis, splitLine: { show: false }, axisLabel: { color: c.accent, formatter: (v: number) => axisEuros.format(v) } },
 			],
-			series: [
+			series: stacks
+				? [
+						...stacks.series.map((category, i) => ({
+							id: `category-${category.id}`,
+							name: category.name,
+							type: 'bar',
+							stack: 'category',
+							data: category.values.map(euros),
+							itemStyle: { color: category.color },
+							...(i === 0 && { markArea: highlight }),
+						})),
+						{ id: 'other', name: 'Other', type: 'bar', stack: 'category', data: stacks.other.map(euros), itemStyle: { color: c.border }, ...(stacks.series.length === 0 && { markArea: highlight }) },
+					]
+				: [
 				{
 					name: 'Income',
 					type: 'bar',
 					stack: 'month',
 					data: totals.map((t) => euros(t.income)),
 					itemStyle: { color: c.positive, opacity: showNet ? 0.35 : 1 },
-					markArea: {
-						silent: true,
-						itemStyle: { color: c['accent-soft'] },
-						data: selection ? [[{ xAxis: labels[selection.start] }, { xAxis: labels[selection.end] }]] : [],
-					},
+					markArea: highlight,
 				},
 				{
 					name: 'Expenses',
@@ -204,20 +272,44 @@
 					lineStyle: { color: c.accent, width: 3 },
 					itemStyle: { color: c.accent },
 				},
-			],
+				],
 		};
 	});
 
+	const tooltipRow = (label: string, value: number, color?: string) =>
+		`<div style="display:flex;justify-content:space-between;gap:1rem"><span>${color ? `<span style="display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;margin-right:0.35rem;background:${color}"></span>` : ''}${escapeHtml(label)}</span><b>${formatEuro(value as Cents)}</b></div>`;
+	const tooltipTitle = (month: CivilDate) => `<div style="font-weight:600;margin-bottom:0.25rem">${describePeriod(month, monthOf(month).to)}</div>`;
+
 	function tooltipHtml(month: CivilDate, income: number, expenses: number, balance: number): string {
-		const row = (label: string, value: number) => `<div style="display:flex;justify-content:space-between;gap:1rem"><span>${label}</span><b>${formatEuro(value as never)}</b></div>`;
-		return `<div style="font-weight:600;margin-bottom:0.25rem">${describePeriod(month, monthOf(month).to)}</div>${row('Income', income)}${row('Expenses', expenses)}${row('Net', income + expenses)}${row('Balance', balance)}`;
+		return `${tooltipTitle(month)}${tooltipRow('Income', income)}${tooltipRow('Expenses', expenses)}${tooltipRow('Net', income + expenses)}${tooltipRow('Balance', balance)}`;
 	}
+
+	/** The month's categories, largest first (without the empty ones) */
+	function categoryTooltip(month: CivilDate, i: number): string {
+		if (!stacks) return '';
+		const rows = [...stacks.series.map((s) => ({ name: s.name, color: s.color, value: s.values[i]! })), { name: 'Other', color: theme.colors.border, value: stacks.other[i]! }]
+			.filter((r) => r.value !== 0)
+			.sort((a, b) => b.value - a.value);
+		const sum = rows.reduce((total, r) => total + r.value, 0);
+		return `${tooltipTitle(month)}${rows.map((r) => tooltipRow(r.name, r.value, r.color)).join('')}${tooltipRow(side === 'expense' ? 'Expenses' : 'Income', sum)}`;
+	}
+
+	/** Category names are the user's text: shown as text, not as markup */
+	const escapeHtml = (text: string) => text.replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
 </script>
 
 <div class="layers">
-	<label><input type="checkbox" bind:checked={showNet} /> <span class="swatch net"></span>Net</label>
-	<label><input type="checkbox" bind:checked={showBalance} /> <span class="swatch balance"></span>Balance</label>
+	<Segmented bind:value={view} options={VIEWS} label="Chart" />
+	{#if view === 'totals'}
+		<label><input type="checkbox" bind:checked={showNet} /> <span class="swatch net"></span>Net</label>
+		<label><input type="checkbox" bind:checked={showBalance} /> <span class="swatch balance"></span>Balance</label>
+	{:else}
+		<span class="legend">
+			{side === 'expense' ? 'Expenses' : 'Income'}
+			{stacks?.more ? `of the ${TOP_CATEGORIES} largest categories` : 'by category'}{filter.current.categories.length === 1 ? '' : '; click one to show only it'}
+		</span>
+	{/if}
 </div>
 <!-- the numbers are in the tooltip and in the totals below; the chart itself is for looking at -->
 <div aria-hidden="true">
@@ -237,10 +329,18 @@
 <style>
 	.layers {
 		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		justify-content: flex-end;
-		gap: 1rem;
+		gap: 0.5rem 1rem;
 		font-size: 0.9rem;
 		color: var(--muted);
+	}
+	.layers > :global(:first-child) {
+		margin-right: auto;
+	}
+	.legend {
+		font-size: 0.85rem;
 	}
 	.layers label {
 		display: flex;

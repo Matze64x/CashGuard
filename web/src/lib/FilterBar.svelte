@@ -5,7 +5,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { NO_CATEGORY, type Id } from '../core';
-	import { describeAmountRange, describePeriod } from './display';
+	import { categoryLabel, describeAmountRange, describePeriod } from './display';
 	import { filter } from './filter.svelte';
 	import FilterDialog from './FilterDialog.svelte';
 	import { shortcuts } from './shortcuts.svelte';
@@ -53,7 +53,7 @@
 			const c = categories.get(id);
 			list.push({
 				key: `category-${id}`,
-				label: id === NO_CATEGORY ? 'No category' : (c?.name ?? ''),
+				label: categoryLabel(id, c),
 				color: c?.color,
 				remove: () => filter.set({ categories: filter.current.categories.filter((x: Id) => x !== id) }),
 			});

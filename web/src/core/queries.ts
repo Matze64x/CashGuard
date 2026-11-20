@@ -175,3 +175,55 @@ export function monthlyTotals(matching: readonly Transaction[], all: readonly Tr
 		return { month, income: cents(income[i]!), expenses: cents(expenses[i]!), balance: cents(balance) };
 	});
 }
+
+// ------------------------------------------------------------------------------------- breakdowns
+
+export type Side = 'expense' | 'income';
+
+/** The expenses (negative amounts) or the income (positive amounts) */
+export function ofSide(transactions: readonly Transaction[], side: Side): Transaction[] {
+	return transactions.filter((t) => (side === 'expense' ? t.amount < 0 : t.amount > 0));
+}
+
+export interface Share<K> {
+	readonly key: K;
+	readonly total: Cents;
+	readonly count: number;
+}
+
+/** Totals per key (e.g. category), largest amount (without sign) first; ties by key */
+function totalsBy<K extends string>(transactions: readonly Transaction[], keyOf: (t: Transaction) => K): Share<K>[] {
+	const totals = new Map<K, { total: number; count: number }>();
+	for (const t of transactions) {
+		const entry = totals.get(keyOf(t)) ?? { total: 0, count: 0 };
+		entry.total += t.amount;
+		entry.count++;
+		totals.set(keyOf(t), entry);
+	}
+	return [...totals]
+		.map(([key, { total, count }]) => ({ key, total: cents(total), count }))
+		.sort((a, b) => Math.abs(b.total) - Math.abs(a.total) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}
+
+export const totalsByCategory = (transactions: readonly Transaction[]): Share<Id>[] => totalsBy(transactions, (t) => t.categoryId);
+export const totalsByDescription = (transactions: readonly Transaction[]): Share<string>[] => totalsBy(transactions, (t) => t.description);
+
+/**
+ * Per month (see `monthlyTotals`), the totals of the given categories, plus the rest of the
+ * categories summed up as `other`.
+ */
+export function monthlyByCategory(
+	transactions: readonly Transaction[],
+	months: readonly CivilDate[],
+	categories: readonly Id[],
+): { byCategory: Map<Id, Cents[]>; other: Cents[] } {
+	const index = new Map(months.map((m, i) => [m.slice(0, 7), i]));
+	const byCategory = new Map(categories.map((id) => [id, months.map(() => 0)]));
+	const other = months.map(() => 0);
+	for (const t of transactions) {
+		const i = index.get(t.date.slice(0, 7));
+		if (i === undefined) continue;
+		(byCategory.get(t.categoryId) ?? other)[i]! += t.amount;
+	}
+	return { byCategory: new Map([...byCategory].map(([id, values]) => [id, values.map(cents)])), other: other.map(cents) };
+}

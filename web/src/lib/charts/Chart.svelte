@@ -47,9 +47,12 @@
 		};
 	});
 
-	// merged into the current state, so e.g. the zoom stays where the user put it
+	// replaces the whole chart (in the given order), so state that should survive an update, like
+	// the zoom, belongs in `option`. A shown tooltip goes first: it would refer to old series.
 	$effect(() => {
-		chart?.setOption(option);
+		if (!chart) return;
+		chart.dispatchAction({ type: 'hideTip' });
+		chart.setOption(option, { notMerge: true });
 	});
 </script>
 

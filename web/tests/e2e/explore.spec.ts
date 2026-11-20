@@ -18,7 +18,13 @@ const monthName = (offset: number) => {
 	return new Date(now.getFullYear(), now.getMonth() + offset, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 };
 
+// errors in the page (e.g. thrown by ECharts in a timer) fail the test
+let pageErrors: Error[] = [];
+test.afterEach(() => expect(pageErrors.map((e) => e.message)).toEqual([]));
+
 test.beforeEach(async ({ page }) => {
+	pageErrors = [];
+	page.on('pageerror', (error) => pageErrors.push(error));
 	await page.goto('/');
 	MOD = await page.evaluate(() => (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? 'Meta' : 'Control'));
 	await importFixture(page);
@@ -86,4 +92,52 @@ test('a period outside the data shows nothing, and mistyped dates are named', as
 	await page.keyboard.press('e');
 	await expect(page.getByRole('note')).toContainText('01.01.1990 “Typo”');
 	await expect(chart(page)).toBeVisible();
+});
+
+test('the breakdown: a category filters, then its descriptions show; income on request', async ({ page }) => {
+	const breakdown = page.getByRole('region', { name: 'Breakdown' });
+	await expect(breakdown.getByRole('heading')).toHaveText('Expenses by category');
+	const groceries = breakdown.getByRole('button', { name: /^Groceries:/ });
+	// a list of buttons: works with the keyboard too
+	await groceries.focus();
+	await page.keyboard.press('Enter');
+	const chips = page.getByRole('list', { name: 'Active filters' });
+	await expect(chips).toContainText('Groceries');
+	await expect(breakdown.getByRole('heading')).toHaveText('Expenses in Groceries, by description');
+	await breakdown.getByRole('button', { name: /^Supermarket:/ }).click();
+	await expect(page.getByRole('searchbox')).toHaveValue('Supermarket');
+
+	await page.getByRole('button', { name: 'Remove filter: Groceries' }).click();
+	await breakdown.getByRole('radio', { name: 'Income' }).check();
+	await expect(breakdown.getByRole('heading')).toHaveText('Income by category');
+
+	// a filter for expenses only decides the side
+	await page.getByRole('searchbox').fill('');
+	await page.keyboard.press('Escape');
+	await page.keyboard.press('f');
+	await page.getByRole('dialog').getByRole('combobox', { name: 'Type' }).selectOption('expense');
+	await page.keyboard.press('Enter');
+	await expect(breakdown.getByRole('heading')).toHaveText('Expenses by category');
+	await expect(breakdown.getByRole('radio', { name: 'Income' })).toBeDisabled();
+});
+
+test('by category: clicking a category in the chart filters by it', async ({ page }) => {
+	await page.getByRole('radio', { name: 'By category' }).check();
+	const box = (await chart(page).boundingBox())!;
+	// the bottom of the last month's stack (the x axis is 56 px above the chart's bottom edge); hover
+	// first, so the tooltip is showing while the chart changes
+	await page.mouse.move(box.x + box.width - 25, box.y + box.height - 62);
+	await page.waitForTimeout(300);
+	await page.mouse.click(box.x + box.width - 25, box.y + box.height - 62);
+	await page.waitForTimeout(500);
+	await expect(page.getByRole('list', { name: 'Active filters' })).toContainText(/\w/);
+	await expect(page.getByRole('region', { name: 'Breakdown' }).getByRole('heading')).toHaveText(/^Expenses in .+, by description$/);
+});
+
+test('an empty description can not be searched for', async ({ page }) => {
+	// the fixture has an expense without category and description
+	const breakdown = page.getByRole('region', { name: 'Breakdown' });
+	await breakdown.getByRole('button', { name: /^No category:/ }).click();
+	const empty = breakdown.getByRole('button', { name: /^\(no description\):/ });
+	await expect(empty).toBeDisabled();
 });

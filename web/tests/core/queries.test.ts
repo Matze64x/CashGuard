@@ -5,12 +5,16 @@ import {
 	cents,
 	chartPeriod,
 	isFiltered,
+	monthlyByCategory,
 	monthlyTotals,
 	monthOf,
 	monthsBetween,
 	NO_CATEGORY,
 	NO_FILTER,
+	ofSide,
 	periodPresets,
+	totalsByCategory,
+	totalsByDescription,
 	yearOf,
 	type CashGuardData,
 	type CivilDate,
@@ -138,5 +142,36 @@ describe('months', () => {
 		]);
 		// only the matching transactions are summed; the balance stays the real one
 		expect(monthlyTotals(food, data.transactions, months)[1]).toEqual({ month: '2026-01-01', income: 0, expenses: -2000, balance: -82000 });
+	});
+});
+
+describe('breakdowns', () => {
+	it('sums per category and per description, largest first', () => {
+		expect(totalsByCategory(data.transactions)).toEqual([
+			{ key: NO_CATEGORY, total: 300000 - 3775, count: 2 },
+			{ key: RENT, total: -80000, count: 1 },
+			{ key: FOOD, total: -2000, count: 1 },
+		]);
+		const more = build([tx('2026-01-01', 'Bakery', -300, FOOD), tx('2026-01-02', 'Bakery', -200, FOOD), tx('2026-01-03', 'Market', -400, FOOD)]);
+		expect(totalsByDescription(more.transactions)).toEqual([
+			{ key: 'Bakery', total: -500, count: 2 },
+			{ key: 'Market', total: -400, count: 1 },
+		]);
+	});
+
+	it('sums per month and category, with the rest as other', () => {
+		const months = monthsBetween(d('2026-01-01'), d('2026-02-01'));
+		const { byCategory, other } = monthlyByCategory(data.transactions, months, [RENT, FOOD]);
+		expect(byCategory.get(RENT)).toEqual([-80000, 0]);
+		expect(byCategory.get(FOOD)).toEqual([-2000, 0]);
+		expect(other).toEqual([0, 300000 - 3775]);
+	});
+});
+
+describe('sides', () => {
+	it('splits expenses from income; zero amounts are neither', () => {
+		const mixed = build([tx('2026-01-01', 'in', 100), tx('2026-01-02', 'out', -100), tx('2026-01-03', 'zero', 0)]);
+		expect(ofSide(mixed.transactions, 'expense').map((t) => t.description)).toEqual(['out']);
+		expect(ofSide(mixed.transactions, 'income').map((t) => t.description)).toEqual(['in']);
 	});
 });

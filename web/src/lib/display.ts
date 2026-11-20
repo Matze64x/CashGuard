@@ -1,5 +1,5 @@
 /** Formatting for display only (never for the file format). */
-import { civilDate, dateParts, formatDateAs, monthOf, yearOf, type CivilDate, type Cents, type UtcSeconds } from '../core';
+import { civilDate, dateParts, formatDateAs, monthOf, NO_CATEGORY, yearOf, type CivilDate, type Cents, type Id, type UtcSeconds } from '../core';
 import { settings } from './settings.svelte';
 
 const euro = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
@@ -55,4 +55,16 @@ export function describeAmountRange(min: Cents | null, max: Cents | null): strin
 	if (min !== null && max !== null) return `${formatEuro(min)} – ${formatEuro(max)}`;
 	if (min !== null) return `at least ${formatEuro(min)}`;
 	return max !== null ? `at most ${formatEuro(max)}` : '';
+}
+
+/** A category's name for display, also for "no category", unnamed and deleted ones */
+export function categoryLabel(id: Id, category: { name: string } | undefined): string {
+	if (id === NO_CATEGORY) return 'No category';
+	if (!category) return 'Deleted category';
+	return category.name || '(unnamed)';
+}
+
+/** A category's color for display; "no category" (or an unknown one) is grey */
+export function categoryColor(category: { color: string } | undefined): string {
+	return category?.color ?? '#9E9E9EFF';
 }
