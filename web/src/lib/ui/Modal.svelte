@@ -1,6 +1,7 @@
 <!--
 	A modal dialog: traps the focus, closes on Escape, and returns the focus where it was when it
-	closes. While it's open, only shortcuts marked `inDialog` apply.
+	closes. While it's open, only shortcuts marked `inDialog` apply. Enter in a dropdown submits the
+	dialog's form like in a text field (browsers don't do that by themselves).
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -36,6 +37,12 @@
 	aria-labelledby={id}
 	onclose={() => {
 		if (!unmounting) onclose();
+	}}
+	onkeydown={(event) => {
+		const target = event.target;
+		if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || !(target instanceof HTMLSelectElement)) return;
+		event.preventDefault();
+		target.form?.requestSubmit();
 	}}
 >
 	<h2 {id}>{title}</h2>

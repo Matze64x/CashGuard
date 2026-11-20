@@ -1,5 +1,5 @@
 /** Formatting for display only (never for the file format). */
-import { civilDate, formatDateAs, type CivilDate, type Cents, type UtcSeconds } from '../core';
+import { civilDate, dateParts, formatDateAs, monthOf, yearOf, type CivilDate, type Cents, type UtcSeconds } from '../core';
 import { settings } from './settings.svelte';
 
 const euro = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
@@ -22,4 +22,27 @@ export function plural(count: number, singular: string, pluralForm = `${singular
 export function formatDay(time: UtcSeconds): string {
 	const d = new Date(time * 1000);
 	return formatDate(civilDate(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+}
+
+/** A period for a chip or heading: "November 2026", "2026", "01.03.2026 – 15.03.2026", "from …", "until …" ('' if open). */
+export function describePeriod(from: CivilDate | null, to: CivilDate | null): string {
+	if (from && to) {
+		const month = monthOf(from);
+		if (month.from === from && month.to === to) {
+			const { year, month: m } = dateParts(from);
+			return new Date(year, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+		}
+		const year = yearOf(from);
+		if (year.from === from && year.to === to) return String(dateParts(from).year);
+		return `${formatDate(from)} – ${formatDate(to)}`;
+	}
+	if (from) return `from ${formatDate(from)}`;
+	return to ? `until ${formatDate(to)}` : '';
+}
+
+/** An amount range (without sign) for a chip: "10,00 € – 50,00 €", "at least 10,00 €", "at most 50,00 €" ('' if open). */
+export function describeAmountRange(min: Cents | null, max: Cents | null): string {
+	if (min !== null && max !== null) return `${formatEuro(min)} – ${formatEuro(max)}`;
+	if (min !== null) return `at least ${formatEuro(min)}`;
+	return max !== null ? `at most ${formatEuro(max)}` : '';
 }

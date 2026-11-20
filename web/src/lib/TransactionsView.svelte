@@ -6,9 +6,11 @@
 	import {
 		addTransaction,
 		adjustAccount,
+		applyFilter,
 		cents,
 		deleteTransaction,
 		draftTotal,
+		isFiltered,
 		NO_CATEGORY,
 		sumCents,
 		today,
@@ -24,6 +26,8 @@
 	} from '../core';
 	import { attempt } from './attempt';
 	import { formatDate, formatEuro, plural } from './display';
+	import { filter } from './filter.svelte';
+	import FilterBar from './FilterBar.svelte';
 	import { shortcuts } from './shortcuts.svelte';
 	import TransactionEditor from './TransactionEditor.svelte';
 	import SelectableList from './ui/SelectableList.svelte';
@@ -51,15 +55,10 @@
 	// do the accounts still match the transactions? (only worth showing once there are accounts)
 	const accountsDifference = $derived(data.accounts.length === 0 ? null : sumCents(data.accounts.map((a) => a.amount)) - totalAmount(data.transactions));
 
-	let query = $state('');
-	const visible = $derived.by(() => {
-		const q = query.trim().toLocaleLowerCase();
-		if (!q) return data.transactions;
-		return data.transactions.filter((t) =>
-			[t.description, categories.get(t.categoryId)?.name ?? '', formatDate(t.date), formatEuro(t.amount), ...(t.subTransactions ?? []).map((s) => s.description)]
-				.some((text) => text.toLocaleLowerCase().includes(q)),
-		);
-	});
+	// what the shared filter selects (a split transaction counts as one, by its own fields)
+	const result = $derived(applyFilter(data.transactions, data.categories, filter.current));
+	const visible = $derived(result.transactions);
+	const filtered = $derived(isFiltered(filter.current));
 
 	let selectedId = $state<Id | null>(null);
 	const selectedIndex = $derived(visible.findIndex((t) => t.id === selectedId));
@@ -70,7 +69,6 @@
 	let saving = false;
 	let list: SelectableList<Transaction, Id>;
 	let listElement = $state<HTMLElement>();
-	let search: HTMLInputElement;
 
 	const blankDraft = (date = today()): TransactionDraft => ({ date, description: '', categoryId: NO_CATEGORY, amount: cents(0) });
 
@@ -150,40 +148,19 @@
 				{ keys: ['c'], description: 'New transaction like the selected one (copy)', run: () => openCopy(selected) },
 				{ keys: ['Delete', 'Backspace'], description: 'Delete the selected transaction (undo with Mod+Z)', run: () => void remove(selected) },
 			].map((s) => ({ ...s, group: 'Transactions', focusIn: () => listElement, visible: () => active, when: () => active && !!selected })),
-			{ keys: ['/'], description: 'Search', group: 'Transactions', when: () => active, run: () => search.focus() },
-			{ keys: ['Mod+f'], description: 'Search', group: 'Transactions', inFields: true, when: () => active, run: () => search.focus() },
 		]),
 	);
-
-	function onSearchKey(event: KeyboardEvent) {
-		if (event.key === 'Escape' && query) {
-			event.preventDefault();
-			query = '';
-		} else if (event.key === 'Escape' || event.key === 'Enter' || event.key === 'ArrowDown') {
-			// go to the results (focusing the list selects the first row on screen)
-			event.preventDefault();
-			listElement?.focus();
-		}
-	}
 </script>
 
 <div class="toolbar">
-	<input
-		bind:this={search}
-		bind:value={query}
-		class="search"
-		type="search"
-		placeholder="Search"
-		aria-label="Search transactions (press /)"
-		onkeydown={onSearchKey}
-	/>
+	<div class="filter"><FilterBar {workspace} {active} onleave={() => listElement?.focus()} /></div>
 	<button class="primary" onclick={() => openNew()} title="n">New</button>
 </div>
 
 <section class="summary" aria-live="polite">
-	<span class="balance">{formatEuro(totalAmount(visible))}</span>
+	<span class="balance">{formatEuro(result.total)}</span>
 	<span class="muted">
-		{query.trim() ? `${plural(visible.length, 'match', 'matches')} of ${data.transactions.length}` : plural(data.transactions.length, 'transaction')}
+		{filtered ? `${plural(visible.length, 'match', 'matches')} of ${data.transactions.length}` : plural(data.transactions.length, 'transaction')}
 	</span>
 	{#if accountsDifference !== null}
 		<button class="accounts" class:off={accountsDifference !== 0} title="Compare with the accounts (g a)" onclick={onshowaccounts}>
@@ -220,7 +197,7 @@
 		</div>
 	{/snippet}
 	{#snippet empty()}
-		<p class="empty">{query.trim() ? 'Nothing matches the search.' : `No transactions yet. ${emptyHint}`}</p>
+		<p class="empty">{filtered ? 'Nothing matches the filter.' : `No transactions yet. ${emptyHint}`}</p>
 	{/snippet}
 </SelectableList>
 
@@ -233,10 +210,11 @@
 <style>
 	.toolbar {
 		display: flex;
+		align-items: start;
 		gap: 0.5rem;
 		padding: 1rem 0.75rem 0;
 	}
-	.search {
+	.filter {
 		flex: 1;
 		min-width: 0;
 	}

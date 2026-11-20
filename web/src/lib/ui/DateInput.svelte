@@ -12,7 +12,15 @@
 		id,
 		label,
 		autofocus = false,
-	}: { value: CivilDate | null; id?: string; label?: string; autofocus?: boolean } = $props();
+		invalid = $bindable(false),
+	}: {
+		value: CivilDate | null;
+		id?: string;
+		label?: string;
+		autofocus?: boolean;
+		/** Set while the text isn't a date (then `value` is null), e.g. where empty means "open" */
+		invalid?: boolean;
+	} = $props();
 
 	const show = (v: CivilDate | null) => (v === null ? '' : formatDateAs(v, settings.dateStyle));
 	let text = $state(show(value));
@@ -29,7 +37,10 @@
 
 	// the month and year that left-out parts stand for: those of the current value, else today
 	const reference = $derived(lastSet ?? today());
-	const invalid = $derived(text.trim() !== '' && parseDateInput(text, settings.dateStyle, reference) === null);
+	const textInvalid = $derived(text.trim() !== '' && parseDateInput(text, settings.dateStyle, reference) === null);
+	$effect(() => {
+		invalid = textInvalid;
+	});
 
 	function set(next: CivilDate | null) {
 		lastSet = next;
@@ -85,12 +96,12 @@
 		spellcheck="false"
 		placeholder={settings.dateStyle}
 		aria-label={label}
-		aria-invalid={invalid}
+		aria-invalid={textInvalid}
 		title="↑/↓: day, PageUp/PageDown: month, Alt+↓: calendar"
 		value={text}
 		{oninput}
 		{onkeydown}
-		onblur={() => (text = invalid ? text : show(value))}
+		onblur={() => (text = textInvalid ? text : show(value))}
 		{autofocus}
 	/>
 	<!-- the browser's calendar; on phones a tap opens it directly -->
@@ -117,7 +128,7 @@
 		/>
 	</span>
 </div>
-{#if invalid}<p class="error" role="alert">Enter a date like {formatDateAs('2026-03-05' as CivilDate, settings.dateStyle)}</p>{/if}
+{#if textInvalid}<p class="error" role="alert">Enter a date like {formatDateAs('2026-03-05' as CivilDate, settings.dateStyle)}</p>{/if}
 
 <style>
 	.date {

@@ -7,3 +7,4 @@ export * from './money';
 export * from './merge';
 export * from './sync';
 export * from './edit';
+export * from './queries';
