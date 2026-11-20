@@ -1,0 +1,90 @@
+# Tests the web app on pushes to master and publishes it to GitHub Pages if the tests pass.
+# Free for public repositories. Can also be started by hand in the Actions tab.
+# One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
+name: Test and publish
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# runs one after the other, so a deployment is never cut off by a newer push
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web app (checks, unit and browser tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run check
+        working-directory: web
+      - run: npm test
+        working-directory: web
+      - name: Install browsers (Firefox, and WebKit as on the iPhone)
+        run: npx playwright install --with-deps firefox webkit
+        working-directory: web
+      # also builds the app exactly as published (web/dist-pages) and tests that build
+      - run: npx playwright test
+        working-directory: web
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-results
+          path: web/tests/e2e-results/
+          retention-days: 7
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist-pages
+
+  desktop:
+    name: Desktop app (Rust tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # from https://v2.tauri.app/start/prerequisites/ (Debian/Ubuntu)
+      - name: Install Tauri's system libraries
+        run: >-
+          sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file
+          libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      # the Rust build embeds the built web app
+      - run: npm ci && npm run build
+        working-directory: web
+      - run: cargo test
+        working-directory: web/src-tauri
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: web/src-tauri
+
+  # only the web app's tests gate publishing: a desktop (Rust) problem shouldn't keep fixes from the phone
+  publish:
+    name: Publish to GitHub Pages
+    needs: web
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5
