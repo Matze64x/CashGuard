@@ -56,15 +56,28 @@
 		wasActive = active;
 	});
 
-	// keep the selection visible
+	/** Where the page's visible area starts: below the sticky header */
+	const visibleTop = () => document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
+
+	// keep the selection visible: scroll the page just enough, and only if needed (not with
+	// `scrollIntoView`, which ignores the sticky header and in WebKit sometimes scrolled far past a
+	// row that was already visible)
 	$effect(() => {
-		if (selected !== null) document.getElementById(domId(selected))?.scrollIntoView({ block: 'nearest' });
+		const row = selected === null ? null : document.getElementById(domId(selected));
+		if (!row) return;
+		const { top, bottom } = row.getBoundingClientRect();
+		const above = top - visibleTop();
+		// the layout viewport: `innerHeight` briefly reported a far too small height in mobile WebKit
+		// after a full-screen dialog closed
+		const below = bottom - document.documentElement.clientHeight;
+		if (above < 0) scrollBy({ top: above });
+		else if (below > 0) scrollBy({ top: below });
 	});
 
 	/** The index of the first row on screen (below the sticky header); rows are stacked, so a binary search finds it */
 	function firstRowOnScreen(): number {
 		const rows = element?.querySelectorAll<HTMLElement>('[role="option"]') ?? [];
-		const top = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
+		const top = visibleTop();
 		let low = 0;
 		let high = rows.length;
 		while (low < high) {

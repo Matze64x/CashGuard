@@ -20,12 +20,22 @@
 	// closing because the component goes away (e.g. replaced by the next dialog) isn't the user
 	// closing it, so `onclose` must not fire then
 	let unmounting = false;
+
+	/**
+	 * Takes the focus out of the dialog before it closes. Otherwise mobile WebKit scrolled the page
+	 * to the focused text field's caret, which (no longer on top) sits at the end of the page.
+	 */
+	function releaseFocus() {
+		const focused = document.activeElement;
+		if (focused instanceof HTMLElement && dialog.contains(focused)) focused.blur();
+	}
 	$effect(() => {
 		const closeScope = shortcuts.openDialog();
 		dialog.showModal();
 		return () => {
 			unmounting = true;
 			closeScope();
+			releaseFocus();
 			dialog.close();
 		};
 	});
@@ -35,6 +45,7 @@
 	bind:this={dialog}
 	class:wide
 	aria-labelledby={id}
+	oncancel={releaseFocus}
 	onclose={() => {
 		if (!unmounting) onclose();
 	}}

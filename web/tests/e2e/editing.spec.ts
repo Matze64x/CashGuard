@@ -175,7 +175,8 @@ test('cancelling keeps the scroll position, and switching sections moves the foc
 	await page.keyboard.press('n');
 	await page.keyboard.press('Escape');
 	await expect(page.getByRole('listbox', { name: 'Transactions' })).toBeFocused();
-	expect(await page.evaluate(() => scrollY)).toBe(300);
+	// (a row partly under the sticky header is revealed, which may move the page a few pixels)
+	expect(Math.abs((await page.evaluate(() => scrollY)) - 300)).toBeLessThan(40);
 	// the selection starts on screen, not at the (scrolled away) top
 	await expect(page.getByRole('option', { selected: true })).toBeInViewport();
 
