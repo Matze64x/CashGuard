@@ -3,8 +3,6 @@ import { get, set } from 'idb-keyval';
 
 export interface StoredSnapshot {
 	readonly working: string;
-	readonly base: string | null;
-	readonly exported: string | null;
 	readonly fileName: string | null;
 }
 

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	cents,
 	EMPTY_DATA,
-	INITIAL_SYNC_STATE,
 	planImport,
 	sortNewestFirst,
 	summarizeChanges,
@@ -11,7 +10,6 @@ import {
 	type CashGuardData,
 	type CivilDate,
 	type Id,
-	type SyncState,
 	type Transaction,
 	type UtcSeconds,
 } from '../../src/core';
@@ -29,11 +27,6 @@ const tx = (id: string, amount = -100, edited = 0): Transaction => ({
 const acc = (name: string, amount: number, id = name): Account => ({ id: id as Id, name, amount: cents(amount), edited: 0 as UtcSeconds });
 const data = (transactions: Transaction[], accounts: Account[] = []): CashGuardData => ({ categories: [], accounts, recurring: [], transactions: sortNewestFirst(transactions) });
 const ids = (d: CashGuardData) => d.transactions.map((t) => t.id).sort();
-
-/** The state after importing `file` into an empty app */
-const imported = (file: CashGuardData): SyncState => planImport(INITIAL_SYNC_STATE, file).next;
-/** The state after exporting the working copy */
-const exported = (state: SyncState): SyncState => ({ ...state, exported: state.working });
 
 describe('summarizeChanges', () => {
 	it('counts added, changed and deleted records of every kind', () => {
@@ -59,88 +52,58 @@ describe('summarizeChanges', () => {
 	});
 });
 
-describe('sync flow', () => {
-	it('first import: the file becomes working copy and base', () => {
+describe('import (additive)', () => {
+	it('into an empty app: the file becomes the data', () => {
 		const file = randomDocument(4);
-		const plan = planImport(INITIAL_SYNC_STATE, file);
-		expect(plan.next).toEqual({ working: file, base: file, exported: null });
+		const plan = planImport(EMPTY_DATA, file);
+		expect(plan.next).toEqual(file);
 		expect(plan.warnings).toEqual([]);
 	});
 
-	it('changes from the other device arrive and local ones stay', () => {
-		const state = { ...imported(data([tx('1'), tx('2')])), working: data([tx('1', -5, 1), tx('2')]) };
-		const plan = planImport(state, data([tx('1'), tx('2'), tx('3')]));
-		expect(plan.next.working).toEqual(data([tx('1', -5, 1), tx('2'), tx('3')]));
-		expect(plan.next.base).toEqual(data([tx('1'), tx('2'), tx('3')]));
+	it('adds what the app lacks and keeps everything else, including what the file lacks', () => {
+		const working = data([tx('1'), tx('2'), tx('4')]);
+		const plan = planImport(working, data([tx('1'), tx('3')]));
+		expect(ids(plan.next)).toEqual(['1', '2', '3', '4']);
+		expect(plan.changes.transactions).toEqual({ added: 1, changed: 0, deleted: 0 });
 	});
 
-	it('importing an old file again keeps all local edits (the export never reached the file)', () => {
-		const file = data([tx('1'), tx('2')]);
-		const state = exported({ ...imported(file), working: data([tx('1'), tx('2', -5, 1), tx('3')]) });
-		const plan = planImport(state, file);
-		expect(plan.next.working).toEqual(state.working);
-		expect(totalChanges(plan.changes)).toBe(0);
+	it('never deletes: an empty or old file changes nothing', () => {
+		const working = data([tx('1'), tx('2')]);
+		expect(planImport(working, EMPTY_DATA).next).toEqual(working);
+		expect(totalChanges(planImport(working, data([tx('1')])).changes)).toBe(0);
 	});
 
-	it('a deletion on the other device after the export reached it sticks (export becomes the base)', () => {
-		// added 3 and changed 2 here, exported, the other device saved it and then deleted 3
-		const state = exported({ ...imported(data([tx('1'), tx('2')])), working: data([tx('1'), tx('2', -5, 1), tx('3')]) });
-		const plan = planImport(state, data([tx('1'), tx('2', -5, 1)]));
-		expect(ids(plan.next.working)).toEqual(['1', '2']);
-		expect(plan.merge.conflicts.transactions).toEqual([]);
+	it('merges records with the same id: the later edit wins', () => {
+		const plan = planImport(data([tx('1', -5, 1), tx('2', -6, 3)]), data([tx('1', -7, 2), tx('2', -8, 2)]));
+		expect(plan.next).toEqual(data([tx('1', -7, 2), tx('2', -6, 3)]));
+		expect(plan.changes.transactions).toEqual({ added: 0, changed: 1, deleted: 0 });
 	});
 
-	it('an edit on the other device after the export reached it wins without a conflict', () => {
-		const state = exported({ ...imported(data([tx('1'), tx('2')])), working: data([tx('1', -5, 1), tx('2', -6, 1)]) });
-		const plan = planImport(state, data([tx('1', -7, 2), tx('2', -6, 1)]));
-		expect(plan.next.working).toEqual(data([tx('1', -7, 2), tx('2', -6, 1)]));
-		expect(plan.merge.conflicts.transactions).toEqual([]);
-	});
-
-	it('the same, but the edited record was the only one exported: still right, reported as a conflict', () => {
-		// no record in the file matches the export exactly, so there's no proof it contains the export
-		const state = exported({ ...imported(data([tx('1')])), working: data([tx('1', -5, 1)]) });
-		const plan = planImport(state, data([tx('1', -7, 2)]));
-		expect(plan.next.working).toEqual(data([tx('1', -7, 2)]));
-		expect(plan.merge.conflicts.transactions.map((c) => c.reason)).toEqual(['changed-on-both-sides']);
-	});
-
-	it('accepted cost: if the export only added a record that the other device deleted, it comes back', () => {
-		const state = exported({ ...imported(data([tx('1')])), working: data([tx('1'), tx('2')]) });
-		const plan = planImport(state, data([tx('1')]));
-		// nothing in the file shows that it contains the export, so the old base is used
-		expect(ids(plan.next.working)).toEqual(['1', '2']);
-	});
-
-	it('random edits on both sides: the import keeps every local change the file does not touch', () => {
+	it('random data on both sides: every record of either side is in the result', () => {
 		for (let seed = 1; seed <= 100; seed++) {
-			const file = randomDocument(seed);
-			const ours = randomEdit(file, 1000 + seed);
-			const theirs = randomEdit(file, 2000 + seed);
-			const plan = planImport({ working: ours, base: file, exported: null }, theirs);
-			expect(plan.next).toEqual({ working: plan.merge.data, base: theirs, exported: null });
+			const base = randomDocument(seed);
+			const ours = randomEdit(base, 1000 + seed);
+			const theirs = randomEdit(base, 2000 + seed);
+			const plan = planImport(ours, theirs);
+			const result = new Set(plan.next.transactions.flatMap((t) => [t.id, ...(t.subTransactions ?? []).map((s) => s.id)]));
+			const top = (d: CashGuardData) => d.transactions.map((t) => t.id);
+			// (a top-level transaction moved into a group on the other side lives on inside that group)
+			for (const id of [...top(ours), ...top(theirs)]) expect(result.has(id)).toBe(true);
+			expect(plan.changes.transactions.deleted).toBe(0);
 		}
 	});
 });
 
 describe('import warnings', () => {
-	const state = imported(data([tx('1'), tx('2'), tx('3'), tx('4'), tx('5'), tx('6')]));
+	const working = data([tx('1'), tx('2'), tx('3')]);
 
-	it('an empty file', () => {
-		expect(planImport(state, EMPTY_DATA).warnings).toEqual(['empty-file', 'many-deletions']);
+	it('a file with nothing in common with the data', () => {
+		expect(planImport(working, data([tx('100')])).warnings).toEqual(['unrelated-file']);
 	});
 
-	it('a file with nothing in common with the last import', () => {
-		expect(planImport(state, data([tx('100')])).warnings).toEqual(['unrelated-file', 'many-deletions']);
-	});
-
-	it('an old copy that removes many transactions', () => {
-		expect(planImport(state, data([tx('1')])).warnings).toEqual(['many-deletions']);
-	});
-
-	it('no warning for normal changes', () => {
-		expect(planImport(state, data([tx('1'), tx('2'), tx('3'), tx('4'), tx('5'), tx('7')])).warnings).toEqual([]);
-		expect(planImport(INITIAL_SYNC_STATE, EMPTY_DATA).warnings).toEqual([]);
+	it('no warning when one side is empty or they share a transaction', () => {
+		expect(planImport(working, EMPTY_DATA).warnings).toEqual([]);
+		expect(planImport(EMPTY_DATA, working).warnings).toEqual([]);
+		expect(planImport(working, data([tx('3'), tx('7')])).warnings).toEqual([]);
 	});
 });
-

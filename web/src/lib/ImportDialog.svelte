@@ -14,9 +14,7 @@
 	};
 
 	const WARNINGS: Record<ImportWarning, string> = {
-		'empty-file': 'This file is empty. Applying it removes all your data.',
-		'unrelated-file': 'This file has nothing in common with the version you had before. Is it the right file?',
-		'many-deletions': 'This removes many transactions. Is this an old copy of the file?',
+		'unrelated-file': 'This file has nothing in common with your data. Is it the right file?',
 	};
 
 	function describe(counts: ChangeCounts, what: string): string | null {
@@ -73,7 +71,7 @@
 		{#if changes.length === 0}
 			<p>Nothing new: your data already contains everything in this file.</p>
 		{:else}
-			<p>Importing changes your data:</p>
+			<p>Importing adds to your data (nothing is removed):</p>
 			<ul>
 				{#each changes as line (line)}<li>{line}</li>{/each}
 			</ul>

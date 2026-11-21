@@ -6,14 +6,13 @@
  * the screen never shows data that isn't stored. A failed save throws and changes nothing.
  *
  * Exchanging data with a CashGuard file, in the browser and the desktop app alike: importing one
- * merges it in (preview first, can be undone), exporting hands the data out as a file. The desktop
- * app can also keep a backup file (`settings.backupPath`): written a few seconds after each change
- * and when the window closes, never read back by itself (restoring it is an import). A backup is
- * NOT an export: `exported` is what reached another device, the merge base of the next import, and
- * a backup never leaves this machine. Files are only written if they read back, and always atomically.
+ * adds its records (preview first, can be undone; see `core/sync.ts`), exporting hands the data out
+ * as a file. The desktop app can also keep a backup file (`settings.backupPath`): written a few
+ * seconds after each change and when the window closes, never read back by itself (restoring it is
+ * an import). Files are only written if they read back, and always atomically.
  */
 import {
-	INITIAL_SYNC_STATE,
+	EMPTY_DATA,
 	nowUtcSeconds,
 	parseCashGuard,
 	planImport,
@@ -21,7 +20,6 @@ import {
 	type CashGuardData,
 	type ImportPlan,
 	type Issue,
-	type SyncState,
 	type UtcSeconds,
 } from '../core';
 import * as desktop from './desktop';
@@ -35,15 +33,15 @@ const DEFAULT_FILE_NAME = 'cashguard.json';
 const BACKUP_DELAY_MS = 3000;
 
 interface Snapshot {
-	readonly sync: SyncState;
+	readonly working: CashGuardData;
 	/** The file last imported or exported, to suggest its name for the next export */
 	readonly fileName: string | null;
 }
 
 export interface ImportSource {
 	readonly fileName: string;
-	/** The state the plan was made from; applying is refused if the data changed since */
-	readonly from: SyncState;
+	/** The data the plan was made from; applying is refused if the data changed since */
+	readonly from: CashGuardData;
 }
 
 export type ImportCandidate =
@@ -75,25 +73,13 @@ function fileText(data: CashGuardData): string {
 	return text;
 }
 
-function toStored({ sync, fileName }: Snapshot): StoredSnapshot {
-	const text = (data: CashGuardData | null) => data && serialize(data);
-	return { working: serialize(sync.working), base: text(sync.base), exported: text(sync.exported), fileName };
+function toStored({ working, fileName }: Snapshot): StoredSnapshot {
+	return { working: serialize(working), fileName };
 }
 
 function fromStored(stored: StoredSnapshot): Snapshot {
-	// the working copy, base and export are often the same: parse each text once
-	const parsed = new Map<string, CashGuardData>();
-	const parse = (text: string) => {
-		let data = parsed.get(text);
-		// (not remembered as its serialization: an older stored format is upgraded when read)
-		if (data === undefined) parsed.set(text, (data = parseStored(text)));
-		return data;
-	};
-	const data = (text: string | null) => (text === null ? null : parse(text));
-	return {
-		sync: { working: parse(stored.working), base: data(stored.base), exported: data(stored.exported) },
-		fileName: stored.fileName,
-	};
+	// (older versions also stored an import base and the last export: no longer needed)
+	return { working: parseStored(stored.working), fileName: stored.fileName };
 }
 
 interface UndoEntry {
@@ -106,7 +92,7 @@ export class Workspace {
 	readonly isDesktop = desktop.isDesktop;
 
 	// $state.raw: snapshots are replaced as a whole, never mutated, so deep reactivity isn't needed
-	#current = $state.raw<Snapshot>({ sync: INITIAL_SYNC_STATE, fileName: null });
+	#current = $state.raw<Snapshot>({ working: EMPTY_DATA, fileName: null });
 	#beforeImport = $state.raw<Snapshot | null>(null);
 	ready = $state(false);
 	/** Increases whenever another tab changed the data and it was reloaded */
@@ -114,7 +100,7 @@ export class Workspace {
 	/** Desktop app: why the last backup failed (null: it worked, or there is none) */
 	backupError = $state<string | null>(null);
 
-	readonly data = $derived(this.#current.sync.working);
+	readonly data = $derived(this.#current.working);
 	readonly fileName = $derived(this.#current.fileName);
 	readonly canUndoImport = $derived(this.#beforeImport !== null);
 
@@ -124,8 +110,8 @@ export class Workspace {
 	 */
 	#undo = $state.raw<readonly UndoEntry[]>([]);
 	#redo = $state.raw<readonly UndoEntry[]>([]);
-	readonly undoLabel = $derived(this.#undo.at(-1)?.after === this.#current.sync.working ? this.#undo.at(-1)!.label : null);
-	readonly redoLabel = $derived(this.#redo.at(-1)?.before === this.#current.sync.working ? this.#redo.at(-1)!.label : null);
+	readonly undoLabel = $derived(this.#undo.at(-1)?.after === this.#current.working ? this.#undo.at(-1)!.label : null);
+	readonly redoLabel = $derived(this.#redo.at(-1)?.before === this.#current.working ? this.#redo.at(-1)!.label : null);
 
 	/** Changes run one at a time, so they can't interleave */
 	#queue: Promise<unknown> = Promise.resolve();
@@ -174,7 +160,7 @@ export class Workspace {
 
 	/** Plans merging a file into the working copy; nothing changes until `applyImport`. */
 	planImport(fileName: string, text: string): ImportCandidate {
-		const source = { fileName, from: this.#current.sync };
+		const source = { fileName, from: this.#current.working };
 		const result = parseCashGuard(text);
 		if (!result.ok) return { ...source, ok: false, errors: result.errors };
 		return { ...source, ok: true, plan: planImport(source.from, result.data), warnings: result.warnings };
@@ -189,8 +175,8 @@ export class Workspace {
 	/** Applies a planned import; it can be undone until the next change. */
 	applyImport(candidate: ImportCandidate & { ok: true }): Promise<void> {
 		return this.#serial(async () => {
-			if (this.#current.sync !== candidate.from) throw new Error('Your data changed in the meantime. Please try again.');
-			await this.#commit({ sync: candidate.plan.next, fileName: candidate.fileName }, this.#current);
+			if (this.#current.working !== candidate.from) throw new Error('Your data changed in the meantime. Please try again.');
+			await this.#commit({ working: candidate.plan.next, fileName: candidate.fileName }, this.#current);
 		});
 	}
 
@@ -206,7 +192,7 @@ export class Workspace {
 	 * app saved where the user chooses. Returns false if cancelled.
 	 */
 	async exportFile(): Promise<boolean> {
-		const handedOut = this.#current.sync.working;
+		const handedOut = this.#current.working;
 		const name = this.#current.fileName ?? DEFAULT_FILE_NAME;
 		if (this.isDesktop) {
 			const path = await desktop.chooseFileToSave('Export a CashGuard file', name);
@@ -214,18 +200,18 @@ export class Workspace {
 			// (in the queue: no other write, e.g. the backup, can run at the same time)
 			await this.#serial(async () => {
 				await desktop.writeFile(path, fileText(handedOut));
-				await this.#markExported(handedOut, desktop.fileNameOf(path));
+				await this.#rememberFileName(desktop.fileNameOf(path));
 			});
 			return true;
 		}
 		if (!(await saveFile(fileText(handedOut), name))) return false;
-		await this.#serial(() => this.#markExported(handedOut, name));
+		await this.#serial(() => this.#rememberFileName(name));
 		return true;
 	}
 
-	/** Changes made meanwhile (e.g. in another tab, or a save still in progress) are kept: only what was handed out counts as exported. Must run inside `#serial`. */
-	async #markExported(data: CashGuardData, fileName: string): Promise<void> {
-		await this.#commit({ sync: { ...this.#current.sync, exported: data }, fileName }, this.#beforeImport);
+	/** The name suggested for the next export. Must run inside `#serial`. */
+	async #rememberFileName(fileName: string): Promise<void> {
+		if (this.#current.fileName !== fileName) await this.#commit({ ...this.#current, fileName }, this.#beforeImport);
 	}
 
 	// ------------------------------------------------------------------ desktop: backup file
@@ -246,7 +232,7 @@ export class Workspace {
 		return this.#serial(async () => {
 			const path = settings.backupPath;
 			if (!this.isDesktop || !path) return;
-			const data = this.#current.sync.working;
+			const data = this.#current.working;
 			if (data === this.#backedUp) return;
 			try {
 				await desktop.writeFile(path, fileText(data));
@@ -280,7 +266,7 @@ export class Workspace {
 	 */
 	edit(label: string, change: (data: CashGuardData, now: UtcSeconds) => CashGuardData): Promise<void> {
 		return this.#serial(async () => {
-			const before = this.#current.sync.working;
+			const before = this.#current.working;
 			const after = change(before, nowUtcSeconds());
 			if (after === before) return;
 			await this.#replaceWorking(after);
@@ -295,7 +281,7 @@ export class Workspace {
 			const last = this.#undo.at(-1);
 			if (!last) return null;
 			// an import changed the data since: undoing would also revert that, so don't
-			if (this.#current.sync.working !== last.after) {
+			if (this.#current.working !== last.after) {
 				this.#undo = [];
 				this.#redo = [];
 				return null;
@@ -310,7 +296,7 @@ export class Workspace {
 	redo(): Promise<string | null> {
 		return this.#serial(async () => {
 			const next = this.#redo.at(-1);
-			if (!next || this.#current.sync.working !== next.before) {
+			if (!next || this.#current.working !== next.before) {
 				this.#redo = [];
 				return null;
 			}
@@ -323,7 +309,7 @@ export class Workspace {
 
 	/** Must run inside `#serial`. An edit invalidates "undo import" (it would discard the edit). */
 	async #replaceWorking(working: CashGuardData): Promise<void> {
-		await this.#commit({ ...this.#current, sync: { ...this.#current.sync, working } }, null);
+		await this.#commit({ ...this.#current, working }, null);
 	}
 
 	#serial<T>(task: () => Promise<T>): Promise<T> {
@@ -338,7 +324,7 @@ export class Workspace {
 	 */
 	async #commit(next: Snapshot, beforeImport: Snapshot | null): Promise<void> {
 		await saveWorkspace({ current: toStored(next), beforeImport: beforeImport && toStored(beforeImport) });
-		const changed = next.sync.working !== this.#current.sync.working;
+		const changed = next.working !== this.#current.working;
 		this.#current = next;
 		this.#beforeImport = beforeImport;
 		if (changed) this.#scheduleBackup();

@@ -12,7 +12,7 @@ async function importFile(page: Page, path: string) {
 }
 
 /** Writes a variant of the fixture (any valid JSON is fine for importing) and returns its path. */
-function variant(path: string, edit: (doc: { Transactions: { Description: string }[] }) => void): string {
+function variant(path: string, edit: (doc: { Transactions: { ID: string; Description: string; Edited: string }[] }) => void): string {
 	const doc = JSON.parse(fixtureText());
 	edit(doc);
 	writeFileSync(path, JSON.stringify(doc));
@@ -58,7 +58,7 @@ test('import, persist, export and undo', async ({ page }) => {
 	await expect(page.getByRole('button', { name: 'Undo import' })).toBeHidden();
 });
 
-test('a second import merges changes from the other device', async ({ page }, testInfo) => {
+test('a second import adds and updates, but never removes', async ({ page }, testInfo) => {
 	await page.goto('/');
 	await importFile(page, FIXTURE);
 	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
@@ -66,17 +66,22 @@ test('a second import merges changes from the other device', async ({ page }, te
 
 	const changed = variant(testInfo.outputPath('changed.json'), (doc) => {
 		doc.Transactions[0]!.Description = 'Renamed on the desktop';
+		doc.Transactions[0]!.Edited = '01.01.2030 00:00:00';
+		// gone from the file: stays in the app
 		doc.Transactions.pop();
+		doc.Transactions.push({ ...doc.Transactions[1]!, ID: '987654321', Description: 'Only in the file' });
 	});
 	await importFile(page, changed);
 	const dialog = page.getByRole('dialog');
-	await expect(dialog).toContainText('Transactions: 1 changed, 1 removed');
+	await expect(dialog).toContainText('Transactions: 1 added, 1 changed');
+	await expect(dialog).toContainText('nothing is removed');
 	await dialog.getByRole('button', { name: 'Import' }).click();
-	await expect(page.getByText('45 transactions')).toBeVisible();
-	await expect(page.getByText('Renamed on the desktop')).toBeVisible();
+	await expect(page.getByText('47 transactions')).toBeVisible();
+	await page.getByRole('searchbox').fill('Renamed on the desktop');
+	await expect(page.getByText('1 match of 47')).toBeVisible();
 });
 
-test('an empty file is flagged and cancelling is suggested', async ({ page }, testInfo) => {
+test('an empty file changes nothing', async ({ page }, testInfo) => {
 	await page.goto('/');
 	await importFile(page, FIXTURE);
 	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
@@ -86,7 +91,23 @@ test('an empty file is flagged and cancelling is suggested', async ({ page }, te
 	writeFileSync(empty, '');
 	await importFile(page, empty);
 	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByRole('alert').first()).toContainText('This file is empty');
+	await expect(dialog).toContainText('Nothing new');
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+	await expect(page.getByText('46 transactions')).toBeVisible();
+});
+
+test('a file with nothing in common is flagged and cancelling is suggested', async ({ page }, testInfo) => {
+	await page.goto('/');
+	await importFile(page, FIXTURE);
+	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByText('46 transactions')).toBeVisible();
+
+	const other = variant(testInfo.outputPath('other.json'), (doc) => {
+		doc.Transactions = [{ ...doc.Transactions[1]!, ID: '987654321' }];
+	});
+	await importFile(page, other);
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByRole('alert').first()).toContainText('nothing in common with your data');
 	await expect(dialog.getByRole('button', { name: 'Cancel' })).toHaveClass(/primary/);
 	await dialog.getByRole('button', { name: 'Cancel' }).click();
 	await expect(page.getByText('46 transactions')).toBeVisible();
