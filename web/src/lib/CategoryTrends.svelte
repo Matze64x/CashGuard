@@ -103,20 +103,18 @@
 
 	/**
 	 * The line and its dots, and the average's height. Coordinates: x 10 per bucket, y 0–100 from the
-	 * top, spanning the line's own lowest to highest value, but at least 40 % of the highest, so
-	 * small changes look small.
+	 * top: zero at `ZERO_Y`, the highest amount (of the line and the estimate) at `TOP_Y`, so all
+	 * lines start at zero and the top line's label gives the scale.
 	 */
-	function sparkline(trend: Trend, average: number | null) {
+		function sparkline(trend: Trend, average: number | null) {
 		const { whole, estimate } = trend;
 		const last = trend.values.length - 1;
 		const scaled = estimate === null ? whole : [...whole, { value: estimate, i: last }];
-		const lowest = Math.min(...scaled.map((p) => p.value));
-		const highest = Math.max(...scaled.map((p) => p.value));
-		const span = Math.max(highest - lowest, highest * 0.4);
-		const low = (highest + lowest - span) / 2;
-		const y = (v: number) => (span === 0 ? 50 : 92 - ((v - low) / span) * 84);
+		const highest = Math.max(0, ...scaled.map((p) => p.value));
+		const y = (v: number) => (highest === 0 ? ZERO_Y : ZERO_Y - (v / highest) * (ZERO_Y - TOP_Y));
 		const x = (i: number) => i * 10 + 5;
 		return {
+			highest,
 			line: whole.map((p) => `${x(p.i)},${y(p.value)}`).join(' '),
 			points: whole.map((p) => ({ x: x(p.i), y: y(p.value) })),
 			average: average === null || whole.length === 0 ? null : { from: x(whole[0]!.i), y: y(average) },
@@ -127,6 +125,10 @@
 					: { x: x(last), y: y(estimate), from: whole.at(-1)?.i === last - 1 ? `${x(last - 1)},${y(whole.at(-1)!.value)} ` : '' },
 		};
 	}
+
+	const ZERO_Y = 94;
+	/** (room above for the highest amount's label) */
+	const TOP_Y = 24;
 
 	const percent = new Intl.NumberFormat('de-DE', { style: 'percent', maximumFractionDigits: 0, signDisplay: 'exceptZero' });
 	const euros = (value: number) => formatEuro(Math.round(value) as Cents);
@@ -150,7 +152,7 @@
 	<Segmented bind:value={unit} options={UNITS} label="Months or years" />
 </div>
 <p class="hint">
-	Each line is scaled to its own amounts and shows whole {unit}s{basis
+	Each line runs from zero up to its highest amount (the top line) and shows whole {unit}s{basis
 		? `, then dashed where this ${unit} is heading ${basis.kind === 'usual' ? `by what usually comes in the rest of a ${unit}` : 'at its pace so far'}`
 		: ''}; the dotted line is the average.{unit === 'year'
 		? ' Years suit irregular categories like vacations.'
@@ -176,7 +178,12 @@
 					}${current ? `; ${current}` : ''}`}
 				>
 					<span class="name"><span class="dot" style:background={target.color}></span><span class="label">{target.label}</span></span>
-					<svg class="spark" viewBox={`0 0 ${trend.values.length * 10} 100`} preserveAspectRatio="none" aria-hidden="true">
+					<span class="spark">
+					<span class="top-label" aria-hidden="true">{euros(line.highest)}</span>
+					<svg viewBox={`0 0 ${trend.values.length * 10} 100`} preserveAspectRatio="none" aria-hidden="true">
+						<!-- zero and the highest amount: the scale -->
+						<line class="guide" x1="0" x2={trend.values.length * 10} y1={ZERO_Y} y2={ZERO_Y} vector-effect="non-scaling-stroke" />
+						<line class="guide" x1="0" x2={trend.values.length * 10} y1={TOP_Y} y2={TOP_Y} vector-effect="non-scaling-stroke" />
 						{#if line.average}
 							<line class="average-line" x1={line.average.from} x2={trend.values.length * 10} y1={line.average.y} y2={line.average.y} vector-effect="non-scaling-stroke" />
 						{/if}
@@ -200,6 +207,7 @@
 							>
 						{/each}
 					</svg>
+					</span>
 					{#if s}
 						<span class="average"><span class="muted">Ø per {unit}</span> {euros(s.average)}</span>
 						<span class="last">
@@ -280,10 +288,28 @@
 		flex: none;
 	}
 	.spark {
+		position: relative;
+		display: block;
+		height: 3.6rem;
+	}
+	.spark svg {
 		width: 100%;
-		height: 2.2rem;
+		height: 100%;
 		display: block;
 		overflow: visible;
+	}
+	/* the highest amount, above the top line */
+	.top-label {
+		position: absolute;
+		top: -0.15rem;
+		left: 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+		line-height: 1;
+	}
+	.spark .guide {
+		stroke: var(--border);
+		stroke-width: 1;
 	}
 	.spark polyline,
 	.spark line {
