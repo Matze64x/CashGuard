@@ -14,7 +14,7 @@ import { deepEqual } from './equal';
 import { newId, NO_CATEGORY, type Id } from './ids';
 import { addCents, sumCents, type Cents } from './money';
 import { normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Recurring, type Transaction } from './model';
-import { isValidSchedule, nextOccurrence } from './recurring';
+import { isValidSchedule, nextOccurrence, occurrences } from './recurring';
 
 /** What the user edits of a transaction; ids and timestamps are managed here. */
 export interface TransactionDraft {
@@ -297,6 +297,17 @@ export function confirmOccurrence(
 /** Skips an occurrence (it didn't happen); it must be the next one. */
 export function skipOccurrence(data: CashGuardData, id: Id, occurrence: CivilDate): CashGuardData {
 	return handle(data, id, occurrence);
+}
+
+/**
+ * Skips all occurrences up to and including `through` (e.g. a backlog that was paid without being
+ * entered); `through` must be an occurrence, the next one or a later one.
+ */
+export function skipOccurrencesThrough(data: CashGuardData, id: Id, through: CivilDate): CashGuardData {
+	const r = recurringWith(data, id);
+	const next = nextOccurrence(r);
+	if (next === null || through < next || occurrences(r, through, through).length === 0) return handle(data, id, through);
+	return { ...data, recurring: data.recurring.map((x) => (x === r ? { ...r, handled: through } : x)) };
 }
 
 // ------------------------------------------------------------------------------------- suggestions

@@ -1,6 +1,11 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import AccountsView from './lib/AccountsView.svelte';
 	import CategoriesView from './lib/CategoriesView.svelte';
+	import { clock } from './lib/clock.svelte';
+	import DueInbox from './lib/DueInbox.svelte';
+	import RecurringView from './lib/RecurringView.svelte';
+	import { dueList, type RecurringDraft } from './core';
 	import { plural } from './lib/display';
 	import { errorMessage } from './lib/errors';
 	import ExploreView from './lib/ExploreView.svelte';
@@ -13,6 +18,7 @@
 
 	const SECTIONS = [
 		{ id: 'transactions', label: 'Transactions', keys: 'g t' },
+		{ id: 'recurring', label: 'Recurring', keys: 'g r' },
 		{ id: 'explore', label: 'Explore', keys: 'g e' },
 		{ id: 'categories', label: 'Categories', keys: 'g c' },
 		{ id: 'accounts', label: 'Accounts', keys: 'g a' },
@@ -51,6 +57,26 @@
 
 	let settingsOpen = $state(false);
 
+	// recurring transactions that are due, entered in the inbox (d)
+	const due = $derived(workspace.ready ? dueList(workspace.data, clock.today) : []);
+	const dueCount = $derived(due.reduce((n, d) => n + d.dates.length, 0));
+	/** The count to show: with a "+" if some template lists only part of its due ones */
+	const dueLabel = $derived(`${dueCount}${due.some((d) => d.more) ? '+' : ''}`);
+	let inboxOpen = $state(false);
+	async function closeInbox() {
+		inboxOpen = false;
+		await tick();
+		// the button that opened it may be gone (nothing due any more): then the shown list
+		if (document.activeElement === document.body || document.activeElement === null)
+			document.querySelector<HTMLElement>('main > div:not([hidden]) [role="listbox"]')?.focus({ preventScroll: true });
+	}
+	let recurringView = $state<RecurringView>();
+	/** "Make recurring" on a transaction: a new template in the recurring section */
+	function makeRecurring(draft: RecurringDraft) {
+		section = 'recurring';
+		recurringView?.openNew(draft);
+	}
+
 	function undo() {
 		void run(async () => {
 			const label = await workspace.undo();
@@ -77,6 +103,7 @@
 			{ keys: ['Mod+z'], description: 'Undo the last change', group: 'General', when: () => !busy, run: undo },
 			{ keys: ['Mod+Shift+z', 'Mod+y'], description: 'Redo', group: 'General', when: () => !busy, run: redo },
 			{ keys: ['Mod+,'], description: 'Settings', group: 'General', inFields: true, run: () => (settingsOpen = true) },
+			{ keys: ['d'], description: 'Enter the due recurring transactions', group: 'General', when: () => !busy && dueCount > 0, run: () => (inboxOpen = true) },
 			...SECTIONS.map((s) => ({ keys: [s.keys], description: `Go to ${s.label.toLowerCase()}`, group: 'General', run: () => (section = s.id) })),
 			...(workspace.isDesktop
 				? [{ keys: ['Mod+o'], description: 'Open another file', group: 'File', inFields: true, when: () => !busy, run: openFile }]
@@ -199,7 +226,9 @@
 	</div>
 	<nav aria-label="Sections">
 		{#each SECTIONS as s (s.id)}
-			<button class="tab" aria-current={section === s.id ? 'page' : undefined} title={displayKeys(s.keys)} onclick={() => (section = s.id)}>{s.label}</button>
+			<button class="tab" aria-current={section === s.id ? 'page' : undefined} title={displayKeys(s.keys)} onclick={() => (section = s.id)}
+				>{s.label}{#if s.id === 'recurring' && dueCount > 0}<span class="due" aria-label={`, ${dueLabel} due`}>{dueLabel}</span>{/if}</button
+			>
 		{/each}
 	</nav>
 	<div class="tools">
@@ -235,8 +264,15 @@
 				active={section === 'transactions'}
 				{notify}
 				onshowaccounts={() => (section = 'accounts')}
+				{dueCount}
+				{dueLabel}
+				onreviewdue={() => (inboxOpen = true)}
+				onmakerecurring={makeRecurring}
 				emptyHint={workspace.isDesktop ? 'Open your CashGuard file to get started.' : 'Import your CashGuard file to get started, or press n to add one.'}
 			/>
+		</div>
+		<div hidden={section !== 'recurring'}>
+			<RecurringView bind:this={recurringView} {workspace} active={section === 'recurring'} {notify} onreviewdue={() => (inboxOpen = true)} />
 		</div>
 		<div hidden={section !== 'explore'}>
 			<ExploreView {workspace} active={section === 'explore'} onshowtransactions={() => (section = 'transactions')} />
@@ -248,6 +284,10 @@
 
 {#if shortcuts.helpOpen}
 	<ShortcutHelp onclose={() => (shortcuts.helpOpen = false)} />
+{/if}
+
+{#if inboxOpen}
+	<DueInbox {workspace} {notify} onclose={() => void closeInbox()} />
 {/if}
 
 {#if settingsOpen}
@@ -344,6 +384,15 @@
 		.tools .tab.help {
 			display: none;
 		}
+	}
+	.tab .due {
+		margin-left: 0.35rem;
+		padding: 0 0.4rem;
+		border-radius: 1rem;
+		background: var(--accent);
+		color: var(--accent-text);
+		font-size: 0.75rem;
+		font-weight: 600;
 	}
 	.tab[aria-current='page'] {
 		color: var(--text);

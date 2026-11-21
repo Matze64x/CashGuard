@@ -1,7 +1,8 @@
 <!--
 	A modal dialog: traps the focus, closes on Escape, and returns the focus where it was when it
 	closes. While it's open, only shortcuts marked `inDialog` apply. Enter in a dropdown submits the
-	dialog's form like in a text field (browsers don't do that by themselves).
+	dialog's form like in a text field (browsers don't do that by themselves). A held Enter doesn't
+	repeat: one press, one submit (else holding it entered one transaction per key repeat).
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -50,6 +51,7 @@
 		if (!unmounting) onclose();
 	}}
 	onkeydown={(event) => {
+		if (event.key === 'Enter' && event.repeat) return event.preventDefault();
 		const target = event.target;
 		if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || !(target instanceof HTMLSelectElement)) return;
 		event.preventDefault();

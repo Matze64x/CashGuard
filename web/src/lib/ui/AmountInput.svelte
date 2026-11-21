@@ -12,10 +12,20 @@
 		label = 'Amount',
 		required = true,
 		autofocus = false,
-	}: { value: Cents | null; id: string; label?: string; required?: boolean; autofocus?: boolean } = $props();
+		income = false,
+	}: {
+		value: Cents | null;
+		id: string;
+		label?: string;
+		required?: boolean;
+		autofocus?: boolean;
+		/** The sign to start with while there's no amount yet (else it's an expense) */
+		income?: boolean;
+	} = $props();
 
 	const toText = (v: Cents | null) => (v === null ? '' : formatAmount(v).slice(1).replace('.', ','));
-	let negative = $state(value === null ? true : value <= 0);
+	// svelte-ignore state_referenced_locally
+	let negative = $state(value === null ? !income : value <= 0);
 	let text = $state(toText(value));
 	// keep the field in sync when the value is set from outside (e.g. prefilled from a description)
 	let lastSet: Cents | null = value;

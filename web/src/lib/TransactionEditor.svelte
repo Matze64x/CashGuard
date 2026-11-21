@@ -2,11 +2,13 @@
 	Create or edit a transaction, optionally split into parts (a group). Fully keyboard operable:
 	Tab through the fields, Enter or Mod+Enter saves, Mod+Shift+Enter saves and starts the next one,
 	Esc cancels. A new transaction can also update an account's balance by its amount (the account
-	choice is remembered per device).
+	choice is remembered per device). An existing one can be made recurring (a template like it,
+	from the next month on).
 -->
 <script lang="ts">
 	import {
 		addCents,
+		addDays,
 		cents,
 		lastUseOf,
 		MAX_YEAR,
@@ -18,8 +20,10 @@
 		type Cents,
 		type CivilDate,
 		type Id,
+		type RecurringDraft,
 		type TransactionDraft,
 	} from '../core';
+	import { clock } from './clock.svelte';
 	import { formatEuro } from './display';
 	import { findAccount, settings } from './settings.svelte';
 	import { shortcuts } from './shortcuts.svelte';
@@ -35,6 +39,7 @@
 		isNew,
 		onsave,
 		onclose,
+		onmakerecurring,
 	}: {
 		data: CashGuardData;
 		initial: TransactionDraft;
@@ -47,7 +52,36 @@
 		 */
 		onsave: (draft: TransactionDraft, another: boolean, account: Account | null) => void;
 		onclose: () => void;
+		/** Offered for an existing transaction: a recurring transaction like it (`edited`: the transaction as in the form, to save first) */
+		onmakerecurring?: (template: RecurringDraft, edited: TransactionDraft) => void;
 	} = $props();
+
+	/**
+	 * A template like this transaction: monthly on its day, starting the day after it (so it isn't
+	 * due again), or today if that's later (an old transaction mustn't make every month since due)
+	 */
+	function makeRecurring() {
+		error = null;
+		const edited = draft();
+		if (!onmakerecurring || !date || !edited) return;
+		let start = date;
+		try {
+			start = addDays(date, 1);
+		} catch {
+			// the very last supported day: then it starts there
+		}
+		if (start < clock.today) start = clock.today;
+		const template: RecurringDraft = {
+			description: description.trim(),
+			categoryId,
+			amount: parts ? partsTotal : amount,
+			accountId: null,
+			schedule: { unit: 'month', every: 1, days: [Number(date.slice(8))] },
+			start,
+			end: null,
+		};
+		onmakerecurring(template, edited);
+	}
 
 	interface Part {
 		key: number;
@@ -208,6 +242,7 @@
 		{#if error}<p class="error" role="alert">{error}</p>{/if}
 
 		<div class="buttons">
+			{#if onmakerecurring}<button type="button" class="left" onclick={makeRecurring}>Make recurring…</button>{/if}
 			<button type="button" onclick={onclose}>Cancel</button>
 			<button type="button" onclick={() => save(true)} title="Mod+Shift+Enter">Save and add another</button>
 			<button type="submit" class="primary" title="Enter or Mod+Enter">Save</button>
@@ -291,6 +326,9 @@
 	}
 	.split {
 		margin: 1rem 0 0;
+	}
+	.buttons .left {
+		margin-right: auto;
 	}
 	.error {
 		color: var(--negative);

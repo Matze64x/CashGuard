@@ -1,6 +1,7 @@
 <!--
 	The transaction list: search, keyboard navigation (j/k or arrows), and new/edit/copy/delete.
-	Deleting needs no confirmation because it can be undone (Mod+Z).
+	Deleting needs no confirmation because it can be undone (Mod+Z). Above it, a banner when
+	recurring transactions are due.
 -->
 <script lang="ts">
 	import {
@@ -22,6 +23,7 @@
 		type Cents,
 		type Id,
 		type Transaction,
+		type RecurringDraft,
 		type TransactionDraft,
 	} from '../core';
 	import { attempt } from './attempt';
@@ -39,6 +41,10 @@
 		notify,
 		emptyHint,
 		onshowaccounts,
+		dueCount,
+		dueLabel,
+		onreviewdue,
+		onmakerecurring,
 	}: {
 		workspace: Workspace;
 		/** Whether this view is the one shown (its shortcuts only apply then) */
@@ -47,6 +53,14 @@
 		emptyHint: string;
 		/** Switches to the accounts */
 		onshowaccounts: () => void;
+		/** Due occurrences of recurring transactions */
+		dueCount: number;
+		/** The count as shown (e.g. "50+") */
+		dueLabel: string;
+		/** Opens the inbox of due recurring transactions */
+		onreviewdue: () => void;
+		/** Makes a recurring transaction like the edited one */
+		onmakerecurring: (draft: RecurringDraft) => void;
 	} = $props();
 
 	const data = $derived(workspace.data);
@@ -129,6 +143,19 @@
 		else close();
 	}
 
+	/** "Make recurring…": saves the transaction's changes first (then nothing typed is lost) */
+	async function makeRecurring(template: RecurringDraft, edited: TransactionDraft) {
+		const target = editing;
+		if (!target || target.id === null || saving) return;
+		const id = target.id;
+		saving = true;
+		const saved = await attempt(notify, () => workspace.edit(`Edit “${edited.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, edited, now)));
+		saving = false;
+		if (!saved) return;
+		editing = null;
+		onmakerecurring(template);
+	}
+
 	async function remove(t: Transaction | undefined) {
 		if (!t) return;
 		const next = visible[selectedIndex + 1] ?? visible[selectedIndex - 1];
@@ -156,6 +183,13 @@
 	<div class="filter"><FilterBar {workspace} {active} onleave={() => listElement?.focus()} /></div>
 	<button class="primary" onclick={() => openNew()} title="n">New</button>
 </div>
+
+{#if dueCount > 0}
+	<div class="due">
+		<span>{dueLabel} recurring {dueCount === 1 ? 'transaction is' : 'transactions are'} due.</span>
+		<button class="primary" onclick={onreviewdue} title="d">Enter them</button>
+	</div>
+{/if}
 
 <section class="summary" aria-live="polite">
 	<span class="balance">{formatEuro(result.total)}</span>
@@ -203,7 +237,15 @@
 
 {#if editing}
 	{#key editing.key}
-		<TransactionEditor {data} initial={editing.draft} title={editing.title} isNew={editing.id === null} onsave={save} onclose={close} />
+		<TransactionEditor
+			{data}
+			initial={editing.draft}
+			title={editing.title}
+			isNew={editing.id === null}
+			onsave={save}
+			onclose={close}
+			onmakerecurring={editing.id === null ? undefined : (template, edited) => void makeRecurring(template, edited)}
+		/>
 	{/key}
 {/if}
 
@@ -217,6 +259,17 @@
 	.filter {
 		flex: 1;
 		min-width: 0;
+	}
+	.due {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
+		margin: 0.75rem 0.75rem 0;
+		padding: 0.5rem 0.5rem 0.5rem 0.9rem;
+		border-radius: 0.5rem;
+		background: var(--accent-soft);
 	}
 	.summary {
 		display: flex;
