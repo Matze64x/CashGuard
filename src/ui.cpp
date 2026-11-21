@@ -91,8 +91,8 @@ void UI::draw_transaction_tab(ImVec2 available_space, TransactionModel& transact
 		{
 			std::shared_ptr<Transaction> new_transaction = transaction_dialog.get_transaction();
 			new_transaction->id = rng::random_int64();
-			new_transaction->added = DateTime(Clock::now());
-			new_transaction->edited = DateTime(Clock::now());
+			new_transaction->added = DateUtils::now();
+			new_transaction->edited = DateUtils::now();
 			transaction_model.add(new_transaction);
 			if (transaction_filter.check(new_transaction))
 			{
@@ -128,7 +128,7 @@ void UI::draw_transaction_tab(ImVec2 available_space, TransactionModel& transact
 		if (result == DialogResult::Accept)
 		{
 			std::shared_ptr<Transaction> new_transaction = transaction_dialog.get_transaction();
-			new_transaction->edited = DateTime(Clock::now());
+			new_transaction->edited = DateUtils::now();
 			transaction_model.set(transaction_table.get_selected_transaction(), new_transaction);
 			filtered_transaction_model.remove(transaction_table.get_selected_transaction());
 			if (transaction_filter.check(new_transaction)) filtered_transaction_model.add(new_transaction);

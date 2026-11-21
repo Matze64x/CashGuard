@@ -12,20 +12,20 @@
             "ID": "1480732465277196178",
             "Name": "Konto\twith tab",
             "Amount": "+90071992547409.91",
-            "Edited": "31.12.2261 23:59:59"
+            "Edited": "31.12.9999 23:59:59"
         },
         {
             "ID": "14695981039346656037",
             "Name": "",
             "Amount": "-90071992547409.91",
-            "Edited": "01.01.1678 00:00:00"
+            "Edited": "01.01.1000 00:00:00"
         }
     ],
     "Recurring": [],
     "Transactions": [
         {
             "ID": "5",
-            "Date": "31.12.2261",
+            "Date": "31.12.9999",
             "Category": "0",
             "Amount": "-1.00",
             "Description": "\u0001\u001F control characters",
@@ -61,7 +61,7 @@
         },
         {
             "ID": "1",
-            "Date": "01.01.1678",
+            "Date": "01.01.1000",
             "Category": "0",
             "Amount": "-1.00",
             "Description": "Müsli 寿司 🍕 👨‍👩‍👧",

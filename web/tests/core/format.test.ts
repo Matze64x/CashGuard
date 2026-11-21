@@ -123,7 +123,7 @@ describe('validation', () => {
 		expect(errorsOf(parseCashGuard(doc({ Description: '💶' })))).toEqual([]);
 		expect(errorsOf(parseCashGuard(doc({ Amount: 'lots' })))).toEqual(['Transactions[0].Amount: Invalid amount: "lots"']);
 		expect(errorsOf(parseCashGuard(doc({ Amount: 12 })))).toEqual(['Transactions[0].Amount: Must be a string']);
-		expect(errorsOf(parseCashGuard(doc({ Date: '31.02.2026' })))).toEqual(['Transactions[0].Date: Invalid date (expected DD.MM.YYYY, years 1678–2261): "31.02.2026"']);
+		expect(errorsOf(parseCashGuard(doc({ Date: '31.02.2026' })))).toEqual(['Transactions[0].Date: Invalid date (expected DD.MM.YYYY, years 1000–9999): "31.02.2026"']);
 		expect(errorsOf(parseCashGuard(doc({ Category: '8' })))).toEqual(['Transactions[0].Category: Unknown category id 8']);
 		expect(errorsOf(parseCashGuard(doc({ Description: undefined })))).toEqual(['Transactions[0].Description: Missing']);
 		expect(errorsOf(parseCashGuard(doc({}, { Accounts: undefined })))).toEqual(['Accounts: Missing']);
@@ -145,7 +145,7 @@ describe('validation', () => {
 	it('checks sub-transactions even if their group is invalid, and reports every problem', () => {
 		const sub = (id: string, category: string) => ({ ID: id, Date: '01.01.2026', Category: category, Amount: '-1.00', Description: 's', Added: '01.01.2026 10:00:00', Edited: '01.01.2026 10:00:00' });
 		expect(errorsOf(parseCashGuard(doc({ Date: 'soon', Transactions: [sub('1', '7'), sub('2', '99'), sub('2', '98')] })))).toEqual([
-			'Transactions[0].Date: Invalid date (expected DD.MM.YYYY, years 1678–2261): "soon"',
+			'Transactions[0].Date: Invalid date (expected DD.MM.YYYY, years 1000–9999): "soon"',
 			'Transactions[0].Transactions[0].ID: Duplicate transaction id 1',
 			'Transactions[0].Transactions[1].Category: Unknown category id 99',
 			'Transactions[0].Transactions[2].ID: Duplicate transaction id 2',

@@ -23,12 +23,13 @@ describe('dates', () => {
 		expect(parseFileDate('29.02.2024')).toBe('2024-02-29');
 		expect(formatFileDate(civilDate(2024, 2, 29))).toBe('29.02.2024');
 		expect(parseFileDate('29.02.2000')).toBe('2000-02-29');
-		expect(parseFileDate('01.01.1678')).toBe('1678-01-01');
-		expect(parseFileDate('31.12.2261')).toBe('2261-12-31');
+		expect(parseFileDate('01.01.1000')).toBe('1000-01-01');
+		expect(parseFileDate('31.12.9999')).toBe('9999-12-31');
+		expect(parseFileDate('29.02.2400')).toBe('2400-02-29');
 	});
 
-	// outside 1678..2261 the C++ client corrupts dates (std::chrono::system_clock overflow)
-	it.each(['29.02.2023', '29.02.1900', '31.04.2026', '00.01.2026', '1.1.2026', '01.13.2026', '31.12.1677', '01.01.2262', '01.01.0005', '2026-01-01'])('rejects date %j', (text) => {
+	// years below 1000 aren't allowed (JS reads years below 100 as 1900 + year); the file has 4-digit years
+	it.each(['29.02.2023', '29.02.1900', '29.02.2100', '31.04.2026', '00.01.2026', '1.1.2026', '01.13.2026', '31.12.0999', '01.01.10000', '01.01.0005', '2026-01-01'])('rejects date %j', (text) => {
 		expect(parseFileDate(text)).toBeNull();
 	});
 
@@ -44,12 +45,12 @@ describe('dates', () => {
 	});
 
 	it('round-trips timestamps', () => {
-		for (const text of ['01.01.1970 00:00:00', '29.02.2024 23:59:59', '01.01.1678 00:00:00', '31.12.2261 23:59:59']) {
+		for (const text of ['01.01.1970 00:00:00', '29.02.2024 23:59:59', '01.01.1000 00:00:00', '31.12.9999 23:59:59', '01.01.1678 00:00:00']) {
 			expect(formatFileDateTime(parseFileDateTime(text)!)).toBe(text);
 		}
 	});
 
-	it.each(['18.11.2026 24:00:00', '18.11.2026 18:30', '18.11.2026T18:30:00', '30.02.2026 00:00:00', '01.01.2300 10:00:00'])('rejects timestamp %j', (text) => {
+	it.each(['18.11.2026 24:00:00', '18.11.2026 18:30', '18.11.2026T18:30:00', '30.02.2026 00:00:00', '31.12.0999 23:59:59', '01.01.10000 10:00:00'])('rejects timestamp %j', (text) => {
 		expect(parseFileDateTime(text)).toBeNull();
 	});
 });
@@ -118,7 +119,7 @@ describe('typed dates', () => {
 		expect(parseDateInput('2025-03-05', 'MM/DD/YYYY', ref)).toBe('2025-03-05');
 	});
 	it('rejects invalid input', () => {
-		for (const text of ['', 'today', '31.2.2026', '1.13.2026', '1.1.300', '1.1.1600', '1.1.2026.1', '5,3'])
+		for (const text of ['', 'today', '31.2.2026', '1.13.2026', '1.1.300', '1.1.10000', '1.1.2026.1', '5,3'])
 			expect(parseDateInput(text, 'DD.MM.YYYY', ref), text).toBeNull();
 	});
 });

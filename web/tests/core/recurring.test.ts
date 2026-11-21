@@ -85,9 +85,11 @@ describe('occurrences', () => {
 	});
 
 	it('stops at the end of the supported years', () => {
-		expect(occurrences(template(monthly([31]), { start: d('2261-11-01') }), d('2261-01-01'), d('2261-12-31'))).toEqual(['2261-11-30', '2261-12-31']);
-		expect(occurrences(template(weekly([7]), { start: d('2261-12-20') }), d('2261-12-01'), d('2261-12-31'))).toEqual(['2261-12-22', '2261-12-29']);
-		expect(nextOccurrence(template(weekly([1]), { start: d('2261-12-20'), handled: d('2261-12-30') }))).toBeNull();
+		expect(occurrences(template(monthly([31]), { start: d('9999-11-01') }), d('9999-01-01'), d('9999-12-31'))).toEqual(['9999-11-30', '9999-12-31']);
+		expect(occurrences(template(weekly([7]), { start: d('9999-12-20') }), d('9999-12-01'), d('9999-12-31'))).toEqual(['9999-12-26']);
+		expect(nextOccurrence(template(weekly([7]), { start: d('9999-12-20'), handled: d('9999-12-26') }))).toBeNull();
+		// and at its beginning, in a week that began before it (1000-01-01 is a Wednesday)
+		expect(occurrences(template(weekly([1, 3]), { start: d('1000-01-01') }), d('1000-01-01'), d('1000-01-10'))).toEqual(['1000-01-01', '1000-01-06', '1000-01-08']);
 	});
 });
 
@@ -229,7 +231,7 @@ describe('editing recurring transactions: careful with what comes in', () => {
 
 	it('refuses invalid dates', () => {
 		expect(() => addRecurring(empty, { ...draft, start: d('2026-02-30') }, at(1))).toThrow('Invalid date');
-		expect(() => updateRecurring(data, id, { ...draft, end: d('3000-01-01') }, at(1))).toThrow('Invalid date');
+		expect(() => updateRecurring(data, id, { ...draft, end: d('10000-01-01') }, at(1))).toThrow('Invalid date');
 	});
 
 	it('says why an occurrence can’t be handled', () => {

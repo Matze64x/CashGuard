@@ -402,7 +402,7 @@ void TransactionFilter::DateRangeTable::draw(const std::string& label)
 	{
 		selected_row = date_ranges.size();
 		opened_row = date_ranges.size();
-		date_ranges.push_back(DateRange(DateUtils::to_date(Clock::now()), DateUtils::to_date(Clock::now())));
+		date_ranges.push_back(DateRange(DateUtils::today(), DateUtils::today()));
 		begin_input.init(date_ranges[opened_row].begin);
 		end_input.init(date_ranges[opened_row].end);
 		set_focus = true;

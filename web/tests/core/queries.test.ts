@@ -127,7 +127,7 @@ describe('months', () => {
 	});
 
 	it('leaves out dates that are probably typos', () => {
-		const typos = build([tx('2026-01-05', 'ok', -1), tx('2026-02-05', 'ok', -1), tx('1926-02-05', 'old typo', -1), tx('2062-02-05', 'future typo', -1), tx('2261-12-31', 'last day', -1)]);
+		const typos = build([tx('2026-01-05', 'ok', -1), tx('2026-02-05', 'ok', -1), tx('1926-02-05', 'old typo', -1), tx('2062-02-05', 'future typo', -1), tx('9999-12-31', 'last day', -1)]);
 		const { period, outside } = chartPeriod(typos.transactions, d('2026-03-01'));
 		expect(period).toEqual({ from: '2026-01-01', to: '2026-03-31' });
 		expect(outside.map((t) => t.description).sort()).toEqual(['future typo', 'last day', 'old typo']);
@@ -136,8 +136,8 @@ describe('months', () => {
 	});
 
 	it('handles the last supported month', () => {
-		expect(monthOf(d('2261-12-31'))).toEqual({ from: '2261-12-01', to: '2261-12-31' });
-		expect(monthsBetween(d('2261-11-02'), d('2261-12-31'))).toEqual(['2261-11-01', '2261-12-01']);
+		expect(monthOf(d('9999-12-31'))).toEqual({ from: '9999-12-01', to: '9999-12-31' });
+		expect(monthsBetween(d('9999-11-02'), d('9999-12-31'))).toEqual(['9999-11-01', '9999-12-01']);
 	});
 
 	it('sums income and expenses per month, with the balance of everything', () => {
@@ -196,7 +196,7 @@ describe('comparisons', () => {
 		expect(before('2026-03-10', '2026-03-19')).toEqual({ from: '2026-02-28', to: '2026-03-09' });
 		// starts mid-month, ends at a month's end: by days
 		expect(before('2024-03-15', '2024-03-31')).toEqual({ from: '2024-02-27', to: '2024-03-14' });
-		expect(comparePeriod({ from: d('1678-01-01'), to: d('1678-12-31') }, later)).toBeNull();
+		expect(comparePeriod({ from: d('1000-01-01'), to: d('1000-12-31') }, later)).toBeNull();
 		expect(lastTwelveMonths(d('2026-03-15'))).toEqual({ from: '2025-03-01', to: '2026-02-28' });
 	});
 
@@ -268,7 +268,7 @@ describe('comparisons', () => {
 		expect(projectionBasis(november, today, d('2026-11-03'))).toMatchObject({ kind: 'scaled', factor: 30 / 18 });
 		expect(projectionBasis(monthOf(d('2026-10-01')), today, d('2020-01-01'))).toBeNull();
 		// at the supported years' limit: only what fits
-		expect(rests(projectionBasis(monthOf(d('1678-03-01')), d('1678-03-10'), d('1678-01-01')))).toHaveLength(2);
+		expect(rests(projectionBasis(monthOf(d('1000-03-01')), d('1000-03-10'), d('1000-01-01')))).toHaveLength(2);
 
 		// monthly rent on the 1st, groceries on the 25th: so far + the average rest
 		const all = build([

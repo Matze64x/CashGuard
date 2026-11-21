@@ -100,7 +100,7 @@ namespace DateUtils
 
 	std::string to_string(const DateTime& time_point)
 	{
-		return std::format("{:%d.%m.%Y %H:%M:%S}", std::chrono::time_point_cast<std::chrono::seconds>(time_point));
+		return std::format("{:%d.%m.%Y %H:%M:%S}", time_point);
 	}
 
 	Date to_date(DateTime time_point)
@@ -116,9 +116,9 @@ namespace DateUtils
 	Date to_date(const std::string& date)
 	{
 		std::istringstream iss(date);
-		DateTime date_time;
-		iss >> std::chrono::parse("%d.%m.%Y", date_time);
-		if (!iss.fail()) return DateUtils::to_date(date_time);
+		Date result;
+		iss >> std::chrono::parse("%d.%m.%Y", result);
+		if (!iss.fail()) return result;
 		return Date();
 	}
 
@@ -130,16 +130,26 @@ namespace DateUtils
 		if (!iss.fail()) return date_time;
 		return DateTime();
 	}
+
+	DateTime now()
+	{
+		return std::chrono::floor<std::chrono::seconds>(Clock::now());
+	}
+
+	Date today()
+	{
+		return to_date(now());
+	}
 }
 
 Transaction::Transaction() :
 	id(0),
-	date(DateUtils::to_date(Clock::now())),
+	date(DateUtils::today()),
 	category_id(0),
 	amount(0),
 	description(""),
-	added(Clock::now()),
-	edited(Clock::now())
+	added(DateUtils::now()),
+	edited(DateUtils::now())
 {}
 
 std::string Transaction::get_field(int32_t field_index) const

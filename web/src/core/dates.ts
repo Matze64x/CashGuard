@@ -10,12 +10,12 @@ export type CivilDate = Brand<string, 'CivilDate'>;
 export type UtcSeconds = Brand<number, 'UtcSeconds'>;
 
 /**
- * Years both clients can represent. The C++ client converts dates and timestamps to
- * `std::chrono::system_clock` (int64 nanoseconds: 21.09.1677 .. 11.04.2262) and silently
- * corrupts anything outside, so whole years within that range are allowed.
+ * Years the file allows: four digits (its format, "DD.MM.YYYY"), and not below 1000, since JS
+ * `Date.UTC` reads years below 100 as 1900 + year. Both clients handle the whole range (the C++
+ * client keeps timestamps in seconds; before, its nanoseconds only reached the years 1678–2261).
  */
-export const MIN_YEAR = 1678;
-export const MAX_YEAR = 2261;
+export const MIN_YEAR = 1000;
+export const MAX_YEAR = 9999;
 
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 

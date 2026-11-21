@@ -50,7 +50,8 @@ static inline std::string get_transation_field_name(int32_t transaction_field_in
 
 using Clock = std::chrono::system_clock;
 using Date = std::chrono::year_month_day;
-using DateTime = Clock::time_point;
+// Whole seconds, like the file. (The clock's own nanoseconds would only reach the years 1678–2261.)
+using DateTime = std::chrono::sys_seconds;
 
 namespace DateUtils
 {
@@ -60,6 +61,8 @@ namespace DateUtils
 	Date to_date(int32_t day, int32_t month, int32_t year);
 	Date to_date(const std::string& date);
 	DateTime to_date_time(const std::string& time_point);
+	DateTime now();
+	Date today();
 }
 
 class Transaction

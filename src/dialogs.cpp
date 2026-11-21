@@ -125,8 +125,8 @@ DialogResult TransactionDialog::draw(const std::string& label, const Transaction
 			{
 				Transaction new_transaction = member_dialog.get_transaction();
 				new_transaction.id = rng::random_int64();
-				new_transaction.added = DateTime(Clock::now());
-				new_transaction.edited = DateTime(Clock::now());
+				new_transaction.added = DateUtils::now();
+				new_transaction.edited = DateUtils::now();
 				transaction_group->add_transaction(new_transaction);
 				ImGui::CloseCurrentPopup();
 			}
@@ -148,7 +148,7 @@ DialogResult TransactionDialog::draw(const std::string& label, const Transaction
 			if (result == DialogResult::Accept)
 			{
 				Transaction new_transaction = member_dialog.get_transaction();
-				new_transaction.edited = DateTime(Clock::now());
+				new_transaction.edited = DateUtils::now();
 				transaction_group->set_transaction(selected_group_row, new_transaction);
 				ImGui::CloseCurrentPopup();
 			}
@@ -425,7 +425,7 @@ void AccountsDialog::draw(AccountModel& account_model)
 					{
 						account_model.set_amount(opened_row, new_amount);
 						account_total_amount = account_model.get_total_amount().value;
-						account_model.set_edited(opened_row, Clock::now());
+						account_model.set_edited(opened_row, DateUtils::now());
 					}
 				}
 			}
@@ -460,7 +460,7 @@ void AccountsDialog::draw(AccountModel& account_model)
 	{
 		Account new_account;
 		new_account.id = account_model.new_id();
-		new_account.edited = Clock::now();
+		new_account.edited = DateUtils::now();
 		account_model.add(new_account);
 	}
 	ImGui::SameLine();

@@ -12,7 +12,7 @@ void TotalAmountGraph::update_data(const TransactionModel& transaction_model)
 	max_amount = std::numeric_limits<double>::lowest();
 	time_points.clear();
 	data_points.clear();
-	unix_seconds_now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::sys_days{DateUtils::to_date(Clock::now())}.time_since_epoch()).count();
+	unix_seconds_now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::sys_days{DateUtils::today()}.time_since_epoch()).count();
 	for (int32_t i = transaction_model.count() - 1; i >= 0; i--)
 	{
 		std::shared_ptr<const Transaction> transaction = transaction_model.at(i);
@@ -78,7 +78,7 @@ void TotalAmountGraph::draw_small_graph(ImVec2 available_space, bool show_amount
 			}
 			ImPlot::EndItem();
 		}
-		Date current_date = DateUtils::to_date(Clock::now());
+		Date current_date = DateUtils::today();
 		std::chrono::year_month current_month_date = current_date.year() / current_date.month();
 		for (int32_t i = 11; i >= 0; i--)
 		{
@@ -149,7 +149,7 @@ void TotalAmountGraph::draw_large_graph(ImVec2 available_space)
 			}
 			ImPlot::EndItem();
 		}
-		Date current_date = DateUtils::to_date(Clock::now());
+		Date current_date = DateUtils::today();
 		std::chrono::year_month current_month_date = current_date.year() / current_date.month();
 		for (int32_t i = 11; i >= 0; i--)
 		{
