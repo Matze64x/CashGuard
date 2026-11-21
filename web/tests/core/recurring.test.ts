@@ -146,6 +146,15 @@ describe('editing recurring transactions', () => {
 		expect(() => updateRecurring(empty, id, draft, at(2))).toThrow(EditError);
 	});
 
+	it("refuses to overwrite a template changed meanwhile, but not because of occurrences handled meanwhile", () => {
+		const { data, id } = addRecurring(empty, draft, at(1));
+		const seen = data.recurring[0]!;
+		const skipped = skipOccurrence(data, id, d('2026-11-01'));
+		expect(updateRecurring(skipped, id, { ...draft, amount: cents(-100) }, at(2), seen).recurring[0]).toMatchObject({ amount: -100, handled: '2026-11-01' });
+		const elsewhere = updateRecurring(data, id, { ...draft, description: 'Renamed elsewhere' }, at(2));
+		expect(() => updateRecurring(elsewhere, id, { ...draft, amount: cents(-100) }, at(3), seen)).toThrow('changed elsewhere meanwhile');
+	});
+
 	it('confirms and skips occurrences in order, without stamping the template', () => {
 		const withAccount = addAccount(empty, 'Depot', cents(0), at(0));
 		const account = withAccount.accounts[0]!.id;

@@ -104,9 +104,19 @@ export function addTransaction(data: CashGuardData, draft: TransactionDraft, now
 }
 
 /** Replaces a transaction's content. Returns the data unchanged if nothing actually changed. */
-export function updateTransaction(data: CashGuardData, id: Id, draft: TransactionDraft, now: UtcSeconds): CashGuardData {
+/**
+ * Says that the record the user edited isn't as it was when they started, e.g. another window
+ * changed it meanwhile: saving would silently undo that change.
+ */
+function checkExpected<T>(current: T, expected: T | undefined, name: string): void {
+	if (expected !== undefined && !deepEqual(current, expected)) throw new EditError(`${name} was changed elsewhere meanwhile. Cancel and edit it again to see the change.`);
+}
+
+/** `expected`: the transaction as it was when the user started editing; if it changed since, this throws instead of overwriting that. */
+export function updateTransaction(data: CashGuardData, id: Id, draft: TransactionDraft, now: UtcSeconds, expected?: Transaction): CashGuardData {
 	const old = data.transactions.find((t) => t.id === id);
-	if (!old) throw new EditError(`Unknown transaction ${id}`);
+	if (!old) throw new EditError('The transaction no longer exists; it may have been deleted elsewhere.');
+	checkExpected(old, expected, `“${old.description || 'The transaction'}”`);
 	const updated = build(data, draft, old, old.subTransactions ?? [], now, usedIds(data));
 	if (deepEqual({ ...updated, edited: old.edited }, old)) return data;
 	return { ...data, transactions: sortNewestFirst(data.transactions.map((t) => (t.id === id ? updated : t))) };
@@ -137,9 +147,11 @@ export function addCategory(data: CashGuardData, name: string, color: string): {
 }
 
 /** Returns the data unchanged if nothing actually changed. */
-export function updateCategory(data: CashGuardData, id: Id, changes: Partial<Pick<Category, 'name' | 'color'>>): CashGuardData {
+/** `expected`: the category as it was when the user started editing (see `updateTransaction`). */
+export function updateCategory(data: CashGuardData, id: Id, changes: Partial<Pick<Category, 'name' | 'color'>>, expected?: Category): CashGuardData {
 	const old = data.categories.find((c) => c.id === id);
-	if (!old) throw new EditError(`Unknown category ${id}`);
+	if (!old) throw new EditError('The category no longer exists; it may have been deleted elsewhere.');
+	checkExpected(old, expected, `The category “${old.name}”`);
 	const color = changes.color?.toUpperCase();
 	const updated = { ...old, ...changes, ...(color && { color }), ...(changes.name !== undefined && { name: cleanText(changes.name) }) };
 	if (deepEqual(updated, old)) return data;
@@ -254,8 +266,13 @@ export function addRecurring(data: CashGuardData, draft: RecurringDraft, now: Ut
  * again, e.g. rent moved from the 1st to the 15th after paying on the 1st: then skip it). Returns
  * the data unchanged if nothing changed.
  */
-export function updateRecurring(data: CashGuardData, id: Id, draft: RecurringDraft, now: UtcSeconds): CashGuardData {
+/**
+ * `expected`: the template as it was when the user started editing (see `updateTransaction`);
+ * occurrences entered or skipped meanwhile don't count, they're kept.
+ */
+export function updateRecurring(data: CashGuardData, id: Id, draft: RecurringDraft, now: UtcSeconds, expected?: Recurring): CashGuardData {
 	const old = recurringWith(data, id);
+	if (expected) checkExpected({ ...old, handled: null }, { ...expected, handled: null }, `“${old.description || 'The recurring transaction'}”`);
 	const fields = templateOf(data, draft);
 	if (deepEqual(templateOf(data, old), fields)) return data;
 	const updated: Recurring = { ...old, ...fields, edited: now };

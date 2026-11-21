@@ -167,6 +167,23 @@ describe('categories and accounts', () => {
 	});
 });
 
+describe('changed elsewhere meanwhile', () => {
+	it('refuses to overwrite a transaction or category changed since editing started', () => {
+		let { data } = addTransaction(empty, draft({ description: 'Bread' }), at(1));
+		const seen = data.transactions[0]!;
+		expect(updateTransaction(data, seen.id, draft({ description: 'Rolls' }), at(2), seen).transactions[0]!.description).toBe('Rolls');
+		const elsewhere = updateTransaction(data, seen.id, draft({ description: 'Cake' }), at(2));
+		expect(() => updateTransaction(elsewhere, seen.id, draft({ description: 'Rolls' }), at(3), seen)).toThrow('“Cake” was changed elsewhere meanwhile');
+		expect(() => updateTransaction(deleteTransaction(data, seen.id), seen.id, draft(), at(3), seen)).toThrow('no longer exists');
+
+		data = addCategory(data, 'Food', '#112233FF').data;
+		const category = data.categories[0]!;
+		const renamed = updateCategory(data, category.id, { name: 'Groceries' });
+		expect(() => updateCategory(renamed, category.id, { color: '#445566FF' }, category)).toThrow(EditError);
+		expect(updateCategory(data, category.id, { color: '#445566FF' }, category).categories[0]!.color).toBe('#445566FF');
+	});
+});
+
 describe('text the file format rejects', () => {
 	it('becomes valid: a lone surrogate turns into U+FFFD, NUL is dropped', () => {
 		const half = 'Caf\ud83d!\0';

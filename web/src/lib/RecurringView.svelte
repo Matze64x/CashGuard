@@ -49,7 +49,8 @@
 	let selectedId = $state<Id | null>(null);
 	const selectedIndex = $derived(templates.findIndex((r) => r.id === selectedId));
 	const selected = $derived(templates[selectedIndex]);
-	let editing = $state.raw<{ id: Id | null; draft: RecurringDraft; handled: Recurring['handled'] } | null>(null);
+	/** `original`: the template as it was when editing started (saving refuses to overwrite a change made meanwhile) */
+	let editing = $state.raw<{ id: Id | null; draft: RecurringDraft; handled: Recurring['handled']; original?: Recurring } | null>(null);
 	let saving = false;
 	/** Why saving failed: shown in the editor (a notice would be hidden behind it) */
 	let failure = $state<string | null>(null);
@@ -74,7 +75,7 @@
 	}
 
 	function openEdit(r: Recurring | undefined) {
-		if (r) editing = { id: r.id, draft: r, handled: r.handled };
+		if (r) editing = { id: r.id, draft: r, handled: r.handled, original: r };
 	}
 
 	function close() {
@@ -99,7 +100,7 @@
 				selectedId = created;
 			} else {
 				const id = target.id;
-				await workspace.edit(`Edit recurring “${draft.description}”`, (d, now) => updateRecurring(d, id, draft, now));
+				await workspace.edit(`Edit recurring “${draft.description}”`, (d, now) => updateRecurring(d, id, draft, now, target.original));
 			}
 		});
 		saving = false;

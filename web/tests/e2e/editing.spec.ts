@@ -311,3 +311,28 @@ test.describe('editor safeguards', () => {
 		await expect(page.getByText('No transactions yet')).toBeVisible();
 	});
 });
+
+test('saving never overwrites a change made in another tab meanwhile', async ({ page, context }) => {
+	await importFixture(page);
+	await page.keyboard.press('j');
+	await page.keyboard.press('Enter');
+	const editor = page.getByRole('dialog', { name: 'Edit transaction' });
+	await editor.getByLabel('Description').fill('Changed here');
+
+	// the same transaction is changed in another tab
+	const other = await context.newPage();
+	await other.goto('/');
+	await expect(other.getByText('46 transactions')).toBeVisible();
+	await other.keyboard.press('j');
+	await other.keyboard.press('Enter');
+	await other.getByRole('dialog').getByLabel('Description').fill('Changed in the other tab');
+	await other.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(other.getByRole('dialog')).toBeHidden();
+	await expect(row(page, 'Changed in the other tab')).toBeVisible();
+
+	await editor.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(editor.getByRole('alert')).toContainText('was changed elsewhere meanwhile');
+	await page.keyboard.press('Escape');
+	await expect(row(page, 'Changed in the other tab')).toBeVisible();
+	await expect(row(page, 'Changed here')).toHaveCount(0);
+});

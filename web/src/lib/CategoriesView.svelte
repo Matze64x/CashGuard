@@ -28,7 +28,8 @@
 	let selectedId = $state<Id | null>(null);
 	const selectedIndex = $derived(categories.findIndex((c) => c.id === selectedId));
 	const selected = $derived(categories[selectedIndex]);
-	let editing = $state<{ id: Id | null; name: string; color: string } | null>(null);
+	/** `original`: the category as it was when editing started (saving refuses to overwrite a change made meanwhile) */
+	let editing = $state<{ id: Id | null; name: string; color: string; original?: Category } | null>(null);
 	let saving = false;
 	let list: SelectableList<Category, Id>;
 	let listElement = $state<HTMLElement>();
@@ -41,7 +42,7 @@
 	}
 
 	function openEdit(c: Category | undefined) {
-		if (c) editing = { id: c.id, name: c.name, color: c.color };
+		if (c) editing = { id: c.id, name: c.name, color: c.color, original: c };
 	}
 
 	/** Why saving failed: shown in the dialog (a notice would be hidden behind it) */
@@ -72,7 +73,7 @@
 				selectedId = created;
 			} else {
 				const id = target.id;
-				await workspace.edit(`Edit category “${name}”`, (d) => updateCategory(d, id, { name, color: target.color }));
+				await workspace.edit(`Edit category “${name}”`, (d) => updateCategory(d, id, { name, color: target.color }, target.original));
 			}
 		});
 		saving = false;

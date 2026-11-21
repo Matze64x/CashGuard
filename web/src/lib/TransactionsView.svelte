@@ -78,7 +78,8 @@
 	const selectedIndex = $derived(visible.findIndex((t) => t.id === selectedId));
 	const selected = $derived(selectedIndex >= 0 ? visible[selectedIndex] : undefined);
 
-	let editing = $state<{ title: string; id: Id | null; draft: TransactionDraft; key: number } | null>(null);
+	/** `original`: the transaction as it was when editing started (saving refuses to overwrite a change made meanwhile) */
+	let editing = $state<{ title: string; id: Id | null; draft: TransactionDraft; key: number; original?: Transaction } | null>(null);
 	let editorKey = 0;
 	let saving = false;
 	let list: SelectableList<Transaction, Id>;
@@ -91,7 +92,7 @@
 	}
 
 	function openEdit(t: Transaction | undefined) {
-		if (t) editing = { title: 'Edit transaction', id: t.id, draft: toDraft(t), key: editorKey++ };
+		if (t) editing = { title: 'Edit transaction', id: t.id, draft: toDraft(t), key: editorKey++, original: t };
 	}
 
 	/** A new transaction like the selected one, dated today: quick for recurring entries */
@@ -139,7 +140,7 @@
 				if (account && balance !== null) notify(`${account.name} is now at ${formatEuro(balance)}.`, true);
 			} else {
 				const id = target.id;
-				await workspace.edit(`Edit “${draft.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, draft, now));
+				await workspace.edit(`Edit “${draft.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, draft, now, target.original));
 				selectedId = id;
 			}
 		});
@@ -157,7 +158,7 @@
 		const id = target.id;
 		saving = true;
 		failure = null;
-		const saved = await attempt(fail, () => workspace.edit(`Edit “${edited.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, edited, now)));
+		const saved = await attempt(fail, () => workspace.edit(`Edit “${edited.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, edited, now, target.original)));
 		saving = false;
 		if (!saved) return;
 		editing = null;
