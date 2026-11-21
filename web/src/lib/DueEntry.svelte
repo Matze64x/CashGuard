@@ -17,10 +17,8 @@
 		occurrence,
 		busy,
 		error = $bindable(),
-		backlog,
 		onenter,
 		onskip,
-		onskipbacklog,
 	}: {
 		data: CashGuardData;
 		recurring: Recurring;
@@ -28,13 +26,9 @@
 		busy: boolean;
 		/** Shown under the form (also failures to save) */
 		error: string | null;
-		/** How many of this template are due, this one included (null: more than listed) */
-		backlog: number | null;
 		/** `accountId`: an existing account, or null */
 		onenter: (draft: TransactionDraft, accountId: Id | null) => void;
 		onskip: () => void;
-		/** Skips all due ones but the latest */
-		onskipbacklog: () => void;
 	} = $props();
 
 	// seeded once: the parent creates this anew for each occurrence
@@ -108,9 +102,6 @@
 	</div>
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 	<div class="buttons">
-		{#if backlog === null || backlog > 2}
-			<button type="button" class="left" disabled={busy} onclick={onskipbacklog} title="When the earlier ones were paid but not entered">Skip all but the latest</button>
-		{/if}
 		<button type="button" disabled={busy} onclick={onskip}>Skip, it didn't happen</button>
 		<button type="submit" class="primary" disabled={busy} title="Enter">Enter</button>
 	</div>
@@ -145,9 +136,6 @@
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.25rem;
-	}
-	.left {
-		margin-right: auto;
 	}
 	@media (max-width: 40rem) {
 		.fields {

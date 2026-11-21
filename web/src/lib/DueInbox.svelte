@@ -11,9 +11,7 @@
 	import {
 		confirmOccurrence,
 		dueList,
-		occurrences,
 		skipOccurrence,
-		skipOccurrencesThrough,
 		type CivilDate,
 		type Id,
 		type TransactionDraft,
@@ -84,22 +82,6 @@
 		void change(`Skip ${name(r.description)} of ${formatDate(day)}`, (d) => skipOccurrence(d, r.id, day), `Skipped ${name(r.description)} of ${formatDate(day)}.`);
 	}
 
-	/** Skips all due ones of the template but the latest (paid but never entered) */
-	function skipBacklog() {
-		const r = current?.recurring;
-		const day = occurrence;
-		if (!r || !day) return;
-		// all due ones, also beyond the listed ones
-		const all = occurrences(r, day, clock.today);
-		const through = all.at(-2);
-		if (!through) return skip();
-		void change(
-			`Skip ${plural(all.length - 1, 'occurrence')} of ${name(r.description)}`,
-			(d) => skipOccurrencesThrough(d, r.id, through),
-			`Skipped ${plural(all.length - 1, 'occurrence')} of ${name(r.description)}, ${formatDate(day)} to ${formatDate(through)}.`,
-		);
-	}
-
 	async function undo() {
 		if (saving) return;
 		saving = true;
@@ -138,10 +120,8 @@
 						{occurrence}
 						busy={saving}
 						bind:error
-						backlog={current.more ? null : current.dates.length}
 						onenter={enter}
 						onskip={skip}
-						onskipbacklog={skipBacklog}
 					/>
 				{/key}
 			{:else}

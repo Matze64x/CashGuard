@@ -121,22 +121,28 @@ test('nothing carries over from one occurrence to the next, and a held Enter ent
 	await expect(dialog.getByText('36 occurrences due')).toBeVisible();
 });
 
-test('a backlog is skipped at once, and the inbox closes when nothing is left', async ({ page }) => {
+test('the inbox closes when nothing is left', async ({ page }) => {
+	// the rent's backlog since 2024 cleared by starting it later (on its last due day)
+	await page.getByRole('button', { name: 'Manage' }).click();
+	await page.getByRole('listbox', { name: 'Recurring transactions' }).getByRole('option', { name: /Rent/ }).dblclick();
+	const editor = page.getByRole('dialog', { name: 'Edit recurring transaction' });
+	await editor.getByLabel('Starts').fill('30.11.2026');
+	await editor.getByRole('button', { name: 'Save' }).click();
+	await expect(editor).toBeHidden();
+
 	await page.keyboard.press('d');
 	const dialog = inbox(page);
-	await expect(dialog).toContainText('due 29.02.2024');
-	await dialog.getByRole('button', { name: 'Skip all but the latest' }).click();
-	await expect(dialog).toContainText('Skipped 33 occurrences of “Rent');
 	await expect(dialog.getByText('3 occurrences due')).toBeVisible();
-	// the latest rent, then the oldest due one: the savings plan
-	for (const due of ['30.11.2026', '22.11.2026', '01.12.2026']) {
+	// the oldest due one first; a template's next one after it
+	for (const due of ['22.11.2026', '01.12.2026', '30.11.2026']) {
 		await expect(dialog).toContainText(`due ${due}`);
 		await dialog.getByRole('button', { name: "Skip, it didn't happen" }).click();
 	}
 	await expect(dialog).toBeHidden();
-	await expect(page.getByRole('status')).toContainText('Skipped “Savings plan (ETF)” of 01.12.2026. Nothing else is due.');
+	await expect(page.getByRole('status')).toContainText('Skipped “Rent');
+	await expect(page.getByRole('status')).toContainText('Nothing else is due.');
+	await page.getByRole('button', { name: 'Transactions' }).click();
 	await expect(page.getByText('recurring transactions are due')).toBeHidden();
-	await expect(page.getByRole('listbox', { name: 'Transactions' })).toBeFocused();
 });
 
 test('editing a template keeps its category, even with a description used elsewhere', async ({ page }) => {
@@ -147,4 +153,28 @@ test('editing a template keeps its category, even with a description used elsewh
 	await editor.getByLabel('Description').fill('Supermarket');
 	await page.keyboard.press('Tab');
 	await expect(editor.getByLabel('Category')).toHaveValue('0');
+});
+
+// Phase 6's goal: one month of the savings plan in four quick confirmations, only the amount typed
+test('a month of the savings plan: four times the amount and Enter', async ({ page }) => {
+	// a month of it due: 22.11., 01.12., 08.12. and 15.12. (the rent's backlog waits)
+	await page.clock.setFixedTime(new Date('2026-12-16T12:00:00'));
+	await page.reload();
+	await page.keyboard.press('d');
+	const dialog = inbox(page);
+	await dialog.getByRole('button', { name: /Savings plan \(ETF\)/ }).click();
+
+	for (const [due, amount] of [['22.11.2026', '49,80'], ['01.12.2026', '51,20'], ['08.12.2026', '50,05'], ['15.12.2026', '48,90']] as const) {
+		await expect(dialog).toContainText(`due ${due}`);
+		await page.keyboard.type(amount);
+		await page.keyboard.press('Enter');
+		await expect(dialog).toContainText(`Entered “Savings plan (ETF)” of ${due}: -${amount} €`);
+	}
+	// then the oldest due one: the rent's backlog; the four are entered and the account updated
+	await expect(dialog).toContainText('due 29.02.2024');
+	await page.keyboard.press('Escape');
+	await page.getByRole('searchbox').fill('Savings plan');
+	await expect(page.getByText('4 matches of')).toBeVisible();
+	await page.getByRole('button', { name: 'Manage' }).click();
+	await expect(page.getByRole('listbox', { name: 'Accounts' }).getByRole('option', { name: /Checking account/ })).toContainText('16.021,96 €');
 });

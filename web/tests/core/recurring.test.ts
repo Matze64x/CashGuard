@@ -18,7 +18,6 @@ import {
 	NO_CATEGORY,
 	occurrences,
 	skipOccurrence,
-	skipOccurrencesThrough,
 	updateRecurring,
 	weekday,
 	type CashGuardData,
@@ -233,15 +232,6 @@ describe('editing recurring transactions: careful with what comes in', () => {
 	it('refuses invalid dates', () => {
 		expect(() => addRecurring(empty, { ...draft, start: d('2026-02-30') }, at(1))).toThrow('Invalid date');
 		expect(() => updateRecurring(data, id, { ...draft, end: d('10000-01-01') }, at(1))).toThrow('Invalid date');
-	});
-
-	it('skips a backlog at once', () => {
-		const skipped = skipOccurrencesThrough(data, id, d('2026-04-01'));
-		expect(skipped.recurring[0]).toMatchObject({ handled: '2026-04-01', edited: 1 });
-		expect(nextOccurrence(skipped.recurring[0]!)).toBe('2026-05-01');
-		// only through an occurrence, not before the next one
-		expect(() => skipOccurrencesThrough(data, id, d('2026-04-02'))).toThrow('Handle the earlier occurrences of “Rent” first.');
-		expect(() => skipOccurrencesThrough(skipped, id, d('2026-03-01'))).toThrow('already entered or skipped');
 	});
 
 	it('says why an occurrence can’t be handled', () => {
