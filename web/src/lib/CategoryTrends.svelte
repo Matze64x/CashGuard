@@ -9,7 +9,7 @@
 	import { addMonths, categoryTotalsOverTime, chartPeriod, monthOf, monthsBetween, ofSide, type Cents, type CivilDate, type Id, type Side, type Transaction } from '../core';
 	import { clock } from './clock.svelte';
 	import { formatEuro, formatMonth } from './display';
-	import { rowTarget, ShortList } from './rows.svelte';
+	import { rowTarget } from './rows.svelte';
 	import Segmented from './ui/Segmented.svelte';
 	import type { Workspace } from './workspace.svelte';
 
@@ -79,7 +79,6 @@
 				.sort((a, b) => b.sum - a.sum || (a.key < b.key ? -1 : 1))
 		);
 	});
-	const list = new ShortList(() => [side, unit]);
 	const categories = $derived(new Map(workspace.data.categories.map((c) => [c.id, c])));
 
 	/** The average of the whole buckets, and the latest whole one compared with it; null without data in any */
@@ -114,9 +113,9 @@
 	const euros = (value: number) => formatEuro(Math.round(value) as Cents);
 	/** Less spending (or more income) than usual is good */
 	const good = (ratio: number) => (side === 'expense' ? ratio < 0 : ratio > 0);
-	/** The current month/year so far (not part of the line) */
 	/** Why there's no average: the category is new, or only used in partial months/years so far */
 	const missing = (trend: Trend) => (trend.isNew ? `new this ${unit}` : `no whole ${unit} with it yet`);
+	/** The current month/year so far (not part of the line) */
 	const soFar = (trend: Trend) => {
 		const value = trend.values.at(-1) ?? 0;
 		return value > 0 ? `${buckets.labels.at(-1)} so far: ${euros(value)}` : '';
@@ -137,7 +136,7 @@
 	<p class="hint">Nothing here for the current filter.</p>
 {:else}
 	<ul class="trends">
-		{#each list.take(trends) as trend (trend.key)}
+		{#each trends as trend (trend.key)}
 			{@const target = rowTarget(trend.key, false, categories)}
 			{@const s = summary(trend)}
 			{@const line = sparkline(trend, s?.average ?? null)}
@@ -185,9 +184,6 @@
 			</li>
 		{/each}
 	</ul>
-	{#if trends.length > ShortList.LIMIT}
-		<button class="more" onclick={() => (list.showAll = !list.showAll)}>{list.showAll ? 'Show fewer' : `Show all ${trends.length}`}</button>
-	{/if}
 {/if}
 
 <style>
@@ -290,9 +286,6 @@
 	}
 	.bad {
 		color: var(--negative);
-	}
-	.more {
-		margin-top: 0.5rem;
 	}
 	/* the current month/year so far: on hover on computers, as text on phones (no hover there) */
 	.so-far {

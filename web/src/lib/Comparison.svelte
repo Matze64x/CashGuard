@@ -22,7 +22,7 @@
 	import { clock } from './clock.svelte';
 	import { describePeriod, formatEuro, formatEuroChange } from './display';
 	import { filter } from './filter.svelte';
-	import { rowTarget, ShortList } from './rows.svelte';
+	import { rowTarget } from './rows.svelte';
 	import type { Workspace } from './workspace.svelte';
 
 	let { workspace, side }: { workspace: Workspace; side: Side } = $props();
@@ -53,7 +53,6 @@
 		const oldest = workspace.data.transactions.at(-1)?.date;
 		return !!comparison && !!oldest && comparison.previous.to < oldest;
 	});
-	const list = new ShortList(() => [byDescription, side]);
 
 	const percent = new Intl.NumberFormat('de-DE', { style: 'percent', maximumFractionDigits: 0, signDisplay: 'exceptZero' });
 	/** Amounts without sign: for expenses, "more" means spending more */
@@ -97,7 +96,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each list.take(rows) as row (row.key)}
+					{#each rows as row (row.key)}
 						<tr>
 							<th scope="row">
 								<button class="name" onclick={row.choose} disabled={!row.choose} title={row.title}>
@@ -123,9 +122,6 @@
 				</tfoot>
 			</table>
 		</div>
-		{#if rows.length > ShortList.LIMIT}
-			<button class="more" onclick={() => (list.showAll = !list.showAll)}>{list.showAll ? 'Show fewer' : `Show all ${rows.length}`}</button>
-		{/if}
 	{/if}
 {/if}
 
@@ -217,9 +213,6 @@
 		height: 0.65rem;
 		border-radius: 50%;
 		flex: none;
-	}
-	.more {
-		margin-top: 0.5rem;
 	}
 	/* phones: the period and the change in %; the rest would need scrolling */
 	@media (max-width: 40rem) {

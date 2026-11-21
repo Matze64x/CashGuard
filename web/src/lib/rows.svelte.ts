@@ -1,7 +1,6 @@
 /**
  * What the breakdown and the comparison share: a row per category, or per description within one
- * category, that filters by its category or searches for its description; and lists that show the
- * largest rows first, the rest on request.
+ * category, that filters by its category or searches for its description.
  */
 import { categoryColor, categoryLabel } from './display';
 import { filter } from './filter.svelte';
@@ -24,21 +23,4 @@ export function rowTarget(key: string, byDescription: boolean, categories: Reado
 			: { label: '(no description)', choose: null };
 	const id = key as Id;
 	return { label: categoryLabel(id, categories.get(id)), color: categoryColor(categories.get(id)), title: 'Show only this category', choose: () => filter.set({ categories: [id] }) };
-}
-
-/** The first rows of a list, all on request; starts short again whenever `reset` reads something new */
-export class ShortList {
-	static readonly LIMIT = 10;
-	showAll = $state(false);
-
-	constructor(reset: () => unknown) {
-		$effect(() => {
-			reset();
-			this.showAll = false;
-		});
-	}
-
-	take<T>(rows: readonly T[]): readonly T[] {
-		return this.showAll ? rows : rows.slice(0, ShortList.LIMIT);
-	}
 }

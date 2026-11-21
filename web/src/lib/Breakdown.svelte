@@ -8,7 +8,7 @@
 	import { ofSide, sumCents, totalsByCategory, totalsByDescription, type Side, type Transaction } from '../core';
 	import { categoryLabel, formatEuro, plural } from './display';
 	import { filter } from './filter.svelte';
-	import { rowTarget, ShortList } from './rows.svelte';
+	import { rowTarget } from './rows.svelte';
 	import type { Workspace } from './workspace.svelte';
 
 	let {
@@ -31,7 +31,6 @@
 	const rows = $derived(
 		(single !== null ? totalsByDescription(sided) : totalsByCategory(sided)).map((s) => ({ ...s, ...rowTarget(s.key, single !== null, categories) })),
 	);
-	const list = new ShortList(() => [single, side]);
 	// all rows have the side's sign, so the total is never 0 while there are rows
 	const total = $derived(sumCents(rows.map((r) => r.total)));
 	const largest = $derived(Math.max(1, ...rows.map((r) => Math.abs(r.total))));
@@ -50,7 +49,7 @@
 	<p class="empty">Nothing here for the current filter.</p>
 {:else}
 	<ul class="rows">
-		{#each list.take(rows) as row (row.key)}
+		{#each rows as row (row.key)}
 			{@const share = percent.format(row.total / total)}
 			<li>
 				<button
@@ -73,9 +72,6 @@
 			</li>
 		{/each}
 	</ul>
-	{#if rows.length > ShortList.LIMIT}
-		<button class="more" onclick={() => (list.showAll = !list.showAll)}>{list.showAll ? 'Show fewer' : `Show all ${rows.length}`}</button>
-	{/if}
 {/if}
 
 <style>
@@ -164,8 +160,5 @@
 		display: block;
 		height: 100%;
 		border-radius: 0.2rem;
-	}
-	.more {
-		margin-top: 0.5rem;
 	}
 </style>
