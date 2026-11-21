@@ -302,20 +302,30 @@ export function skipOccurrence(data: CashGuardData, id: Id, occurrence: CivilDat
 // ------------------------------------------------------------------------------------- suggestions
 
 /** Descriptions used before that contain `text` (case-insensitive), most used first. */
+/** Each distinct description with its lowercase form and how often it's used, once per data object */
+const descriptionIndex = new WeakMap<CashGuardData, readonly { description: string; lower: string; count: number }[]>();
+function descriptionsOf(data: CashGuardData) {
+	let index = descriptionIndex.get(data);
+	if (index === undefined) {
+		const counts = new Map<string, number>();
+		for (const t of data.transactions) {
+			if (t.description) counts.set(t.description, (counts.get(t.description) ?? 0) + 1);
+			for (const x of t.subTransactions ?? []) if (x.description) counts.set(x.description, (counts.get(x.description) ?? 0) + 1);
+		}
+		index = [...counts].map(([description, count]) => ({ description, lower: description.toLocaleLowerCase(), count }));
+		descriptionIndex.set(data, index);
+	}
+	return index;
+}
+
 export function suggestDescriptions(data: CashGuardData, text: string, limit = 8): string[] {
 	const needle = text.trim().toLocaleLowerCase();
-	const counts = new Map<string, number>();
-	for (const t of data.transactions) {
-		for (const x of [t, ...(t.subTransactions ?? [])]) {
-			if (x.description && x.description.toLocaleLowerCase().includes(needle)) counts.set(x.description, (counts.get(x.description) ?? 0) + 1);
-		}
-	}
-	const startsWith = (d: string) => (d.toLocaleLowerCase().startsWith(needle) ? 0 : 1);
-	return [...counts]
-		.filter(([d]) => d !== text)
-		.sort(([a, ca], [b, cb]) => startsWith(a) - startsWith(b) || cb - ca || a.localeCompare(b))
+	const startsWith = (lower: string) => (lower.startsWith(needle) ? 0 : 1);
+	return descriptionsOf(data)
+		.filter((d) => d.description !== text && d.lower.includes(needle))
+		.sort((a, b) => startsWith(a.lower) - startsWith(b.lower) || b.count - a.count || a.description.localeCompare(b.description))
 		.slice(0, limit)
-		.map(([d]) => d);
+		.map((d) => d.description);
 }
 
 /** Category and amount of the latest transaction with exactly this description, to prefill a new one. */

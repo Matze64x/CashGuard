@@ -4,9 +4,14 @@
 	opens a row. Without a selection, moving starts at the first row on screen, so nothing jumps.
 	Showing the view (`active` becomes true) puts the focus into the list. Several lists in one view
 	(`shared`): their keys only apply while the list has the focus, and only the first takes it.
+	Only the rows on and near the screen are in the page (the list scrolls with the page): the
+	others are spacers, sized by the rows' measured heights (or the average of the first ones
+	measured), so tens of thousands of rows stay fast. When rows above the screen turn out taller
+	or shorter than assumed, what's on screen stays put: the browser's scroll anchoring sees to that,
+	and where there is none (Safari), the list scrolls the page by the difference itself.
 -->
 <script lang="ts" generics="T, K extends string">
-	import { tick, type Snippet } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
 	import { shortcuts } from '../shortcuts.svelte';
 
 	let {
@@ -63,33 +68,181 @@
 	/** Where the page's visible area starts: below the sticky header */
 	const visibleTop = () => document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
 
-	// keep the selection visible: scroll the page just enough, and only if needed (not with
-	// `scrollIntoView`, which ignores the sticky header and in WebKit sometimes scrolled far past a
-	// row that was already visible)
+	// ---- only the rows near the screen are rendered
+	/** How far beyond the screen rows are rendered, in pixels */
+	const OVERSCAN = 1500;
+	/** Measured row heights by key (a plain map: `measured` says when it changed) */
+	const heights = new Map<string, number>();
+	let measured = $state(0);
+	/** The height assumed for rows not measured yet: the average of the first rows measured (at this width) */
+	let estimate = 42;
+	let estimated = false;
+	/** The screen's part of the list, in the list's coordinates */
+	let viewTop = $state(0);
+	let viewHeight = $state(typeof window === 'undefined' ? 1000 : window.innerHeight);
+
+	/** Where each row starts (and the total height at the end): measured heights, else their average */
+	const offsets = $derived.by(() => {
+		void measured;
+		const result = new Float64Array(items.length + 1);
+		for (let i = 0; i < items.length; i++) result[i + 1] = result[i]! + (heights.get(key(items[i]!)) ?? estimate);
+		return result;
+	});
+	/** The index of the row at `y` (list coordinates), clamped to the rows */
+	function indexAt(y: number): number {
+		let low = 0;
+		let high = items.length - 1;
+		while (low < high) {
+			const mid = (low + high + 1) >> 1;
+			if (offsets[mid]! <= y) low = mid;
+			else high = mid - 1;
+		}
+		return Math.max(0, low);
+	}
+	const start = $derived(indexAt(viewTop - OVERSCAN));
+	const end = $derived(Math.min(items.length, indexAt(viewTop + viewHeight + OVERSCAN) + 1));
+	const shown = $derived(items.slice(start, end));
+
+	function updateView() {
+		if (!element) return;
+		viewTop = -element.getBoundingClientRect().top;
+		viewHeight = document.documentElement.clientHeight;
+	}
 	$effect(() => {
-		const row = selected === null ? null : document.getElementById(domId(selected));
-		if (!row) return;
-		const { top, bottom } = row.getBoundingClientRect();
+		const update = () => {
+			if (untrack(() => active)) updateView();
+		};
+		addEventListener('scroll', update, { passive: true });
+		addEventListener('resize', update);
+		// a new width can change the rows' heights (wrapping): measure again
+		let width = element?.clientWidth;
+		// (in the next frame: changing the layout right in the callback makes WebKit report a loop)
+		let frame = 0;
+		const observer = new ResizeObserver(() => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(() => {
+				if (element && element.clientWidth !== width) {
+					width = element.clientWidth;
+					const before = estimate;
+					heights.clear();
+					estimated = false;
+					measure();
+					// (if nothing was measured, the old estimate stays)
+					if (estimate !== before) measured++;
+				}
+				update();
+			});
+		});
+		if (element) observer.observe(element);
+		return () => {
+			removeEventListener('scroll', update);
+			removeEventListener('resize', update);
+			observer.disconnect();
+			cancelAnimationFrame(frame);
+		};
+	});
+	// shown again, or other rows (e.g. a search): what's above the list may have changed too
+	$effect(() => {
+		void items;
+		if (active) updateView();
+	});
+	/** Browsers with scroll anchoring keep the screen in place themselves (Safari has none) */
+	const nativeAnchoring = typeof CSS !== 'undefined' && CSS.supports('overflow-anchor', 'auto');
+
+	/** Measures the rendered rows; keeps what's on screen in place if rows above it changed height */
+	function measure() {
+		if (!element) return;
+		const top = Math.max(visibleTop(), 0);
+		let shift = 0;
+		let changed = false;
+		const rows = element.querySelectorAll<HTMLElement>('[role="option"]');
+		const firstRect = rows[0]?.getBoundingClientRect();
+		for (const row of rows) {
+			const rect = row.getBoundingClientRect();
+			// (0: hidden, e.g. another section is shown)
+			if (rect.height <= 0) continue;
+			const k = row.dataset.key!;
+			const old = heights.get(k);
+			if (old !== undefined && Math.abs(old - rect.height) <= 0.5) continue;
+			// (a row reaching above the top line pushes what follows it, too)
+			if (rect.top < top) shift += rect.height - (old ?? estimate);
+			heights.set(k, rect.height);
+			changed = true;
+		}
+		if (!changed) return;
+		if (!estimated) {
+			let sum = 0;
+			for (const h of heights.values()) sum += h;
+			const next = sum / heights.size;
+			// the rows before the first rendered one are all estimated (nothing is measured at this width yet)
+			if (firstRect && firstRect.top <= top) shift += (next - estimate) * start;
+			estimate = next;
+			estimated = true;
+		}
+		untrack(() => measured++);
+		if (shift !== 0 && !nativeAnchoring) scrollBy({ top: shift });
+	}
+	$effect(() => {
+		void shown;
+		measure();
+	});
+	// rows whose height changes on their own (e.g. another date format)
+	let rowFrame = 0;
+	const rowObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+		cancelAnimationFrame(rowFrame);
+		rowFrame = requestAnimationFrame(measure);
+	});
+	$effect(() => () => {
+		rowObserver?.disconnect();
+		cancelAnimationFrame(rowFrame);
+	});
+	function observed(row: HTMLElement) {
+		rowObserver?.observe(row);
+		return { destroy: () => rowObserver?.unobserve(row) };
+	}
+	// forget rows that are gone
+	$effect(() => {
+		if (heights.size <= items.length * 2) return;
+		const keys = new Set(items.map((item) => key(item) as string));
+		for (const k of heights.keys()) if (!keys.has(k)) heights.delete(k);
+	});
+
+	/** Scrolls the page just enough to show the selected row, and only if needed */
+	function reveal(top: number, bottom: number) {
 		const above = top - visibleTop();
 		// the layout viewport: `innerHeight` briefly reported a far too small height in mobile WebKit
 		// after a full-screen dialog closed
 		const below = bottom - document.documentElement.clientHeight;
 		if (above < 0) scrollBy({ top: above });
 		else if (below > 0) scrollBy({ top: below });
+	}
+
+	// keep the selection visible (not with `scrollIntoView`, which ignores the sticky header and in
+	// WebKit sometimes scrolled far past a row that was already visible): first by where the row
+	// should be, then, once it's rendered, by where it is
+	$effect(() => {
+		if (selected === null) return;
+		const k = selected;
+		untrack(() => {
+			const index = selectedIndex;
+			if (index < 0 || !element) return;
+			const listTop = element.getBoundingClientRect().top;
+			if (!document.getElementById(domId(k))) reveal(listTop + offsets[index]!, listTop + offsets[index + 1]!);
+			void tick().then(() =>
+				requestAnimationFrame(() => {
+					const row = document.getElementById(domId(k));
+					if (row && selected === k) reveal(row.getBoundingClientRect().top, row.getBoundingClientRect().bottom);
+				}),
+			);
+		});
 	});
 
-	/** The index of the first row on screen (below the sticky header); rows are stacked, so a binary search finds it */
+	/** The index of the first row on screen (below the sticky header) */
 	function firstRowOnScreen(): number {
-		const rows = element?.querySelectorAll<HTMLElement>('[role="option"]') ?? [];
-		const top = visibleTop();
-		let low = 0;
-		let high = rows.length;
-		while (low < high) {
-			const mid = (low + high) >> 1;
-			if (rows[mid]!.getBoundingClientRect().bottom > top) high = mid;
-			else low = mid + 1;
-		}
-		return low < rows.length ? low : 0;
+		if (!element) return 0;
+		const y = visibleTop() - element.getBoundingClientRect().top;
+		const index = indexAt(y);
+		return offsets[index + 1]! <= y && index + 1 < items.length ? index + 1 : index;
 	}
 
 	function move(by: number) {
@@ -139,13 +292,27 @@
 		if (item !== undefined) onopen(item);
 	}}
 >
-	{#each items as item (key(item))}
-		<div id={domId(key(item))} data-key={key(item)} class="option" class:selected={key(item) === selected} role="option" aria-selected={key(item) === selected}>
-			{@render row(item)}
-		</div>
-	{:else}
+	{#if items.length === 0}
 		{@render empty()}
-	{/each}
+	{:else}
+		<div style:height={`${offsets[start]}px`}></div>
+		{#each shown as item, i (key(item))}
+			<div
+				id={domId(key(item))}
+				data-key={key(item)}
+				class="option"
+				class:selected={key(item) === selected}
+				role="option"
+				use:observed
+				aria-selected={key(item) === selected}
+				aria-setsize={items.length}
+				aria-posinset={start + i + 1}
+			>
+				{@render row(item)}
+			</div>
+		{/each}
+		<div style:height={`${offsets[items.length]! - offsets[end]!}px`}></div>
+	{/if}
 </div>
 
 <style>
@@ -156,9 +323,6 @@
 	.option {
 		border-bottom: 1px solid var(--border);
 		cursor: default;
-		/* lets the browser skip rendering rows far outside the screen */
-		content-visibility: auto;
-		contain-intrinsic-size: auto 2.6rem;
 	}
 	.option.selected {
 		background: var(--accent-soft);

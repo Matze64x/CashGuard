@@ -81,8 +81,9 @@ test('the date format setting applies to the list and the editor', async ({ page
 	await page.keyboard.press(`${MOD}+Enter`);
 	await expect(page.getByRole('option', { name: /Dated/ })).toContainText('2025-03-06');
 
-	// the setting survives a reload
+	// the setting survives a reload (only rows near the screen are rendered: search for it)
 	await page.reload();
+	await page.getByRole('searchbox').fill('Dated');
 	await expect(page.getByRole('option', { name: /Dated/ })).toContainText('2025-03-06');
 });
 

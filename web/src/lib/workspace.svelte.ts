@@ -71,15 +71,34 @@ function parseStored(text: string): CashGuardData {
 	throw new Error(`The data stored in this browser is damaged (${first?.path || 'file'}: ${first?.message}).`);
 }
 
+/**
+ * The file text of data, serialized once per data object (they're never changed): each save stores
+ * the working copy, base and export as text, and only the working copy is new after an edit.
+ */
+const serialized = new WeakMap<CashGuardData, string>();
+function serialize(data: CashGuardData): string {
+	let text = serialized.get(data);
+	if (text === undefined) serialized.set(data, (text = serializeCashGuard(data)));
+	return text;
+}
+
 function toStored({ sync, fileName, filePath }: Snapshot): StoredSnapshot {
-	const text = (data: CashGuardData | null) => data && serializeCashGuard(data);
-	return { working: serializeCashGuard(sync.working), base: text(sync.base), exported: text(sync.exported), fileName, filePath };
+	const text = (data: CashGuardData | null) => data && serialize(data);
+	return { working: serialize(sync.working), base: text(sync.base), exported: text(sync.exported), fileName, filePath };
 }
 
 function fromStored(stored: StoredSnapshot): Snapshot {
-	const data = (text: string | null) => (text === null ? null : parseStored(text));
+	// the working copy, base and export are often the same: parse each text once
+	const parsed = new Map<string, CashGuardData>();
+	const parse = (text: string) => {
+		let data = parsed.get(text);
+		// (not remembered as its serialization: an older stored format is upgraded when read)
+		if (data === undefined) parsed.set(text, (data = parseStored(text)));
+		return data;
+	};
+	const data = (text: string | null) => (text === null ? null : parse(text));
 	return {
-		sync: { working: parseStored(stored.working), base: data(stored.base), exported: data(stored.exported) },
+		sync: { working: parse(stored.working), base: data(stored.base), exported: data(stored.exported) },
 		fileName: stored.fileName,
 		filePath: stored.filePath ?? null,
 	};
@@ -207,7 +226,7 @@ export class Workspace {
 	/** Hands the working copy to the user to save over the synced file. Returns false if cancelled. */
 	async exportFile(): Promise<boolean> {
 		const { sync, fileName } = this.#current;
-		if (!(await saveFile(serializeCashGuard(sync.working), fileName ?? DEFAULT_FILE_NAME))) return false;
+		if (!(await saveFile(serialize(sync.working), fileName ?? DEFAULT_FILE_NAME))) return false;
 		await this.#commit({ ...this.#current, sync: { ...sync, exported: sync.working } }, this.#beforeImport);
 		return true;
 	}
@@ -312,7 +331,7 @@ export class Workspace {
 		await this.#serial(async () => {
 			const { working } = this.#current.sync;
 			try {
-				await desktop.writeFile(path, serializeCashGuard(working), null);
+				await desktop.writeFile(path, serialize(working), null);
 			} catch (e) {
 				if (e instanceof desktop.FileExistsError) throw new Error(`${desktop.fileNameOf(path)} already exists. Use “Open file…” to sync with it.`);
 				throw e;
@@ -334,7 +353,7 @@ export class Workspace {
 			this.#checkUnchanged(candidate);
 			const { working } = this.#current.sync;
 			try {
-				await desktop.writeFile(filePath, serializeCashGuard(working), fileText);
+				await desktop.writeFile(filePath, serialize(working), fileText);
 			} catch (e) {
 				if (!(e instanceof desktop.FileChangedError)) throw e;
 				// the file changed again meanwhile: look at it anew
@@ -395,7 +414,7 @@ export class Workspace {
 			if (!needsWrite(current)) return null;
 			try {
 				// the file's content is the merge base, so it's what the file must still contain
-				await desktop.writeFile(filePath, serializeCashGuard(current.working), fileText);
+				await desktop.writeFile(filePath, serialize(current.working), fileText);
 			} catch (e) {
 				if (e instanceof desktop.FileChangedError) continue;
 				throw e;
