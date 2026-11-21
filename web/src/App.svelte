@@ -206,7 +206,7 @@
 	</div>
 </header>
 
-<main>
+<main class:wide={section === 'explore'}>
 	{#if workspace.syncError}
 		<p class="notice error" role="alert">Syncing with the file failed: {workspace.syncError}</p>
 	{/if}
@@ -300,10 +300,14 @@
 		padding: 0 0.45rem;
 		font-size: 0.8rem;
 	}
+	/* lists read best narrow; Explore's charts and side-by-side panels use a laptop's width */
 	main {
 		max-width: 60rem;
 		margin: 0 auto;
 		padding: 0 env(safe-area-inset-right) max(1rem, env(safe-area-inset-bottom)) env(safe-area-inset-left);
+	}
+	main.wide {
+		max-width: 120rem;
 	}
 	nav {
 		grid-area: nav;

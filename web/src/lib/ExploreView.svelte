@@ -65,72 +65,95 @@
 </script>
 
 <div class="explore">
-	<FilterBar {workspace} {active} onleave={() => showButton.focus()} />
+	<div class="filter"><FilterBar {workspace} {active} onleave={() => showButton.focus()} /></div>
 
-	<section class="panel" aria-label="Timeline">
+	<section class="panel timeline" aria-label="Timeline">
 		<Timeline {workspace} matching={withoutPeriod} {side} />
 	</section>
 
-	<div class="columns">
-		<section class="panel breakdown" aria-label="Breakdown">
-			<Breakdown {workspace} transactions={result.transactions} {side}>
-				{#snippet actions()}
-					<!-- a filter for income only or expenses only decides -->
-					<Segmented
-						bind:value={() => side, (value) => (chosenSide = value)}
-						options={SIDES}
-						label="Expenses or income"
-						disabled={filter.current.kind !== 'all'}
-					/>
-				{/snippet}
-			</Breakdown>
-		</section>
+	<section class="panel breakdown" aria-label="Breakdown">
+		<Breakdown {workspace} transactions={result.transactions} {side}>
+			{#snippet actions()}
+				<!-- a filter for income only or expenses only decides -->
+				<Segmented
+					bind:value={() => side, (value) => (chosenSide = value)}
+					options={SIDES}
+					label="Expenses or income"
+					disabled={filter.current.kind !== 'all'}
+				/>
+			{/snippet}
+		</Breakdown>
+	</section>
 
-		<section class="panel totals" aria-label="Totals of the filtered transactions">
-			<h2>{filter.current.from || filter.current.to ? describePeriod(filter.current.from, filter.current.to) : 'All time'}</h2>
-			<dl>
-				<dt>Income</dt>
-				<dd class="income">{formatEuro(income)}</dd>
-				<dt>Expenses</dt>
-				<dd class="expenses">{formatEuro(expenses)}</dd>
-				<dt>Net</dt>
-				<dd>{formatEuro(result.total)}</dd>
-				{#if monthCount > 1}
-					<dt>Per month</dt>
-					<dd>{formatEuro(Math.round(result.total / monthCount) as Cents)} <span class="muted">over {monthCount} months</span></dd>
-				{/if}
-			</dl>
-			<button bind:this={showButton} onclick={onshowtransactions} title="g t">
-				Show {isFiltered(filter.current) ? plural(result.transactions.length, 'transaction') : 'all transactions'}
-			</button>
-		</section>
-	</div>
+	<section class="panel totals" aria-label="Totals of the filtered transactions">
+		<h2>{filter.current.from || filter.current.to ? describePeriod(filter.current.from, filter.current.to) : 'All time'}</h2>
+		<dl>
+			<dt>Income</dt>
+			<dd class="income">{formatEuro(income)}</dd>
+			<dt>Expenses</dt>
+			<dd class="expenses">{formatEuro(expenses)}</dd>
+			<dt>Net</dt>
+			<dd>{formatEuro(result.total)}</dd>
+			{#if monthCount > 1}
+				<dt>Per month</dt>
+				<dd>{formatEuro(Math.round(result.total / monthCount) as Cents)} <span class="muted">over {monthCount} months</span></dd>
+			{/if}
+		</dl>
+		<button bind:this={showButton} onclick={onshowtransactions} title="g t">
+			Show {isFiltered(filter.current) ? plural(result.transactions.length, 'transaction') : 'all transactions'}
+		</button>
+	</section>
 
-	<section class="panel" aria-label="Trends">
+	<section class="panel trends" aria-label="Trends">
 		<CategoryTrends {workspace} matching={withoutPeriod} {side} />
 	</section>
 
-	<section class="panel" aria-label="Comparison">
+	<section class="panel comparison" aria-label="Comparison">
 		<Comparison {workspace} {side} />
 	</section>
 </div>
 
 <style>
+	/* one column on phones, the breakdown next to the totals from tablets on; on wide screens
+	   (laptops) the totals go next to the timeline, the breakdown next to the comparison (both
+	   per category, for the same period), and the trends get the full width for their lines */
 	.explore {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas: 'filter' 'timeline' 'breakdown' 'totals' 'trends' 'comparison';
+		align-items: start;
 		gap: 1rem;
 		padding: 1rem 0.75rem;
 	}
-	.columns {
-		display: grid;
-		grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-		align-items: start;
-		gap: 1rem;
-	}
-	@media (max-width: 50rem) {
-		.columns {
-			grid-template-columns: minmax(0, 1fr);
+	@media (min-width: 50rem) {
+		.explore {
+			grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+			grid-template-areas: 'filter filter' 'timeline timeline' 'breakdown totals' 'trends trends' 'comparison comparison';
 		}
+	}
+	@media (min-width: 80rem) {
+		.explore {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 18rem;
+			grid-template-areas: 'filter filter filter' 'timeline timeline totals' 'breakdown comparison comparison' 'trends trends trends';
+		}
+	}
+	.filter {
+		grid-area: filter;
+	}
+	.timeline {
+		grid-area: timeline;
+	}
+	.breakdown {
+		grid-area: breakdown;
+	}
+	.totals {
+		grid-area: totals;
+	}
+	.trends {
+		grid-area: trends;
+	}
+	.comparison {
+		grid-area: comparison;
 	}
 	.panel {
 		background: var(--surface);
