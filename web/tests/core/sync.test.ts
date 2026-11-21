@@ -7,7 +7,6 @@ import {
 	sortNewestFirst,
 	summarizeChanges,
 	totalChanges,
-	unexportedChanges,
 	type Account,
 	type CashGuardData,
 	type CivilDate,
@@ -66,13 +65,6 @@ describe('sync flow', () => {
 		const plan = planImport(INITIAL_SYNC_STATE, file);
 		expect(plan.next).toEqual({ working: file, base: file, exported: null });
 		expect(plan.warnings).toEqual([]);
-		expect(totalChanges(unexportedChanges(plan.next))).toBe(0);
-	});
-
-	it('local edits count as unexported until they are exported', () => {
-		const state = { ...imported(data([tx('1')])), working: data([tx('1'), tx('2')]) };
-		expect(totalChanges(unexportedChanges(state))).toBe(1);
-		expect(totalChanges(unexportedChanges(exported(state)))).toBe(0);
 	});
 
 	it('changes from the other device arrive and local ones stay', () => {

@@ -67,11 +67,6 @@ export function totalChanges(summary: ChangeSummary): number {
 	return KINDS.reduce((sum, kind) => sum + summary[kind].added + summary[kind].changed + summary[kind].deleted, 0);
 }
 
-/** Changes in the working copy that haven't been exported yet. */
-export function unexportedChanges(state: SyncState): ChangeSummary {
-	return summarizeChanges(state.exported ?? state.base, state.working);
-}
-
 /** Whether `theirs` contains at least one record that `exported` added or changed relative to `base`. */
 function containsExport(base: CashGuardData | null, exported: CashGuardData, theirs: CashGuardData): boolean {
 	const [b, e, t] = [keyed(base ?? EMPTY_DATA), keyed(exported), keyed(theirs)];

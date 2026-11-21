@@ -168,11 +168,10 @@ test('the backup file: written when chosen, after changes, and when the window c
 	// written right away
 	expect(await transactionsIn(page, BACKUP)).toBe(46);
 
-	// a few seconds after a change; it's no export (the change hasn't reached another device)
+	// a few seconds after a change
 	await addTransaction(page, 'First');
 	expect(await transactionsIn(page, BACKUP)).toBe(46);
 	await expect.poll(() => transactionsIn(page, BACKUP), { timeout: 8000 }).toBe(47);
-	await expect(page.getByRole('button', { name: /^Export, 1 change not exported/ })).toBeVisible();
 
 	// closing writes a pending backup at once, then closes the window
 	await addTransaction(page, 'Second');

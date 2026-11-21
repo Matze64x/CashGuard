@@ -18,8 +18,6 @@ import {
 	parseCashGuard,
 	planImport,
 	serializeCashGuard,
-	totalChanges,
-	unexportedChanges,
 	type CashGuardData,
 	type ImportPlan,
 	type Issue,
@@ -118,7 +116,6 @@ export class Workspace {
 
 	readonly data = $derived(this.#current.sync.working);
 	readonly fileName = $derived(this.#current.fileName);
-	readonly unexportedCount = $derived(totalChanges(unexportedChanges(this.#current.sync)));
 	readonly canUndoImport = $derived(this.#beforeImport !== null);
 
 	/**

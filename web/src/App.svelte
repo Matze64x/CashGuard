@@ -4,7 +4,6 @@
 	import DueInbox from './lib/DueInbox.svelte';
 	import ManageView from './lib/ManageView.svelte';
 	import { dueList, type RecurringDraft } from './core';
-	import { plural } from './lib/display';
 	import { errorMessage } from './lib/errors';
 	import ExploreView from './lib/ExploreView.svelte';
 	import ImportDialog from './lib/ImportDialog.svelte';
@@ -166,14 +165,11 @@
 	function exportFile() {
 		// no await before exportFile: browsers only allow sharing/downloading directly after a click
 		void run(async () =>
-			(await workspace.exportFile()) ? (workspace.isDesktop ? 'Exported.' : 'Exported. Save it over your synced file, then it reaches your other devices.') : null,
+			(await workspace.exportFile()) ? 'Exported.' : null,
 		);
 	}
 
 	const busy = $derived(!workspace.ready || loadError !== null);
-	const exportLabel = $derived(
-		workspace.unexportedCount > 0 ? `Export, ${plural(workspace.unexportedCount, 'change')} not exported yet` : 'Export',
-	);
 </script>
 
 <!-- iOS greys out files for a strict filter on some versions, so text files are allowed too -->
@@ -188,10 +184,8 @@
 		{#if workspace.canUndoImport}
 			<button disabled={busy} onclick={undoImport}>Undo import</button>
 		{/if}
-		<button disabled={busy} onclick={importFile}>Import</button>
-		<button class="primary" disabled={busy} aria-label={exportLabel} title={exportLabel} onclick={exportFile}>
-			Export{#if workspace.unexportedCount > 0}<span class="count" aria-hidden="true">{workspace.unexportedCount}</span>{/if}
-		</button>
+		<button disabled={busy} title={displayKeys('Mod+o')} onclick={importFile}>Import</button>
+		<button class="primary" disabled={busy} title={displayKeys('Mod+s')} onclick={exportFile}>Export</button>
 	</div>
 	<nav aria-label="Sections">
 		{#each SECTIONS as s (s.id)}
@@ -316,14 +310,6 @@
 		justify-self: end;
 		display: flex;
 		gap: 0.25rem;
-	}
-	.count {
-		margin-left: 0.4rem;
-		background: var(--surface);
-		color: var(--accent);
-		border-radius: 1rem;
-		padding: 0 0.45rem;
-		font-size: 0.8rem;
 	}
 	/* lists read best narrow; Explore's charts and side-by-side panels use a laptop's width */
 	main {
