@@ -197,7 +197,7 @@
 		{filtered ? `${plural(visible.length, 'match', 'matches')} of ${data.transactions.length}` : plural(data.transactions.length, 'transaction')}
 	</span>
 	{#if accountsDifference !== null}
-		<button class="accounts" class:off={accountsDifference !== 0} title="Compare with the accounts (g a)" onclick={onshowaccounts}>
+		<button class="accounts" class:off={accountsDifference !== 0} title="Compare with the accounts (g m)" onclick={onshowaccounts}>
 			{accountsDifference === 0 ? '✓ Accounts match' : `Accounts differ by ${formatEuro(accountsDifference as Cents)}`}
 		</button>
 	{/if}

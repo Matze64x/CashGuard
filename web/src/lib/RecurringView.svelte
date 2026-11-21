@@ -1,6 +1,6 @@
 <!--
 	Recurring transactions: their templates (what, how much, when), with the next occurrence and
-	how many are due. n adds one, Enter edits, Delete deletes (undo with Mod+Z). Entering the due
+	how many are due. "New" adds one; in the focused list Enter edits, Delete deletes (undo with Mod+Z). Entering the due
 	ones happens in the inbox (d).
 -->
 <script lang="ts">
@@ -29,7 +29,15 @@
 		active,
 		notify,
 		onreviewdue,
-	}: { workspace: Workspace; active: boolean; notify: (text: string, undo?: boolean) => void; onreviewdue: () => void } = $props();
+		shared,
+	}: {
+		workspace: Workspace;
+		active: boolean;
+		notify: (text: string, undo?: boolean) => void;
+		onreviewdue: () => void;
+		/** One of several lists in the Manage tab (see `SelectableList`) */
+		shared: 'first' | 'other';
+	} = $props();
 
 	const data = $derived(workspace.data);
 	const templates = $derived([...data.recurring].sort((a, b) => a.description.localeCompare(b.description)));
@@ -109,7 +117,6 @@
 
 	$effect(() =>
 		shortcuts.add([
-			{ keys: ['n'], description: 'New recurring transaction', group: 'Recurring', when: () => active, run: () => openNew() },
 			...[
 				{ keys: ['Enter', 'e'], description: 'Edit the selected recurring transaction', run: () => openEdit(selected) },
 				{ keys: ['Delete', 'Backspace'], description: 'Delete the selected recurring transaction (undo with Mod+Z)', run: () => void remove(selected) },
@@ -122,7 +129,7 @@
 	<h2>Recurring</h2>
 	<div class="actions">
 		{#if dueCount > 0}<button onclick={onreviewdue} title="d">Enter {dueCount} due</button>{/if}
-		<button class="primary" onclick={() => openNew()} title="n">New</button>
+		<button class="primary" onclick={() => openNew()}>New</button>
 	</div>
 </div>
 
@@ -134,6 +141,7 @@
 	key={(r) => r.id}
 	label="Recurring transactions"
 	{active}
+	{shared}
 	group="Recurring"
 	itemName="recurring transaction"
 	onopen={openEdit}
@@ -159,7 +167,7 @@
 	{/snippet}
 	{#snippet empty()}
 		<p class="empty">
-			No recurring transactions yet. Press <kbd>n</kbd> to add rent, a savings plan, …, or use “Make recurring” on a transaction.
+			No recurring transactions yet. Add rent, a savings plan, … with “New”, or use “Make recurring…” on a transaction.
 		</p>
 	{/snippet}
 </SelectableList>

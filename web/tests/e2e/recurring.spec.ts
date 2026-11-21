@@ -59,9 +59,10 @@ test('the due ones are entered one after the other, in order, with the keyboard'
 
 test('a template is made with the keyboard and shows when it comes', async ({ page }) => {
 	await page.keyboard.press('g');
-	await page.keyboard.press('r');
+	await page.keyboard.press('m');
 	await expect(page.getByRole('listbox', { name: 'Recurring transactions' })).toContainText('Savings plan (ETF)');
-	await page.keyboard.press('n');
+	await page.getByRole('region', { name: 'Recurring transactions' }).getByRole('button', { name: 'New' }).focus();
+	await page.keyboard.press('Enter');
 	const editor = page.getByRole('dialog', { name: 'New recurring transaction' });
 	await page.keyboard.type('Gym');
 	await editor.getByLabel('Category').selectOption({ label: 'Health' });
@@ -140,8 +141,8 @@ test('a backlog is skipped at once, and the inbox closes when nothing is left', 
 
 test('editing a template keeps its category, even with a description used elsewhere', async ({ page }) => {
 	await page.keyboard.press('g');
-	await page.keyboard.press('r');
-	await page.getByRole('option', { name: /Rent/ }).dblclick();
+	await page.keyboard.press('m');
+	await page.getByRole('listbox', { name: 'Recurring transactions' }).getByRole('option', { name: /Rent/ }).dblclick();
 	const editor = page.getByRole('dialog', { name: 'Edit recurring transaction' });
 	await editor.getByLabel('Description').fill('Supermarket');
 	await page.keyboard.press('Tab');

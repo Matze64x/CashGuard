@@ -1,4 +1,4 @@
-<!-- Categories: add, rename, recolor, delete (only unused ones). Same keys as the transaction list. -->
+<!-- Categories: add, rename, recolor, delete (only unused ones). In the focused list, Enter edits and Delete deletes. -->
 <script lang="ts">
 	import { addCategory, categoryUsage, deleteCategory, describeUse, updateCategory, type Category, type Id } from '../core';
 	import { attempt } from './attempt';
@@ -9,7 +9,18 @@
 	import SelectableList from './ui/SelectableList.svelte';
 	import type { Workspace } from './workspace.svelte';
 
-	let { workspace, active, notify }: { workspace: Workspace; active: boolean; notify: (text: string, undo?: boolean) => void } = $props();
+	let {
+		workspace,
+		active,
+		shared,
+		notify,
+	}: {
+		workspace: Workspace;
+		active: boolean;
+		/** One of several lists in the Manage tab (see `SelectableList`) */
+		shared: 'first' | 'other';
+		notify: (text: string, undo?: boolean) => void;
+	} = $props();
 
 	const categories = $derived([...workspace.data.categories].sort((a, b) => a.name.localeCompare(b.name)));
 	const usage = $derived(categoryUsage(workspace.data));
@@ -75,7 +86,6 @@
 
 	$effect(() =>
 		shortcuts.add([
-			{ keys: ['n'], description: 'New category', group: 'Categories', when: () => active, run: openNew },
 			// these act on the selection, so only while the list (not a button elsewhere) has the focus
 			...[
 				{ keys: ['Enter', 'e'], description: 'Edit the selected category', run: () => openEdit(selected) },
@@ -87,7 +97,7 @@
 
 <div class="toolbar">
 	<h2>Categories</h2>
-	<button class="primary" onclick={openNew} title="n">New</button>
+	<button class="primary" onclick={openNew}>New</button>
 </div>
 
 <SelectableList
@@ -98,6 +108,7 @@
 	key={(c) => c.id}
 	label="Categories"
 	{active}
+	{shared}
 	group="Categories"
 	itemName="category"
 	onopen={openEdit}
@@ -110,7 +121,7 @@
 		</div>
 	{/snippet}
 	{#snippet empty()}
-		<p class="empty">No categories yet. Press <kbd>n</kbd> to add one.</p>
+		<p class="empty">No categories yet. Add one with “New”.</p>
 	{/snippet}
 </SelectableList>
 
@@ -157,13 +168,17 @@
 		border-radius: 50%;
 		flex: none;
 	}
+	/* the name keeps at least 40 %, the usage wraps instead of squeezing it */
 	.name {
-		flex: 1;
+		flex: 1 0 40%;
+		min-width: 0;
 		overflow-wrap: anywhere;
 	}
 	.usage {
+		flex: 0 1 auto;
 		color: var(--muted);
 		font-size: 0.9rem;
+		text-align: right;
 	}
 	.empty {
 		color: var(--muted);

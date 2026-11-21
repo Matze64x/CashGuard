@@ -40,14 +40,16 @@ test('a new transaction can update an account balance, remembered for the next o
 	await page.keyboard.press(`${MOD}+z`);
 	await expect(page.getByText('46 transactions')).toBeVisible();
 	await page.keyboard.press('g');
-	await page.keyboard.press('a');
+	await page.keyboard.press('m');
 	await expect(page.getByRole('option', { name: /Wallet/ })).toContainText('105,71 €');
 });
 
 test('a custom category color as hex', async ({ page }) => {
 	await page.keyboard.press('g');
-	await page.keyboard.press('c');
-	await page.keyboard.press('n');
+	await page.keyboard.press('m');
+	// (the Manage tab's lists have no shortcut for new ones: the button, by keyboard)
+	await page.getByRole('region', { name: 'Categories' }).getByRole('button', { name: 'New' }).focus();
+	await page.keyboard.press('Enter');
 	await page.keyboard.type('Custom');
 	const hex = page.getByLabel('Color', { exact: true });
 	await hex.focus();
@@ -55,7 +57,7 @@ test('a custom category color as hex', async ({ page }) => {
 	await page.keyboard.press('Enter');
 	const row = page.getByRole('option', { name: /Custom/ });
 	await expect(row.locator('.dot')).toHaveCSS('background-color', 'rgb(51, 170, 119)');
-	// editing it again shows the color
+	// editing it again shows the color (Enter in the focused list)
 	await page.keyboard.press('Enter');
 	await expect(page.getByLabel('Color', { exact: true })).toHaveValue('#33AA77FF');
 	await expect(page.getByLabel('Choose a color')).toHaveValue('#33aa77');

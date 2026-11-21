@@ -135,16 +135,18 @@ test('split a transaction into parts', async ({ page }) => {
 
 test('categories and accounts, and the shortcut help', async ({ page }) => {
 	await page.keyboard.press('g');
-	await page.keyboard.press('c');
+	await page.keyboard.press('m');
 	await expect(page.getByRole('heading', { name: 'Categories' })).toBeVisible();
-	await page.keyboard.press('n');
+	// the Manage tab: accounts first, they get the focus
+	await expect(page.getByRole('listbox', { name: 'Accounts' })).toBeFocused();
+	await page.getByRole('region', { name: 'Categories' }).getByRole('button', { name: 'New' }).focus();
+	await page.keyboard.press('Enter');
 	await page.keyboard.type('Coffee shops'); // gets an unused default color
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('option', { name: /Coffee shops/ })).toContainText('unused');
 
-	await page.keyboard.press('g');
-	await page.keyboard.press('a');
-	await page.keyboard.press('n');
+	await page.getByRole('region', { name: 'Accounts' }).getByRole('button', { name: 'New' }).focus();
+	await page.keyboard.press('Enter');
 	await page.keyboard.type('Wallet');
 	await page.getByLabel('Current balance').fill('+20');
 	await page.keyboard.press('Enter');
@@ -166,6 +168,27 @@ test('categories and accounts, and the shortcut help', async ({ page }) => {
 	await expect(help).toBeHidden();
 });
 
+test('the Manage tab: each list takes the keys only while it has the focus', async ({ page }) => {
+	await importFixture(page);
+	await page.keyboard.press('g');
+	await page.keyboard.press('m');
+	const accounts = page.getByRole('listbox', { name: 'Accounts' });
+	const categories = page.getByRole('listbox', { name: 'Categories' });
+	await expect(accounts).toBeFocused();
+	await page.keyboard.press('j');
+	await expect(accounts.getByRole('option', { selected: true })).toHaveCount(1);
+	await expect(categories.getByRole('option', { selected: true })).toHaveCount(0);
+	const selectedAccount = await accounts.getByRole('option', { selected: true }).textContent();
+	await categories.focus();
+	await page.keyboard.press('j');
+	await page.keyboard.press('j');
+	await expect(categories.getByRole('option', { selected: true })).toHaveCount(1);
+	await expect(accounts.getByRole('option', { selected: true })).toHaveText(selectedAccount!);
+	// Enter opens the focused list's selection
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('dialog', { name: 'Edit category' })).toBeVisible();
+});
+
 test('cancelling keeps the scroll position, and switching sections moves the focus there', async ({ page }) => {
 	await page.setViewportSize({ width: 1000, height: 600 });
 	await importFixture(page);
@@ -181,8 +204,8 @@ test('cancelling keeps the scroll position, and switching sections moves the foc
 	await expect(page.getByRole('option', { selected: true })).toBeInViewport();
 
 	// a clicked tab doesn't keep the focus (it would show a focus ring on the next key)
-	await page.getByRole('button', { name: 'Categories' }).click();
-	await expect(page.getByRole('listbox', { name: 'Categories' })).toBeFocused();
+	await page.getByRole('button', { name: 'Manage' }).click();
+	await expect(page.getByRole('listbox', { name: 'Accounts' })).toBeFocused();
 	await page.keyboard.press('g');
 	await page.keyboard.press('t');
 	await expect(page.getByRole('listbox', { name: 'Transactions' })).toBeFocused();
@@ -196,7 +219,7 @@ test.describe('keys reach the right place', () => {
 		await page.keyboard.press('Backspace');
 		await page.keyboard.press('Delete');
 		await expect(page.getByText('46 transactions')).toBeVisible();
-		await page.getByRole('button', { name: 'Categories' }).focus();
+		await page.getByRole('button', { name: 'Manage' }).focus();
 		await page.keyboard.press('Enter');
 		await expect(page.getByRole('heading', { name: 'Categories' })).toBeVisible();
 		await expect(page.getByRole('dialog')).toHaveCount(0);

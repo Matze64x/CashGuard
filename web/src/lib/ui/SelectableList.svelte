@@ -2,7 +2,8 @@
 	A keyboard-operated list (listbox): the focus stays on the list while j/k or the arrow keys
 	(PageUp/PageDown, Home/End) move the selection. A double click or the view's own shortcut (Enter)
 	opens a row. Without a selection, moving starts at the first row on screen, so nothing jumps.
-	Showing the view (`active` becomes true) puts the focus into the list.
+	Showing the view (`active` becomes true) puts the focus into the list. Several lists in one view
+	(`shared`): their keys only apply while the list has the focus, and only the first takes it.
 -->
 <script lang="ts" generics="T, K extends string">
 	import { tick, type Snippet } from 'svelte';
@@ -15,6 +16,7 @@
 		element = $bindable(),
 		label,
 		active,
+		shared = null,
 		group,
 		itemName,
 		onopen,
@@ -31,6 +33,8 @@
 		label: string;
 		/** Whether the list's view is the one shown (its keys only apply then) */
 		active: boolean;
+		/** One of several lists in the view: `'first'` takes the focus when it's shown, `'other'` doesn't; both only take keys while focused */
+		shared?: 'first' | 'other' | null;
 		/** Heading in the shortcut help, e.g. 'Transactions' */
 		group: string;
 		/** What an item is called in the help, e.g. 'transaction' */
@@ -52,7 +56,7 @@
 	// svelte-ignore state_referenced_locally
 	let wasActive = active;
 	$effect(() => {
-		if (active && !wasActive) focus();
+		if (active && !wasActive && shared !== 'other') focus();
 		wasActive = active;
 	});
 
@@ -96,14 +100,16 @@
 	}
 
 	$effect(() =>
-		shortcuts.add([
-			{ keys: ['j', 'ArrowDown'], description: `Next ${itemName}`, group, repeat: true, when: () => active, run: () => move(1) },
-			{ keys: ['k', 'ArrowUp'], description: `Previous ${itemName}`, group, repeat: true, when: () => active, run: () => move(-1) },
-			{ keys: ['PageDown'], description: `10 ${itemName}s down`, group, repeat: true, when: () => active, run: () => move(10) },
-			{ keys: ['PageUp'], description: `10 ${itemName}s up`, group, repeat: true, when: () => active, run: () => move(-10) },
-			{ keys: ['Home'], description: `First ${itemName}`, group, when: () => active, run: () => move(-Infinity) },
-			{ keys: ['End'], description: `Last ${itemName}`, group, when: () => active, run: () => move(Infinity) },
-		]),
+		shortcuts.add(
+			[
+				{ keys: ['j', 'ArrowDown'], description: `Next ${itemName}`, repeat: true, run: () => move(1) },
+				{ keys: ['k', 'ArrowUp'], description: `Previous ${itemName}`, repeat: true, run: () => move(-1) },
+				{ keys: ['PageDown'], description: `10 ${itemName}s down`, repeat: true, run: () => move(10) },
+				{ keys: ['PageUp'], description: `10 ${itemName}s up`, repeat: true, run: () => move(-10) },
+				{ keys: ['Home'], description: `First ${itemName}`, run: () => move(-Infinity) },
+				{ keys: ['End'], description: `Last ${itemName}`, run: () => move(Infinity) },
+			].map((s) => ({ ...s, group, when: () => active, ...(shared && { focusIn: () => element }) })),
+		),
 	);
 
 	/** The item of the row a mouse event happened in */

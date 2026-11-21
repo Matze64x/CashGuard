@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import AccountsView from './lib/AccountsView.svelte';
-	import CategoriesView from './lib/CategoriesView.svelte';
 	import { clock } from './lib/clock.svelte';
 	import DueInbox from './lib/DueInbox.svelte';
-	import RecurringView from './lib/RecurringView.svelte';
+	import ManageView from './lib/ManageView.svelte';
 	import { dueList, type RecurringDraft } from './core';
 	import { plural } from './lib/display';
 	import { errorMessage } from './lib/errors';
@@ -18,10 +16,8 @@
 
 	const SECTIONS = [
 		{ id: 'transactions', label: 'Transactions', keys: 'g t' },
-		{ id: 'recurring', label: 'Recurring', keys: 'g r' },
 		{ id: 'explore', label: 'Explore', keys: 'g e' },
-		{ id: 'categories', label: 'Categories', keys: 'g c' },
-		{ id: 'accounts', label: 'Accounts', keys: 'g a' },
+		{ id: 'manage', label: 'Manage', keys: 'g m' },
 	] as const;
 	let section = $state<(typeof SECTIONS)[number]['id']>('transactions');
 
@@ -70,11 +66,11 @@
 		if (document.activeElement === document.body || document.activeElement === null)
 			document.querySelector<HTMLElement>('main > div:not([hidden]) [role="listbox"]')?.focus({ preventScroll: true });
 	}
-	let recurringView = $state<RecurringView>();
-	/** "Make recurring" on a transaction: a new template in the recurring section */
+	let manageView = $state<ManageView>();
+	/** "Make recurring" on a transaction: a new template in the Manage tab */
 	function makeRecurring(draft: RecurringDraft) {
-		section = 'recurring';
-		recurringView?.openNew(draft);
+		section = 'manage';
+		manageView?.newRecurring(draft);
 	}
 
 	function undo() {
@@ -227,7 +223,7 @@
 	<nav aria-label="Sections">
 		{#each SECTIONS as s (s.id)}
 			<button class="tab" aria-current={section === s.id ? 'page' : undefined} title={displayKeys(s.keys)} onclick={() => (section = s.id)}
-				>{s.label}{#if s.id === 'recurring' && dueCount > 0}<span class="due" aria-label={`, ${dueLabel} due`}>{dueLabel}</span>{/if}</button
+				>{s.label}{#if s.id === 'manage' && dueCount > 0}<span class="due" aria-label={`, ${dueLabel} due`}>{dueLabel}</span>{/if}</button
 			>
 		{/each}
 	</nav>
@@ -263,7 +259,7 @@
 				{workspace}
 				active={section === 'transactions'}
 				{notify}
-				onshowaccounts={() => (section = 'accounts')}
+				onshowaccounts={() => (section = 'manage')}
 				{dueCount}
 				{dueLabel}
 				onreviewdue={() => (inboxOpen = true)}
@@ -271,14 +267,12 @@
 				emptyHint={workspace.isDesktop ? 'Open your CashGuard file to get started.' : 'Import your CashGuard file to get started, or press n to add one.'}
 			/>
 		</div>
-		<div hidden={section !== 'recurring'}>
-			<RecurringView bind:this={recurringView} {workspace} active={section === 'recurring'} {notify} onreviewdue={() => (inboxOpen = true)} />
-		</div>
 		<div hidden={section !== 'explore'}>
 			<ExploreView {workspace} active={section === 'explore'} onshowtransactions={() => (section = 'transactions')} />
 		</div>
-		<div hidden={section !== 'categories'}><CategoriesView {workspace} active={section === 'categories'} {notify} /></div>
-		<div hidden={section !== 'accounts'}><AccountsView {workspace} active={section === 'accounts'} {notify} /></div>
+		<div hidden={section !== 'manage'}>
+			<ManageView bind:this={manageView} {workspace} active={section === 'manage'} {notify} onreviewdue={() => (inboxOpen = true)} />
+		</div>
 	{/if}
 </main>
 

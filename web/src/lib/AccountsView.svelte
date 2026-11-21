@@ -12,7 +12,18 @@
 	import SelectableList from './ui/SelectableList.svelte';
 	import type { Workspace } from './workspace.svelte';
 
-	let { workspace, active, notify }: { workspace: Workspace; active: boolean; notify: (text: string, undo?: boolean) => void } = $props();
+	let {
+		workspace,
+		active,
+		shared,
+		notify,
+	}: {
+		workspace: Workspace;
+		active: boolean;
+		/** One of several lists in the Manage tab (see `SelectableList`) */
+		shared: 'first' | 'other';
+		notify: (text: string, undo?: boolean) => void;
+	} = $props();
 
 	const accounts = $derived(workspace.data.accounts);
 	const accountsTotal = $derived(sumCents(accounts.map((a) => a.amount)));
@@ -72,7 +83,6 @@
 
 	$effect(() =>
 		shortcuts.add([
-			{ keys: ['n'], description: 'New account', group: 'Accounts', when: () => active, run: () => (editing = { original: null, name: '', amount: null }) },
 			// these act on the selection, so only while the list (not a button elsewhere) has the focus
 			...[
 				{ keys: ['Enter', 'e'], description: 'Edit the selected account', run: () => openEdit(selected) },
@@ -84,7 +94,7 @@
 
 <div class="toolbar">
 	<h2>Accounts</h2>
-	<button class="primary" onclick={() => (editing = { original: null, name: '', amount: null })} title="n">New</button>
+	<button class="primary" onclick={() => (editing = { original: null, name: '', amount: null })}>New</button>
 </div>
 
 <SelectableList
@@ -95,6 +105,7 @@
 	key={(r) => r.account.id}
 	label="Accounts"
 	{active}
+	{shared}
 	group="Accounts"
 	itemName="account"
 	onopen={openEdit}
@@ -107,7 +118,7 @@
 		</div>
 	{/snippet}
 	{#snippet empty()}
-		<p class="empty">No accounts yet. Press <kbd>n</kbd> to add your bank account, cash, …</p>
+		<p class="empty">No accounts yet. Add your bank account, cash, … with “New”.</p>
 	{/snippet}
 </SelectableList>
 
