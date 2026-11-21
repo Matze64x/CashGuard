@@ -1,7 +1,7 @@
 use tauri::{Manager, WebviewWindowBuilder};
 
 mod data_dir;
-mod synced_file;
+mod files;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -14,12 +14,10 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        .manage(synced_file::WatcherState::default())
         .invoke_handler(tauri::generate_handler![
-            synced_file::read_synced_file,
-            synced_file::write_synced_file,
-            synced_file::watch_synced_file,
-            synced_file::data_location,
+            files::read_file,
+            files::write_file,
+            files::data_location,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -28,11 +26,8 @@ pub fn run() {
             let data_dir = data_dir::resolve(app.path().app_data_dir().ok());
             let webview_dir = data_dir.as_ref().and_then(data_dir::DataDir::webview);
             // (before the window exists, so its first commands find it)
-            match data_dir {
-                Some(dir) => {
-                    app.manage(dir);
-                }
-                None => log::warn!("no app data directory: the synced file's backups are off"),
+            if let Some(dir) = data_dir {
+                app.manage(dir);
             }
             // the window is created here (`create: false` in tauri.conf.json): the portable version
             // needs its webview storage in the portable folder

@@ -1,5 +1,4 @@
-//! Where the app keeps its own data (the webview's storage with the working copy and settings,
-//! and the backups of the synced file).
+//! Where the app keeps its own data: the webview's storage with the working copy and settings.
 //!
 //! Normally that's the system's app data directory. A folder named `CashGuard-data` next to the
 //! program makes it portable: everything goes into that folder instead, so the program and its
@@ -17,9 +16,6 @@ pub struct DataDir {
 }
 
 impl DataDir {
-    pub fn backups(&self) -> PathBuf {
-        self.path.join("backups")
-    }
     /// Only set for the portable version: the installed one keeps the webview's default location.
     pub fn webview(&self) -> Option<PathBuf> {
         self.portable.then(|| self.path.join("webview"))
@@ -65,7 +61,6 @@ mod tests {
     fn installed_keeps_the_default_webview_location() {
         let installed = DataDir { path: "/data".into(), portable: false };
         assert_eq!(installed.webview(), None);
-        assert_eq!(installed.backups(), PathBuf::from("/data/backups"));
         let portable = DataDir { path: "/stick/CashGuard-data".into(), portable: true };
         assert_eq!(portable.webview(), Some(PathBuf::from("/stick/CashGuard-data/webview")));
     }

@@ -18,7 +18,6 @@ tauri = { version = "2.12.7", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
-notify = "8"
 
 [dev-dependencies]
 tempfile = "3"

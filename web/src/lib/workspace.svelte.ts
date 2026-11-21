@@ -5,18 +5,16 @@
  * Every change goes through `#commit`, which saves first and only then updates what's shown, so
  * the screen never shows data that isn't stored. A failed save throws and changes nothing.
  *
- * Syncing with the CashGuard file:
- * - browser: the user imports the file (merge preview first) and exports it to save it back
- * - desktop app: the app is linked to the file, reads it on start and whenever it changes on disk,
- *   merges automatically (asking only on conflicts or warnings), and writes changes back itself.
- *   Writes only replace the file if it still has the content the merge was based on.
+ * Exchanging data with a CashGuard file, in the browser and the desktop app alike: importing one
+ * merges it in (preview first, can be undone), exporting hands the data out as a file. The desktop
+ * app can also keep a backup file (`settings.backupPath`): written a few seconds after each change
+ * and when the window closes, never read back by itself (restoring it is an import). A backup
+ * counts as an export. Files are only written if they read back, and always atomically.
  */
 import {
 	INITIAL_SYNC_STATE,
-	needsWrite,
 	nowUtcSeconds,
 	parseCashGuard,
-	planFileSync,
 	planImport,
 	serializeCashGuard,
 	totalChanges,
@@ -30,39 +28,28 @@ import {
 import * as desktop from './desktop';
 import { errorMessage } from './errors';
 import { saveFile } from './files';
+import { settings } from './settings.svelte';
 import { loadWorkspace, requestPersistentStorage, saveWorkspace, watchWorkspace, type StoredSnapshot } from './storage';
 
 const DEFAULT_FILE_NAME = 'cashguard.json';
-/** How often the sync loop retries when the file keeps changing under it */
-const MAX_SYNC_ATTEMPTS = 5;
+/** How long the backup waits after a change, so a burst of edits writes it once */
+const BACKUP_DELAY_MS = 3000;
 
 interface Snapshot {
 	readonly sync: SyncState;
+	/** The file last imported or exported, to suggest its name for the next export */
 	readonly fileName: string | null;
-	/** Desktop app only: the synced file */
-	readonly filePath: string | null;
 }
 
-/**
- * - 'import': the browser's import (can be undone)
- * - 'sync': the linked file changed on disk in a way that needs a decision (desktop)
- * - 'open': opening another file while there are changes not yet written to the current one (desktop)
- */
-export type CandidateMode = 'import' | 'sync' | 'open';
-
-interface CandidateSource {
-	readonly mode: CandidateMode;
+export interface ImportSource {
 	readonly fileName: string;
-	/** Desktop app: the file and its content as read, so "keep mine" can replace exactly that */
-	readonly filePath: string | null;
-	readonly fileText: string | null;
 	/** The state the plan was made from; applying is refused if the data changed since */
 	readonly from: SyncState;
 }
 
 export type ImportCandidate =
-	| (CandidateSource & { readonly ok: true; readonly plan: ImportPlan; readonly warnings: readonly Issue[] })
-	| (CandidateSource & { readonly ok: false; readonly errors: readonly Issue[] });
+	| (ImportSource & { readonly ok: true; readonly plan: ImportPlan; readonly warnings: readonly Issue[] })
+	| (ImportSource & { readonly ok: false; readonly errors: readonly Issue[] });
 
 function parseStored(text: string): CashGuardData {
 	const result = parseCashGuard(text);
@@ -82,9 +69,16 @@ function serialize(data: CashGuardData): string {
 	return text;
 }
 
-function toStored({ sync, fileName, filePath }: Snapshot): StoredSnapshot {
+/** The file text, after making sure it reads back: a file is never written if it couldn't be opened again. */
+function fileText(data: CashGuardData): string {
+	const text = serialize(data);
+	if (!parseCashGuard(text).ok) throw new Error("The file wasn't written: it wouldn't read back correctly. Please report this.");
+	return text;
+}
+
+function toStored({ sync, fileName }: Snapshot): StoredSnapshot {
 	const text = (data: CashGuardData | null) => data && serialize(data);
-	return { working: serialize(sync.working), base: text(sync.base), exported: text(sync.exported), fileName, filePath };
+	return { working: serialize(sync.working), base: text(sync.base), exported: text(sync.exported), fileName };
 }
 
 function fromStored(stored: StoredSnapshot): Snapshot {
@@ -100,11 +94,8 @@ function fromStored(stored: StoredSnapshot): Snapshot {
 	return {
 		sync: { working: parse(stored.working), base: data(stored.base), exported: data(stored.exported) },
 		fileName: stored.fileName,
-		filePath: stored.filePath ?? null,
 	};
 }
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface UndoEntry {
 	readonly before: CashGuardData;
@@ -116,34 +107,31 @@ export class Workspace {
 	readonly isDesktop = desktop.isDesktop;
 
 	// $state.raw: snapshots are replaced as a whole, never mutated, so deep reactivity isn't needed
-	#current = $state.raw<Snapshot>({ sync: INITIAL_SYNC_STATE, fileName: null, filePath: null });
+	#current = $state.raw<Snapshot>({ sync: INITIAL_SYNC_STATE, fileName: null });
 	#beforeImport = $state.raw<Snapshot | null>(null);
 	ready = $state(false);
 	/** Increases whenever another tab changed the data and it was reloaded */
 	revision = $state(0);
-	/** Desktop app: a sync with the file that needs the user's decision */
-	prompt = $state.raw<ImportCandidate | null>(null);
-	/** Desktop app: why the last sync with the file failed */
-	syncError = $state<string | null>(null);
+	/** Desktop app: why the last backup failed (null: it worked, or there is none) */
+	backupError = $state<string | null>(null);
 
 	readonly data = $derived(this.#current.sync.working);
 	readonly fileName = $derived(this.#current.fileName);
-	readonly filePath = $derived(this.#current.filePath);
 	readonly unexportedCount = $derived(totalChanges(unexportedChanges(this.#current.sync)));
 	readonly canUndoImport = $derived(this.#beforeImport !== null);
 
 	/**
 	 * Edits that can be undone (Mod+Z) and redone. Only valid while the data hasn't changed otherwise
-	 * (sync, import, another tab): then the labels are null and undo/redo clear the stacks.
+	 * (import, another tab): then the labels are null and undo/redo clear the stacks.
 	 */
 	#undo = $state.raw<readonly UndoEntry[]>([]);
 	#redo = $state.raw<readonly UndoEntry[]>([]);
 	readonly undoLabel = $derived(this.#undo.at(-1)?.after === this.#current.sync.working ? this.#undo.at(-1)!.label : null);
 	readonly redoLabel = $derived(this.#redo.at(-1)?.before === this.#current.sync.working ? this.#redo.at(-1)!.label : null);
 
-	#unwatchFile: (() => void) | null = null;
-	/** Operations on the file run one at a time, so they can't interleave */
+	/** Changes run one at a time, so they can't interleave */
 	#queue: Promise<unknown> = Promise.resolve();
+	#backupTimer: ReturnType<typeof setTimeout> | undefined;
 
 	/** Loads the stored data. Throws if storage is unavailable or the data is damaged. */
 	async load(): Promise<void> {
@@ -160,10 +148,7 @@ export class Workspace {
 		this.ready = true;
 	}
 
-	/**
-	 * Loads the data, keeps it up to date with other tabs, and (desktop) starts syncing the file.
-	 * Throws only if the data can't be loaded; problems with the file show up in `syncError`.
-	 */
+	/** Loads the data and keeps it up to date with other tabs; the desktop app backs it up before closing. Throws only if the data can't be loaded. */
 	async start(): Promise<() => void> {
 		void requestPersistentStorage();
 		await this.load();
@@ -172,51 +157,41 @@ export class Workspace {
 				this.revision++;
 			}),
 		);
-		if (this.isDesktop && this.#current.filePath) {
-			try {
-				await this.#watch(this.#current.filePath);
-			} catch (e) {
-				this.syncError = errorMessage(e);
-			}
+		let stopWatchingClose = () => {};
+		if (this.isDesktop) {
+			stopWatchingClose = await desktop.onWindowClose(() => this.flushBackup());
+			// changes made while the backup couldn't be written (or before there was one)
+			if (this.unexportedCount > 0) this.#scheduleBackup();
 		}
-		// insurance for file systems that don't report changes (e.g. network drives)
-		const onFocus = () => {
-			if (this.#current.filePath) void this.syncWithFile();
-		};
-		if (this.isDesktop) window.addEventListener('focus', onFocus);
 		return () => {
 			stopWatchingTabs();
-			window.removeEventListener('focus', onFocus);
-			this.#unwatchFile?.();
+			stopWatchingClose();
+			clearTimeout(this.#backupTimer);
 		};
 	}
 
-	// ------------------------------------------------------------------ browser: import and export
+	// ------------------------------------------------------------------ import and export
 
 	/** Plans merging a file into the working copy; nothing changes until `applyImport`. */
-	async planImport(file: File): Promise<ImportCandidate> {
-		const source = { mode: 'import', fileName: file.name, filePath: null, fileText: null, from: this.#current.sync } as const;
-		const result = parseCashGuard(await file.text());
+	planImport(fileName: string, text: string): ImportCandidate {
+		const source = { fileName, from: this.#current.sync };
+		const result = parseCashGuard(text);
 		if (!result.ok) return { ...source, ok: false, errors: result.errors };
 		return { ...source, ok: true, plan: planImport(source.from, result.data), warnings: result.warnings };
 	}
 
-	/** Applies a planned import (browser) or a sync/open decision (desktop). */
-	async applyImport(candidate: ImportCandidate & { ok: true }): Promise<void> {
-		const linking = candidate.filePath !== null && candidate.filePath !== this.#current.filePath;
-		await this.#serial(async () => {
-			if (candidate.mode === 'sync' && this.#current.sync !== candidate.from) {
-				// a newer change arrived while the prompt was open: decide based on that instead
-				this.prompt = await this.#syncLoop();
-				return;
-			}
-			this.#checkUnchanged(candidate);
-			// desktop: the file is the shared truth, so there's nothing to undo to
-			const beforeImport = this.isDesktop ? null : this.#current;
-			await this.#commit({ sync: candidate.plan.next, fileName: candidate.fileName, filePath: candidate.filePath ?? this.#current.filePath }, beforeImport);
-			if (this.isDesktop && !linking) this.prompt = await this.#syncLoop();
+	/** Desktop app: lets the user pick a file and plans importing it. Null if cancelled. */
+	async chooseImport(): Promise<ImportCandidate | null> {
+		const path = await desktop.chooseExistingFile('Import a CashGuard file');
+		return path ? this.planImport(desktop.fileNameOf(path), await desktop.readFile(path)) : null;
+	}
+
+	/** Applies a planned import; it can be undone until the next change. */
+	applyImport(candidate: ImportCandidate & { ok: true }): Promise<void> {
+		return this.#serial(async () => {
+			if (this.#current.sync !== candidate.from) throw new Error('Your data changed in the meantime. Please try again.');
+			await this.#commit({ sync: candidate.plan.next, fileName: candidate.fileName }, this.#current);
 		});
-		if (linking) await this.#watch(candidate.filePath!);
 	}
 
 	undoImport(): Promise<void> {
@@ -225,24 +200,82 @@ export class Workspace {
 		});
 	}
 
-	/** Hands the working copy to the user to save over the synced file. Returns false if cancelled. */
+	/**
+	 * Hands the working copy to the user as a file: in the browser as a download or via the share
+	 * sheet (it must start right from the click: browsers block it after an await), in the desktop
+	 * app saved where the user chooses. Returns false if cancelled.
+	 */
 	async exportFile(): Promise<boolean> {
-		// (saving must start right away, from the click: browsers block it after an await)
-		const { sync, fileName } = this.#current;
-		const handedOut = sync.working;
-		if (!(await saveFile(serialize(handedOut), fileName ?? DEFAULT_FILE_NAME))) return false;
-		// changes made meanwhile (e.g. in another tab, or a save still in progress) are kept: only
-		// what was handed out counts as exported
-		await this.#serial(() => this.#commit({ ...this.#current, sync: { ...this.#current.sync, exported: handedOut } }, this.#beforeImport));
+		const handedOut = this.#current.sync.working;
+		const name = this.#current.fileName ?? DEFAULT_FILE_NAME;
+		let fileName = name;
+		if (this.isDesktop) {
+			const path = await desktop.chooseFileToSave('Export a CashGuard file', name);
+			if (!path) return false;
+			await desktop.writeFile(path, fileText(handedOut));
+			fileName = desktop.fileNameOf(path);
+		} else if (!(await saveFile(fileText(handedOut), name))) {
+			return false;
+		}
+		await this.#serial(() => this.#markExported(handedOut, fileName));
 		return true;
+	}
+
+	/** Changes made meanwhile (e.g. in another tab, or a save still in progress) are kept: only what was handed out counts as exported. Must run inside `#serial`. */
+	async #markExported(data: CashGuardData, fileName: string | null): Promise<void> {
+		const current = this.#current;
+		if (current.sync.exported === data && current.fileName === (fileName ?? current.fileName)) return;
+		await this.#commit({ sync: { ...current.sync, exported: data }, fileName: fileName ?? current.fileName }, this.#beforeImport);
+	}
+
+	// ------------------------------------------------------------------ desktop: backup file
+
+	/** Sets (or, with null, turns off) the backup file; a new one is written right away. */
+	async setBackupPath(path: string | null): Promise<void> {
+		settings.backupPath = path;
+		this.backupError = null;
+		clearTimeout(this.#backupTimer);
+		if (path) await this.backupNow();
+	}
+
+	/** Writes the backup file now (if there is one). A failure shows in `backupError`, and is retried on the next change. */
+	backupNow(): Promise<void> {
+		clearTimeout(this.#backupTimer);
+		this.#backupTimer = undefined;
+		return this.#serial(async () => {
+			const path = settings.backupPath;
+			if (!this.isDesktop || !path) return;
+			const data = this.#current.sync.working;
+			try {
+				await desktop.writeFile(path, fileText(data));
+				this.backupError = null;
+			} catch (e) {
+				this.backupError = errorMessage(e);
+				return;
+			}
+			// (the backup file's name isn't suggested for exports)
+			await this.#markExported(data, null);
+		});
+	}
+
+	/** Writes a pending backup right away (e.g. the window is closing). */
+	async flushBackup(): Promise<void> {
+		if (this.#backupTimer !== undefined) await this.backupNow();
+		else await this.#queue;
+	}
+
+	#scheduleBackup(): void {
+		if (!this.isDesktop || !settings.backupPath) return;
+		clearTimeout(this.#backupTimer);
+		this.#backupTimer = setTimeout(() => void this.backupNow(), BACKUP_DELAY_MS);
 	}
 
 	// ------------------------------------------------------------------ editing
 
 	/**
-	 * Applies an edit (a pure function from `core/edit.ts`) to the working copy and saves it; the
-	 * desktop app also writes it to the file. `label` describes it for undo, e.g. 'Delete “Rent”'.
-	 * Throws (and changes nothing) if the edit is invalid.
+	 * Applies an edit (a pure function from `core/edit.ts`) to the working copy and saves it.
+	 * `label` describes it for undo, e.g. 'Delete “Rent”'. Throws (and changes nothing) if the edit
+	 * is invalid.
 	 */
 	edit(label: string, change: (data: CashGuardData, now: UtcSeconds) => CashGuardData): Promise<void> {
 		return this.#serial(async () => {
@@ -260,7 +293,7 @@ export class Workspace {
 		return this.#serial(async () => {
 			const last = this.#undo.at(-1);
 			if (!last) return null;
-			// a sync or import changed the data since: undoing would also revert that, so don't
+			// an import changed the data since: undoing would also revert that, so don't
 			if (this.#current.sync.working !== last.after) {
 				this.#undo = [];
 				this.#redo = [];
@@ -290,149 +323,6 @@ export class Workspace {
 	/** Must run inside `#serial`. An edit invalidates "undo import" (it would discard the edit). */
 	async #replaceWorking(working: CashGuardData): Promise<void> {
 		await this.#commit({ ...this.#current, sync: { ...this.#current.sync, working } }, null);
-		if (!this.isDesktop) return;
-		try {
-			this.prompt = await this.#syncLoop();
-			this.syncError = null;
-		} catch (e) {
-			// the edit is saved in the app; writing the file is retried on the next change
-			this.syncError = errorMessage(e);
-		}
-	}
-
-	// ------------------------------------------------------------------ desktop: linked file
-
-	/**
-	 * Lets the user pick a file to sync with. If everything is written to the current file (or
-	 * there's no data yet), it's simply opened. Otherwise the unwritten changes are carried over
-	 * into the new file, which is returned as a merge to confirm.
-	 */
-	async chooseFileToOpen(): Promise<ImportCandidate | null> {
-		const path = await desktop.chooseExistingFile();
-		if (!path) return null;
-		const fileText = await desktop.readFile(path);
-		const result = parseCashGuard(fileText);
-		const from = this.#current.sync;
-		const source = { mode: 'open', fileName: desktop.fileNameOf(path), filePath: path, fileText, from } as const;
-		if (!result.ok) return { ...source, ok: false, errors: result.errors };
-		const same = path === this.#current.filePath;
-		const { working } = from;
-		const nothingToCarry = !needsWrite(from) || working.transactions.length + working.categories.length + working.accounts.length + working.recurring.length === 0;
-		if (!same && nothingToCarry) {
-			await this.#serial(() => this.#commit({ sync: { working: result.data, base: result.data, exported: null }, fileName: source.fileName, filePath: path }, null));
-			await this.#watch(path);
-			return null;
-		}
-		// relative to the old base, the plan keeps exactly the changes not yet written; warnings
-		// that compare with the old file make no sense for a different file
-		const plan = planImport(from, result.data);
-		const warnings = same ? plan.warnings : plan.warnings.filter((w) => w === 'empty-file');
-		return { ...source, mode: same ? 'sync' : 'open', ok: true, plan: { ...plan, warnings }, warnings: result.warnings };
-	}
-
-	/** Lets the user create a new file with the current data and syncs with it from then on. */
-	async createFile(): Promise<boolean> {
-		const path = await desktop.chooseNewFile();
-		if (!path) return false;
-		await this.#serial(async () => {
-			const { working } = this.#current.sync;
-			try {
-				await desktop.writeFile(path, serialize(working), null);
-			} catch (e) {
-				if (e instanceof desktop.FileExistsError) throw new Error(`${desktop.fileNameOf(path)} already exists. Use “Open file…” to sync with it.`);
-				throw e;
-			}
-			await this.#commit({ sync: { working, base: working, exported: null }, fileName: desktop.fileNameOf(path), filePath: path }, null);
-		});
-		await this.#watch(path);
-		return true;
-	}
-
-	/**
-	 * Desktop prompt: keep the app's data and replace the file with it (e.g. the file was emptied or
-	 * damaged). Only replaces the file if it still has the content shown in the prompt.
-	 */
-	async keepMine(candidate: ImportCandidate): Promise<void> {
-		const { filePath, fileText } = candidate;
-		if (filePath === null || fileText === null) return;
-		await this.#serial(async () => {
-			this.#checkUnchanged(candidate);
-			const { working } = this.#current.sync;
-			try {
-				await desktop.writeFile(filePath, serialize(working), fileText);
-			} catch (e) {
-				if (!(e instanceof desktop.FileChangedError)) throw e;
-				// the file changed again meanwhile: look at it anew
-				this.prompt = await this.#syncLoop();
-				return;
-			}
-			await this.#commit({ ...this.#current, sync: { working, base: working, exported: null } }, null);
-		});
-	}
-
-	/** Brings the working copy and the linked file in line; asks via `prompt` when needed. */
-	syncWithFile(): Promise<void> {
-		return this.#serial(async () => {
-			try {
-				this.prompt = await this.#syncLoop();
-				this.syncError = null;
-			} catch (e) {
-				this.syncError = errorMessage(e);
-			}
-		});
-	}
-
-	async #watch(path: string): Promise<void> {
-		await this.#serial(async () => {
-			this.#unwatchFile?.();
-			this.#unwatchFile = null;
-			this.#unwatchFile = await desktop.watchFile(path, () => void this.syncWithFile());
-		});
-		await this.syncWithFile();
-	}
-
-	/**
-	 * Reads the file, merges it in and writes back what it lacks, until both agree. Returns a
-	 * prompt if the user has to decide. Must run inside `#serial`.
-	 */
-	async #syncLoop(): Promise<ImportCandidate | null> {
-		for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt++) {
-			const { filePath, fileName, sync } = this.#current;
-			if (!filePath) return null;
-			const fileText = await desktop.readFile(filePath);
-			const source = { mode: 'sync', fileName: fileName ?? desktop.fileNameOf(filePath), filePath, fileText, from: sync } as const;
-			const result = parseCashGuard(fileText);
-			if (!result.ok) {
-				// maybe another program is still writing it; give it a moment before asking
-				if (attempt === 0) {
-					await sleep(500);
-					continue;
-				}
-				return { ...source, ok: false, errors: result.errors };
-			}
-			const plan = planFileSync(sync, result.data);
-			if (plan.kind === 'unchanged') return null;
-			if (plan.kind === 'import') {
-				if (!plan.automatic) return { ...source, ok: true, plan: plan.plan, warnings: result.warnings };
-				await this.#commit({ ...this.#current, sync: plan.plan.next }, null);
-			}
-			const current = this.#current.sync;
-			if (!needsWrite(current)) return null;
-			try {
-				// the file's content is the merge base, so it's what the file must still contain
-				await desktop.writeFile(filePath, serialize(current.working), fileText);
-			} catch (e) {
-				if (e instanceof desktop.FileChangedError) continue;
-				throw e;
-			}
-			await this.#commit({ ...this.#current, sync: { ...current, base: current.working, exported: null } }, null);
-			return null;
-		}
-		throw new Error('The file keeps changing. Syncing will be retried on its next change.');
-	}
-
-	#checkUnchanged(candidate: ImportCandidate): void {
-		if (this.#current.sync !== candidate.from) throw new Error('Your data changed in the meantime. Please try again.');
 	}
 
 	#serial<T>(task: () => Promise<T>): Promise<T> {
@@ -443,11 +333,13 @@ export class Workspace {
 
 	/**
 	 * Saves and then shows a new state. `beforeImport` is what "Undo import" restores; any change
-	 * other than an import or export (e.g. editing, Phase 4) must pass null, so undo can't discard it.
+	 * other than an import or export (e.g. editing) must pass null, so undo can't discard it.
 	 */
 	async #commit(next: Snapshot, beforeImport: Snapshot | null): Promise<void> {
 		await saveWorkspace({ current: toStored(next), beforeImport: beforeImport && toStored(beforeImport) });
+		const changed = next.sync.working !== this.#current.sync.working;
 		this.#current = next;
 		this.#beforeImport = beforeImport;
+		if (changed) this.#scheduleBackup();
 	}
 }

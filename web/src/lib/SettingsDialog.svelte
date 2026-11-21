@@ -1,13 +1,28 @@
 <!-- Preferences of this device (stored in the browser, not in the data file). Changes apply at once. -->
 <script lang="ts">
 	import { DATE_STYLES, formatDateAs, today, type DateStyle } from '../core';
-	import { dataLocation, isDesktop } from './desktop';
+	import { attempt } from './attempt';
+	import { chooseFileToSave, dataLocation, isDesktop } from './desktop';
 	import { settings } from './settings.svelte';
 	import Modal from './ui/Modal.svelte';
+	import type { Workspace } from './workspace.svelte';
 
-	let { onclose }: { onclose: () => void } = $props();
+	let { workspace, onclose }: { workspace: Workspace; onclose: () => void } = $props();
 	const sample = today();
 	const location = isDesktop ? dataLocation().catch(() => null) : null;
+	/** Why choosing the backup file failed (shown here: a notice would be behind the dialog) */
+	let failure = $state<string | null>(null);
+
+	async function chooseBackup() {
+		failure = null;
+		await attempt(
+			(text) => (failure = text),
+			async () => {
+				const path = await chooseFileToSave('Back up to', settings.backupPath ?? 'cashguard-backup.json');
+				if (path) await workspace.setBackupPath(path);
+			},
+		);
+	}
 </script>
 
 <Modal title="Settings" {onclose}>
@@ -20,11 +35,30 @@
 			{/each}
 		</select>
 		<p class="muted">Settings apply to this device only; your CashGuard file is not changed.</p>
+		{#if isDesktop}
+			<span class="label">Backup file</span>
+			<div class="backup">
+				{#if settings.backupPath}
+					<code class="path">{settings.backupPath}</code>
+					<div class="row">
+						<button type="button" onclick={() => void chooseBackup()}>Change…</button>
+						<button type="button" onclick={() => void workspace.setBackupPath(null)}>Turn off</button>
+					</div>
+				{:else}
+					<div class="row"><button type="button" onclick={() => void chooseBackup()}>Choose…</button></div>
+				{/if}
+				{#if failure ?? workspace.backupError}<p class="error" role="alert">{failure ?? workspace.backupError}</p>{/if}
+				<p class="muted">
+					Your data is kept in the app. The backup file gets a copy a few seconds after each change and when the app closes; it's replaced each time.
+					To restore it, import it.
+				</p>
+			</div>
+		{/if}
 		{#if location}
 			{#await location then where}
 				{#if where}
 					<p class="muted where">
-						{where.portable ? 'Portable: the app keeps its data (working copy, settings, backups of your file) next to itself, in' : 'The app keeps its data (working copy, settings, backups of your file) in'}
+						{where.portable ? 'Portable: the app keeps its data (working copy, settings) next to itself, in' : 'The app keeps its data (working copy, settings) in'}
 						<code>{where.path}</code>
 					</p>
 				{/if}
@@ -46,6 +80,26 @@
 	.muted {
 		font-size: 0.85rem;
 		margin: 0.5rem 0 0;
+	}
+	.label {
+		color: var(--muted);
+		margin-top: 0.75rem;
+	}
+	.backup {
+		display: grid;
+		gap: 0.5rem;
+	}
+	.row {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.path,
+	.where code {
+		overflow-wrap: anywhere;
+	}
+	.error {
+		color: var(--negative);
+		margin: 0;
 	}
 	.where code {
 		overflow-wrap: anywhere;

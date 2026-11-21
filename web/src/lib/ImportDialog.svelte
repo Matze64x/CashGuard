@@ -4,22 +4,7 @@
 	import Modal from './ui/Modal.svelte';
 	import type { ImportCandidate } from './workspace.svelte';
 
-	let { candidate, onapply, onkeep, onclose }: { candidate: ImportCandidate; onapply: () => void; onkeep: () => void; onclose: () => void } = $props();
-
-	const TEXTS = {
-		import: { title: 'Import', intro: 'Importing changes your data:', apply: 'Import', cancel: 'Cancel', broken: "The file can't be imported:" },
-		sync: { title: 'Changes in', intro: 'The file changed. Applying the changes changes your data:', apply: 'Apply', cancel: 'Not now', broken: "The file can't be read:" },
-		open: {
-			title: 'Open',
-			intro: 'You have changes that aren’t in your previous file yet. They are carried over into this file:',
-			apply: 'Open',
-			cancel: 'Cancel',
-			broken: "The file can't be opened:",
-		},
-	} as const;
-	const text = $derived(TEXTS[candidate.mode]);
-	// desktop: when the file looks wrong, offer to keep the app's data and replace the file with it
-	const canKeep = $derived(candidate.mode === 'sync' && (!candidate.ok || candidate.plan.warnings.length > 0));
+	let { candidate, onapply, onclose }: { candidate: ImportCandidate; onapply: () => void; onclose: () => void } = $props();
 
 	const REASONS: Record<ConflictReason, string> = {
 		'changed-on-both-sides': 'changed on both devices; the later change is kept',
@@ -68,9 +53,9 @@
 	const warnings = $derived(candidate.ok ? candidate.plan.warnings.map((w) => WARNINGS[w]) : []);
 </script>
 
-<Modal title={`${text.title} “${candidate.fileName}”`} {onclose}>
+<Modal title={`Import “${candidate.fileName}”`} {onclose}>
 	{#if !candidate.ok}
-		<p class="error">{text.broken}</p>
+		<p class="error">The file can't be imported:</p>
 		<ul class="issues">
 			{#each candidate.errors.slice(0, 20) as issue, i (i)}
 				<li><code>{issue.path || 'file'}</code> {issue.message}</li>
@@ -78,10 +63,8 @@
 			{#if candidate.errors.length > 20}<li>… and {candidate.errors.length - 20} more</li>{/if}
 		</ul>
 		<div class="buttons">
-			{#if canKeep}<button onclick={onkeep}>Replace it with my data</button>{/if}
-			<!-- the safe choice has the focus: a prompt can appear right after an edit, while typing -->
 			<!-- svelte-ignore a11y_autofocus -->
-			<button onclick={onclose} autofocus>{candidate.mode === 'sync' ? 'Not now' : 'Close'}</button>
+			<button onclick={onclose} autofocus>Close</button>
 		</div>
 	{:else}
 		{#each warnings as warning (warning)}
@@ -90,7 +73,7 @@
 		{#if changes.length === 0}
 			<p>Nothing new: your data already contains everything in this file.</p>
 		{:else}
-			<p>{text.intro}</p>
+			<p>Importing changes your data:</p>
 			<ul>
 				{#each changes as line (line)}<li>{line}</li>{/each}
 			</ul>
@@ -109,13 +92,12 @@
 				</ul>
 			</details>
 		{/if}
-		{#if candidate.mode === 'import'}<p class="hint">You can undo the import afterwards.</p>{/if}
+		<p class="hint">You can undo the import afterwards.</p>
 		<div class="buttons">
-			{#if canKeep}<button onclick={onkeep}>Replace it with my data</button>{/if}
-			<!-- with warnings, cancelling is the suggested action -->
+			<!-- with warnings, cancelling is the suggested action (and has the focus) -->
 			<!-- svelte-ignore a11y_autofocus -->
-			<button class:primary={warnings.length > 0} onclick={onclose} autofocus>{text.cancel}</button>
-			<button class:primary={warnings.length === 0} class:danger={warnings.length > 0} onclick={onapply}>{text.apply}</button>
+			<button class:primary={warnings.length > 0} onclick={onclose} autofocus>Cancel</button>
+			<button class:primary={warnings.length === 0} class:danger={warnings.length > 0} onclick={onapply}>Import</button>
 		</div>
 	{/if}
 </Modal>

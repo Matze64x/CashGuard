@@ -6,8 +6,6 @@ export interface StoredSnapshot {
 	readonly base: string | null;
 	readonly exported: string | null;
 	readonly fileName: string | null;
-	/** Desktop app only: the path of the synced file */
-	readonly filePath?: string | null;
 }
 
 export interface StoredWorkspace {

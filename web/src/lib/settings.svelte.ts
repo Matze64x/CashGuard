@@ -15,9 +15,11 @@ interface Values {
 	 * just paid with, on the computer none.
 	 */
 	balanceAccount: string | null;
+	/** Desktop app: the file the data is backed up to, or null for none */
+	backupPath: string | null;
 }
 
-const DEFAULTS: Values = { dateStyle: 'DD.MM.YYYY', balanceAccount: null };
+const DEFAULTS: Values = { dateStyle: 'DD.MM.YYYY', balanceAccount: null, backupPath: null };
 
 function load(): Values {
 	try {
@@ -25,6 +27,7 @@ function load(): Values {
 		return {
 			dateStyle: DATE_STYLES.includes(raw.dateStyle as DateStyle) ? raw.dateStyle! : DEFAULTS.dateStyle,
 			balanceAccount: typeof raw.balanceAccount === 'string' ? raw.balanceAccount : null,
+			backupPath: typeof raw.backupPath === 'string' && raw.backupPath !== '' ? raw.backupPath : null,
 		};
 	} catch {
 		return { ...DEFAULTS };
@@ -50,6 +53,13 @@ class Settings {
 	}
 	set balanceAccount(balanceAccount: string | null) {
 		this.#set({ balanceAccount });
+	}
+
+	get backupPath(): string | null {
+		return this.#values.backupPath;
+	}
+	set backupPath(backupPath: string | null) {
+		this.#set({ backupPath });
 	}
 
 	#set(changes: Partial<Values>) {

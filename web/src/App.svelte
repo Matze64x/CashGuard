@@ -33,11 +33,8 @@
 
 	// raw: a proxy would break the identity check of `candidate.from` in the workspace
 	let candidate = $state.raw<ImportCandidate | null>(null);
-	// desktop app: a sync with the file that needs a decision comes from the workspace
-	const shownCandidate = $derived(candidate ?? workspace.prompt);
 	function closeDialog() {
 		candidate = null;
-		workspace.prompt = null;
 	}
 	// another tab changed the data: a planned import is based on old data, so drop it
 	$effect(() => {
@@ -101,12 +98,8 @@
 			{ keys: ['Mod+,'], description: 'Settings', group: 'General', inFields: true, run: () => (settingsOpen = true) },
 			{ keys: ['d'], description: 'Enter the due recurring transactions', group: 'General', when: () => !busy && dueCount > 0, run: () => (inboxOpen = true) },
 			...SECTIONS.map((s) => ({ keys: [s.keys], description: `Go to ${s.label.toLowerCase()}`, group: 'General', run: () => (section = s.id) })),
-			...(workspace.isDesktop
-				? [{ keys: ['Mod+o'], description: 'Open another file', group: 'File', inFields: true, when: () => !busy, run: openFile }]
-				: [
-						{ keys: ['Mod+o'], description: 'Import the synced file', group: 'File', inFields: true, when: () => !busy, run: () => fileInput.click() },
-						{ keys: ['Mod+s'], description: 'Export the file', group: 'File', inFields: true, when: () => !busy, run: exportFile },
-					]),
+			{ keys: ['Mod+o'], description: 'Import a file', group: 'File', inFields: true, when: () => !busy, run: importFile },
+			{ keys: ['Mod+s'], description: 'Export the file', group: 'File', inFields: true, when: () => !busy, run: exportFile },
 		]),
 	);
 	$effect(() => {
@@ -141,43 +134,30 @@
 		fileInput.value = ''; // so choosing the same file again triggers a change too
 		if (file) {
 			void run(async () => {
-				candidate = await workspace.planImport(file);
+				candidate = workspace.planImport(file.name, await file.text());
 				return null;
 			});
 		}
 	}
 
-	function applyImport() {
-		const chosen = shownCandidate;
-		closeDialog();
-		if (chosen?.ok) {
-			void run(async () => {
-				await workspace.applyImport(chosen);
-				return workspace.isDesktop ? null : 'Imported.';
-			});
-		}
-	}
-
-	function keepMine() {
-		const chosen = shownCandidate;
-		closeDialog();
-		if (chosen) {
-			void run(async () => {
-				await workspace.keepMine(chosen);
-				return 'The file now has your data again.';
-			});
-		}
-	}
-
-	function openFile() {
+	/** The browser picks the file with the file input; the desktop app with its own dialog */
+	function importFile() {
+		if (!workspace.isDesktop) return fileInput.click();
 		void run(async () => {
-			candidate = await workspace.chooseFileToOpen();
+			candidate = await workspace.chooseImport();
 			return null;
 		});
 	}
 
-	function createFile() {
-		void run(async () => ((await workspace.createFile()) ? 'Created. Changes are saved to the file from now on.' : null));
+	function applyImport() {
+		const chosen = candidate;
+		closeDialog();
+		if (chosen?.ok) {
+			void run(async () => {
+				await workspace.applyImport(chosen);
+				return 'Imported.';
+			});
+		}
 	}
 
 	function undoImport() {
@@ -189,7 +169,9 @@
 
 	function exportFile() {
 		// no await before exportFile: browsers only allow sharing/downloading directly after a click
-		void run(async () => ((await workspace.exportFile()) ? 'Exported. Save it over your synced file, then it reaches your other devices.' : null));
+		void run(async () =>
+			(await workspace.exportFile()) ? (workspace.isDesktop ? 'Exported.' : 'Exported. Save it over your synced file, then it reaches your other devices.') : null,
+		);
 	}
 
 	const busy = $derived(!workspace.ready || loadError !== null);
@@ -204,21 +186,16 @@
 <header>
 	<div class="title">
 		<h1>CashGuard</h1>
-		{#if workspace.fileName}<span class="file" title={workspace.filePath ?? workspace.fileName}>{workspace.fileName}</span>{/if}
+		{#if workspace.fileName}<span class="file" title={workspace.fileName}>{workspace.fileName}</span>{/if}
 	</div>
 	<div class="actions">
-		{#if workspace.isDesktop}
-			<button disabled={busy} onclick={openFile}>Open file…</button>
-			<button disabled={busy} onclick={createFile}>New file…</button>
-		{:else}
-			{#if workspace.canUndoImport}
-				<button disabled={busy} onclick={undoImport}>Undo import</button>
-			{/if}
-			<button disabled={busy} onclick={() => fileInput.click()}>Import</button>
-			<button class="primary" disabled={busy} aria-label={exportLabel} title={exportLabel} onclick={exportFile}>
-				Export{#if workspace.unexportedCount > 0}<span class="count" aria-hidden="true">{workspace.unexportedCount}</span>{/if}
-			</button>
+		{#if workspace.canUndoImport}
+			<button disabled={busy} onclick={undoImport}>Undo import</button>
 		{/if}
+		<button disabled={busy} onclick={importFile}>Import</button>
+		<button class="primary" disabled={busy} aria-label={exportLabel} title={exportLabel} onclick={exportFile}>
+			Export{#if workspace.unexportedCount > 0}<span class="count" aria-hidden="true">{workspace.unexportedCount}</span>{/if}
+		</button>
 	</div>
 	<nav aria-label="Sections">
 		{#each SECTIONS as s (s.id)}
@@ -241,8 +218,8 @@
 </header>
 
 <main class:wide={section === 'explore'}>
-	{#if workspace.syncError}
-		<p class="notice error" role="alert">Syncing with the file failed: {workspace.syncError}</p>
+	{#if workspace.backupError}
+		<p class="notice error" role="alert">The backup file couldn't be written: {workspace.backupError} It's tried again with the next change.</p>
 	{/if}
 	{#if notice}
 		<p class="notice" class:error={notice.error} role={notice.error ? 'alert' : 'status'}>
@@ -264,7 +241,7 @@
 				{dueLabel}
 				onreviewdue={() => (inboxOpen = true)}
 				onmakerecurring={makeRecurring}
-				emptyHint={workspace.isDesktop ? 'Open your CashGuard file to get started.' : 'Import your CashGuard file to get started, or press n to add one.'}
+				emptyHint="Import your CashGuard file to get started, or press n to add one."
 			/>
 		</div>
 		<div hidden={section !== 'explore'}>
@@ -285,11 +262,11 @@
 {/if}
 
 {#if settingsOpen}
-	<SettingsDialog onclose={() => (settingsOpen = false)} />
+	<SettingsDialog {workspace} onclose={() => (settingsOpen = false)} />
 {/if}
 
-{#if shownCandidate}
-	<ImportDialog candidate={shownCandidate} onapply={applyImport} onkeep={keepMine} onclose={closeDialog} />
+{#if candidate}
+	<ImportDialog {candidate} onapply={applyImport} onclose={closeDialog} />
 {/if}
 
 <style>
