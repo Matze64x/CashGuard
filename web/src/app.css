@@ -2,7 +2,7 @@
 	--bg: #f6f7f8;
 	--surface: #ffffff;
 	--text: #16191d;
-	--muted: #66707a;
+	--muted: #5c666f;
 	--border: #e2e5e9;
 	/* borders of controls need 3:1 contrast against the surface */
 	--control-border: #8a949c;
@@ -11,7 +11,7 @@
 	--accent-soft: rgb(0 117 111 / 0.12);
 	/* the same on the surface, opaque: for drawing "holes" over something on a hovered row */
 	--accent-soft-on-surface: color-mix(in srgb, var(--accent) 12%, var(--surface));
-	--positive: #1b7f3b;
+	--positive: #18733a;
 	--negative: #b3261e;
 	--warning: #8a5a00;
 
