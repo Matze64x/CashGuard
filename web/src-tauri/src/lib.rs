@@ -2,6 +2,7 @@ use tauri::{Manager, WebviewWindowBuilder};
 
 mod data_dir;
 mod files;
+mod sync;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -14,13 +15,23 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .manage(sync::SyncService::default())
         .invoke_handler(tauri::generate_handler![
             files::read_file,
             files::write_file,
             files::file_exists,
             files::data_location,
+            sync::sync_start,
+            sync::sync_pairing_start,
+            sync::sync_pairing_stop,
+            sync::sync_phones,
+            sync::sync_forget,
+            sync::sync_rename,
+            sync::sync_send,
+            sync::sync_close,
         ])
         .setup(|app| {
+            str0m::crypto::from_feature_flags().install_process_default();
             if cfg!(debug_assertions) {
                 app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
             }
