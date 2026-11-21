@@ -157,7 +157,8 @@ test('if saving fails, nothing changes and the error is shown', async ({ page })
 	await page.goto('/');
 	await importFile(page, FIXTURE);
 	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
-	await expect(page.getByRole('alert')).toContainText('The disk is full');
+	// (syncing reports that it can't start too: storage is broken)
+	await expect(page.getByRole('alert').filter({ hasText: 'Something went wrong' })).toContainText('The disk is full');
 	await expect(page.getByText('No transactions yet')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Undo import' })).toBeHidden();
 });

@@ -1,0 +1,139 @@
+/**
+ * The phone side end to end, over a real WebRTC connection: the desktop app's endpoint runs as a
+ * test program (`src-tauri/examples/sync_endpoint.rs`, built with `cargo build --example
+ * sync_endpoint`), the PC's side of the sync runs here in the test (`core/peer-sync.ts` is plain
+ * TypeScript), and the browser is the phone: it pairs through the Devices dialog and syncs.
+ * Firefox only (the WebKit tests run in Docker, where the endpoint program can't run); skipped if
+ * the program isn't built (e.g. in CI, which doesn't build the desktop app).
+ */
+import { expect, test } from '@playwright/test';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
+import { addTransaction, cents, parseCashGuard, PeerSession, type CashGuardData, type CivilDate, type StoredBase, type SyncMessage, type UtcSeconds } from '../../src/core';
+
+const ENDPOINT = fileURLToPath(new URL('../../src-tauri/target/debug/examples/sync_endpoint', import.meta.url));
+const FIXTURE = fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta.url));
+
+/** The PC: the endpoint program plus the sync's PC side with an in-memory store */
+class Pc {
+	readonly process: ChildProcessWithoutNullStreams;
+	readonly code: Promise<string>;
+	working: CashGuardData;
+	readonly bases = new Map<string, StoredBase>();
+	readonly sessions = new Map<number, PeerSession>();
+	readonly paired: string[] = [];
+	readonly errors: string[] = [];
+	readonly dir = mkdtempSync(join(tmpdir(), 'cashguard-e2e-'));
+	/** The PC's device id, from its pairing code */
+	pcId = '';
+
+	constructor(data: CashGuardData) {
+		this.working = data;
+		this.process = spawn(ENDPOINT, [this.dir]);
+		const lines = createInterface({ input: this.process.stdout });
+		let first: (line: string) => void;
+		this.code = new Promise((resolve) => (first = resolve));
+		let gotCode = false;
+		lines.on('line', (line) => {
+			if (!gotCode) {
+				gotCode = true;
+				this.pcId = line.split('|')[7]!;
+				return first(line);
+			}
+			const event = JSON.parse(line) as { event: string; conn: number; phoneId: string; phoneName: string; text: string };
+			if (event.event === 'paired') this.paired.push(event.phoneName);
+			if (event.event === 'connected') this.#connected(event.conn, event.phoneId);
+			if (event.event === 'message') this.sessions.get(event.conn)?.receive(JSON.parse(event.text) as SyncMessage);
+			if (event.event === 'closed') this.sessions.delete(event.conn);
+		});
+	}
+
+	#connected(conn: number, phoneId: string) {
+		const store = {
+			current: () => this.working,
+			transact: async <T,>(peer: string, change: (w: CashGuardData, b: StoredBase | null) => { working: CashGuardData; base: StoredBase | null; value: T }) => {
+				const before = this.working;
+				const r = change(this.working, this.bases.get(peer) ?? null);
+				this.working = r.working;
+				if (r.base) this.bases.set(peer, r.base);
+				if (r.working !== before) for (const [c, s] of this.sessions) if (c !== conn) s.localChanged();
+				return r.value;
+			},
+		};
+		const session = new PeerSession({
+			self: { id: this.pcId, name: 'Test PC', kind: 'pc' },
+			merger: true,
+			store,
+			peerId: phoneId,
+			send: (message) => this.process.stdin.write(`${JSON.stringify({ cmd: 'send', conn, text: JSON.stringify(message) })}\n`),
+			onFailed: (e) => this.errors.push(e.message),
+		});
+		this.sessions.set(conn, session);
+		session.start();
+	}
+
+	/** An edit on the PC: passed on to connected phones */
+	edit(change: (data: CashGuardData) => CashGuardData) {
+		this.working = change(this.working);
+		for (const s of this.sessions.values()) s.localChanged();
+	}
+
+	stop() {
+		this.process.kill();
+		rmSync(this.dir, { recursive: true, force: true });
+	}
+}
+
+test.skip(({ browserName }) => browserName !== 'firefox', 'the endpoint program runs on the host only');
+test.skip(() => !existsSync(ENDPOINT), 'the endpoint program isn’t built (cargo build --example sync_endpoint)');
+
+test('a phone pairs with a PC by its code, syncs both ways, and reconnects by itself after a restart', async ({ page }) => {
+	const parsed = parseCashGuard(readFileSync(FIXTURE, 'utf8'));
+	if (!parsed.ok) throw new Error('fixture');
+	const pc = new Pc(parsed.data);
+	try {
+		const code = await pc.code;
+
+		await page.goto('/');
+		await expect(page.getByText('No transactions yet')).toBeVisible();
+		await page.getByRole('button', { name: 'Devices' }).click();
+		const dialog = page.getByRole('dialog', { name: 'Devices' });
+		await expect(dialog).toContainText('Not paired with a PC yet.');
+		await dialog.getByText('Enter the code instead').click();
+		await dialog.getByLabel('Pairing code').fill(code);
+		await dialog.getByRole('button', { name: 'Pair', exact: true }).click();
+		await expect(dialog.getByRole('status').or(dialog.getByRole('alert'))).toContainText('Paired with Test PC', { timeout: 20_000 });
+		await expect(dialog.getByText('connected', { exact: true })).toBeVisible();
+		await dialog.getByRole('button', { name: 'Done' }).click();
+
+		// the PC's data arrives
+		await expect(page.getByText('46 transactions')).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Synced' })).toBeVisible();
+		expect(pc.paired).toHaveLength(1);
+
+		// a new transaction on the phone reaches the PC
+		await page.keyboard.press('n');
+		await page.keyboard.type('Bought on the phone');
+		await page.getByRole('dialog').getByLabel('Amount', { exact: true }).fill('1');
+		await page.keyboard.press('Enter');
+		await expect.poll(() => pc.working.transactions.some((t) => t.description === 'Bought on the phone')).toBe(true);
+
+		// one on the PC reaches the phone
+		pc.edit((d) => addTransaction(d, { date: '2026-11-20' as CivilDate, description: 'Added on the PC', categoryId: '0' as never, amount: cents(-500) }, 2_000_000_000 as UtcSeconds).data);
+		await expect(page.getByText('48 transactions')).toBeVisible();
+
+		// after a restart the phone reconnects by itself with its token, and syncs
+		await page.reload();
+		await expect(page.getByRole('button', { name: 'Synced' })).toBeVisible({ timeout: 15_000 });
+		pc.edit((d) => addTransaction(d, { date: '2026-11-21' as CivilDate, description: 'Added while the phone restarted', categoryId: '0' as never, amount: cents(-700) }, 2_000_000_001 as UtcSeconds).data);
+		await expect(page.getByText('49 transactions')).toBeVisible();
+		expect(pc.paired).toHaveLength(1);
+		expect(pc.errors).toEqual([]);
+	} finally {
+		pc.stop();
+	}
+});

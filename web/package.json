@@ -33,6 +33,7 @@
     "@tauri-apps/api": "^2.12.5",
     "@tauri-apps/plugin-dialog": "^2.8.4",
     "echarts": "^6.1.0",
-    "idb-keyval": "^6.3.0"
+    "idb-keyval": "^6.3.0",
+    "jsqr": "^1.4.0"
   }
 }

@@ -4,9 +4,9 @@
  * brought in reported as a notice. The transports (WebRTC to phones, TLS between PCs) only hand it
  * authenticated connections.
  */
-import { PeerSession, totalChanges, type DeviceInfo, type SyncReport } from '../core';
-import { errorMessage } from './errors';
-import type { Workspace } from './workspace.svelte';
+import { PeerSession, totalChanges, type DeviceInfo, type SyncReport } from '../../core';
+import { errorMessage } from '../errors';
+import type { Workspace } from '../workspace.svelte';
 
 /** An open, authenticated connection to another device, carrying text messages in order */
 export interface SyncConnection {

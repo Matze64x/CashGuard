@@ -345,6 +345,24 @@ describe('refusals', () => {
 		expect(phone.descriptions()).toEqual([]);
 	});
 
+	it('a session that receives a hello before it was started introduces itself first', async () => {
+		const pc = new Device('pc', 'pc');
+		const phone = new Device('phone', 'phone');
+		pc.add('a');
+		const toPc: SyncMessage[] = [];
+		const toPhone: SyncMessage[] = [];
+		const store = (d: Device) => d;
+		const pcSession = new PeerSession({ self: pc.info, merger: true, store: store(pc), peerId: 'phone', send: (m) => toPhone.push(m) });
+		const phoneSession = new PeerSession({ self: phone.info, merger: false, store: store(phone), peerId: 'pc', send: (m) => toPc.push(m) });
+		pcSession.start();
+		// the phone gets the PC's hello before its own start()
+		phoneSession.receive(toPhone.shift()!);
+		await settle();
+		expect(toPc.map((m) => m.type)).toEqual(['hello', 'state']);
+		phoneSession.start(); // (no second hello)
+		expect(toPc).toHaveLength(2);
+	});
+
 	it('messages out of order are refused', async () => {
 		const pc = new Device('pc', 'pc');
 		const phone = new Device('phone', 'phone');

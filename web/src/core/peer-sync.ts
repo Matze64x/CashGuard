@@ -153,6 +153,7 @@ export interface PeerSessionOptions {
 export class PeerSession {
 	readonly #options: PeerSessionOptions;
 	#peer: DeviceInfo | null = null;
+	#started = false;
 	#failed = false;
 	#queue: Promise<void> = Promise.resolve();
 	/** Client: a round is under way (state sent, result not yet received) */
@@ -172,11 +173,15 @@ export class PeerSession {
 
 	/** Starts the session: both sides introduce themselves first. */
 	start(): void {
+		if (this.#started) return;
+		this.#started = true;
 		const { self } = this.#options;
 		this.#options.send({ type: 'hello', protocol: SYNC_PROTOCOL, format: FORMAT_VERSION, device: self });
 	}
 
 	receive(message: SyncMessage): void {
+		// (introduce ourselves before answering anything, whatever the order of events)
+		this.start();
 		this.#queue = this.#queue.then(() => this.#handle(message)).catch((e: unknown) => this.#fail(e instanceof Error ? e : new Error(String(e))));
 	}
 

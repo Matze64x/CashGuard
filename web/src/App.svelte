@@ -3,12 +3,15 @@
 	import { clock } from './lib/clock.svelte';
 	import DueInbox from './lib/DueInbox.svelte';
 	import ManageView from './lib/ManageView.svelte';
-	import { dueList, type RecurringDraft } from './core';
+	import { dueList, type RecurringDraft, type SyncReport } from './core';
 	import { errorMessage } from './lib/errors';
 	import ExploreView from './lib/ExploreView.svelte';
 	import ImportDialog from './lib/ImportDialog.svelte';
 	import { notices } from './lib/notices.svelte';
-	import { SyncManager } from './lib/sync-manager.svelte';
+	import { DesktopSync } from './lib/sync/desktop-sync.svelte';
+	import DevicesDialog from './lib/sync/DevicesDialog.svelte';
+	import { SyncManager } from './lib/sync/manager.svelte';
+	import { PhoneSync } from './lib/sync/phone-sync.svelte';
 	import SettingsDialog from './lib/SettingsDialog.svelte';
 	import { displayKeys, shortcuts } from './lib/shortcuts.svelte';
 	import TransactionsView from './lib/TransactionsView.svelte';
@@ -23,15 +26,63 @@
 	let section = $state<(typeof SECTIONS)[number]['id']>('transactions');
 
 	const workspace = new Workspace();
+
+	/** What a sync brought in, e.g. "Synced with Desktop. Transactions: 3 added, 1 changed." */
+	function reportSync(report: SyncReport) {
+		const kinds = [
+			['transactions', 'Transactions'],
+			['categories', 'Categories'],
+			['accounts', 'Accounts'],
+			['recurring', 'Recurring transactions'],
+		] as const;
+		const lines = kinds.flatMap(([kind, label]) => {
+			const c = report.changes[kind];
+			const counts = [c.added && `${c.added} added`, c.changed && `${c.changed} changed`, c.deleted && `${c.deleted} removed`].filter(Boolean);
+			return counts.length ? [`${label}: ${counts.join(', ')}.`] : [];
+		});
+		notices.info(`Synced with ${report.peer.name}. ${lines.join(' ')}`);
+	}
+	const sync = workspace.isDesktop ? new DesktopSync(workspace, reportSync) : new PhoneSync(workspace, reportSync);
+	let devicesOpen = $state(false);
+
 	// end-to-end tests drive the sync through this (dev builds only; removed from production builds)
-	if (import.meta.env.DEV) Object.assign(window, { __cashguardTest: { workspace, SyncManager, notices } });
+	if (import.meta.env.DEV) Object.assign(window, { __cashguardTest: { workspace, SyncManager, notices, sync } });
 	let loadError = $state<string | null>(null);
 	$effect(() => {
-		const stop = workspace.start().catch((e: unknown) => {
-			loadError = errorMessage(e);
-			return () => {};
-		});
+		const stop = workspace
+			.start()
+			.then(async (stopWorkspace) => {
+				// syncing starts once the data is loaded
+				const stopSync = await sync.start().catch((e: unknown) => {
+					notices.error(`Syncing can’t start: ${errorMessage(e)}`);
+					return () => {};
+				});
+				return () => {
+					stopSync();
+					stopWorkspace();
+				};
+			})
+			.catch((e: unknown) => {
+				loadError = errorMessage(e);
+				return () => {};
+			});
 		return () => void stop.then((f) => f());
+	});
+
+	/** The header's sync status: short, and only what matters */
+	const syncLabel = $derived.by(() => {
+		const connections = sync.manager.connections.length;
+		if (sync instanceof DesktopSync) return connections > 0 ? `${connections} connected` : 'Devices';
+		switch (sync.status) {
+			case 'connected':
+				return 'Synced';
+			case 'connecting':
+				return 'Connecting…';
+			case 'unreachable':
+				return 'Offline';
+			default:
+				return 'Devices';
+		}
 	});
 
 	// raw: a proxy would break the identity check of `candidate.from` in the workspace
@@ -198,6 +249,7 @@
 		{/each}
 	</nav>
 	<div class="tools">
+		<button class="tab sync" title="Devices and syncing" onclick={() => (devicesOpen = true)}>{syncLabel}</button>
 		<button class="tab icon help" aria-label="Keyboard shortcuts" title="?" onclick={() => (shortcuts.helpOpen = true)}>?</button>
 		<button class="tab icon" aria-label="Settings" title={displayKeys('Mod+,')} onclick={() => (settingsOpen = true)}>
 			<svg viewBox="0 0 24 24" aria-hidden="true"
@@ -254,6 +306,10 @@
 		</p>
 	{/each}
 </div>
+
+{#if devicesOpen}
+	<DevicesDialog {sync} onclose={() => (devicesOpen = false)} />
+{/if}
 
 {#if shortcuts.helpOpen}
 	<ShortcutHelp onclose={() => (shortcuts.helpOpen = false)} />

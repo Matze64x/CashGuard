@@ -1,8 +1,8 @@
 use tauri::{Manager, WebviewWindowBuilder};
 
-mod data_dir;
-mod files;
-mod sync;
+pub mod data_dir;
+pub mod files;
+pub mod sync;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

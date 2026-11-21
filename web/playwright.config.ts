@@ -11,9 +11,11 @@ export default defineConfig({
 	forbidOnly: Boolean(process.env['CI']),
 	// CI machines are slower; one retry keeps timing hiccups from blocking a deployment
 	retries: process.env['CI'] ? 1 : 0,
-	use: { baseURL: 'http://localhost:5199', trace: 'retain-on-failure' },
+	// 127.0.0.1, not localhost: on pages from the IPv6 loopback ([::1], what "localhost" resolves to
+	// for Vite) Firefox gathers no WebRTC candidates, so the phone sync test couldn't connect
+	use: { baseURL: 'http://127.0.0.1:5199', trace: 'retain-on-failure' },
 	webServer: [
-		{ command: 'npx vite --port 5199 --strictPort', url: 'http://localhost:5199', reuseExistingServer: false },
+		{ command: 'npx vite --port 5199 --strictPort --host 127.0.0.1', url: 'http://127.0.0.1:5199', reuseExistingServer: false },
 		// the published build, for what only exists there (service worker, manifest, base path)
 		{
 			command: 'export CASHGUARD_BASE=/CashGuard/ && npx vite build --outDir dist-pages && npx vite preview --outDir dist-pages --port 5299 --strictPort',
