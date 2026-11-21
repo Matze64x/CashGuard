@@ -1,7 +1,8 @@
 <!--
 	Amount entry: the number without sign, plus an expense/income toggle (expense by default).
 	Typing "+" or "-" anywhere in the field switches the sign. Accepts "12,50" and "12.50".
-	Focusing the field selects its content, so typing replaces a prefilled amount.
+	Focusing the field selects its content, so typing replaces a prefilled amount. An invalid amount
+	only turns the border red (no text that would shift the layout); screen readers hear why.
 -->
 <script lang="ts">
 	import { cents, formatAmount, parseAmount, type Cents } from '../../core';
@@ -84,16 +85,18 @@
 		placeholder="0,00"
 		aria-label={label}
 		aria-invalid={invalid}
+		aria-describedby={invalid ? `${id}-invalid` : undefined}
 		{required}
 		value={text}
 		{oninput}
 	/>
 	<span class="currency" aria-hidden="true">€</span>
+	<span id={`${id}-invalid`} class="hidden">{invalid ? 'Not an amount: enter one like 12,50' : ''}</span>
 </div>
-{#if invalid}<p class="error" role="alert">Enter an amount like 12,50</p>{/if}
 
 <style>
 	.amount {
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
@@ -115,9 +118,13 @@
 	.currency {
 		color: var(--muted);
 	}
-	.error {
-		color: var(--negative);
-		font-size: 0.85rem;
-		margin: 0.25rem 0 0;
+	/* read by screen readers only */
+	.hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 </style>
