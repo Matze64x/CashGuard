@@ -8,3 +8,4 @@ export * from './merge';
 export * from './sync';
 export * from './edit';
 export * from './queries';
+export * from './recurring';

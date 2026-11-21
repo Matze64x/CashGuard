@@ -47,6 +47,12 @@ export function civilDate(year: number, month: number, day: number): CivilDate {
 	return makeDate(year, month, day);
 }
 
+/** Whether a value is a real `CivilDate` ("YYYY-MM-DD", an existing day in the supported years) */
+export function isCivilDate(value: string): value is CivilDate {
+	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+	return !!m && isValidDate(Number(m[1]), Number(m[2]), Number(m[3]));
+}
+
 export function dateParts(date: CivilDate): { year: number; month: number; day: number } {
 	const [year, month, day] = date.split('-').map(Number) as [number, number, number];
 	return { year, month, day };

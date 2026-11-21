@@ -2,16 +2,19 @@
  * Changes to the data, as pure functions (old data in, new data out). They keep the invariants the
  * file format and the merge rely on:
  * - new records get fresh random ids, unique across transactions, sub-transactions and categories
+ *   (accounts' and recurring transactions' ids are unique among their own kind, as in the file)
  * - `added` is set once, `edited` on every change; a group's `edited` is at least its subs'
  * - groups are normalized (sum, sub order) and transactions stay sorted newest first
- * - a category in use can't be deleted
+ * - a category in use (also by a recurring transaction) can't be deleted
+ * - a recurring transaction's occurrences are handled in order; `edited` stamps only its template
  * `now` is passed in, so callers (and tests) control the timestamps.
  */
-import type { CivilDate, UtcSeconds } from './dates';
+import { isCivilDate, type CivilDate, type UtcSeconds } from './dates';
 import { deepEqual } from './equal';
 import { newId, NO_CATEGORY, type Id } from './ids';
 import { addCents, sumCents, type Cents } from './money';
-import { normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Transaction } from './model';
+import { normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Recurring, type Transaction } from './model';
+import { isValidSchedule, nextOccurrence } from './recurring';
 
 /** What the user edits of a transaction; ids and timestamps are managed here. */
 export interface TransactionDraft {
@@ -205,6 +208,95 @@ export function adjustAccount(data: CashGuardData, id: Id, by: Cents, now: UtcSe
 export function deleteAccount(data: CashGuardData, id: Id): CashGuardData {
 	accountWith(data, id);
 	return { ...data, accounts: data.accounts.filter((a) => a.id !== id) };
+}
+
+// ------------------------------------------------------------------------------------- recurring
+
+/** What the user edits of a recurring transaction's template */
+export type RecurringDraft = Pick<Recurring, 'description' | 'categoryId' | 'amount' | 'accountId' | 'schedule' | 'start' | 'end'>;
+
+function recurringWith(data: CashGuardData, id: Id): Recurring {
+	const r = data.recurring.find((x) => x.id === id);
+	if (!r) throw new EditError('The recurring transaction no longer exists; it may have been deleted on another device.');
+	return r;
+}
+
+/**
+ * Just the template's fields of `draft` (which may be a whole `Recurring`, whose id and `handled`
+ * must not leak into another record), copied, after checking them like the file format does
+ */
+function templateOf(data: CashGuardData, draft: RecurringDraft): RecurringDraft {
+	const { description, categoryId, amount, accountId, schedule, start, end } = draft;
+	checkCategory(data, categoryId);
+	if (!isValidSchedule(schedule)) throw new EditError('Invalid schedule');
+	if (!isCivilDate(start) || (end !== null && !isCivilDate(end))) throw new EditError('Invalid date');
+	if (end !== null && end < start) throw new EditError('The end is before the start');
+	return { description, categoryId, amount, accountId, schedule: { unit: schedule.unit, every: schedule.every, days: [...schedule.days] }, start, end };
+}
+
+export function addRecurring(data: CashGuardData, draft: RecurringDraft, now: UtcSeconds): { data: CashGuardData; id: Id } {
+	const fields = templateOf(data, draft);
+	const id = newId(new Set(data.recurring.map((r) => r.id)));
+	return { data: { ...data, recurring: [...data.recurring, { id, ...fields, handled: null, edited: now }] }, id };
+}
+
+/**
+ * Changes the template; how far it's handled stays (so changing the days can make a period due
+ * again, e.g. rent moved from the 1st to the 15th after paying on the 1st: then skip it). Returns
+ * the data unchanged if nothing changed.
+ */
+export function updateRecurring(data: CashGuardData, id: Id, draft: RecurringDraft, now: UtcSeconds): CashGuardData {
+	const old = recurringWith(data, id);
+	const fields = templateOf(data, draft);
+	if (deepEqual(templateOf(data, old), fields)) return data;
+	const updated: Recurring = { ...old, ...fields, edited: now };
+	return { ...data, recurring: data.recurring.map((r) => (r === old ? updated : r)) };
+}
+
+export function deleteRecurring(data: CashGuardData, id: Id): CashGuardData {
+	recurringWith(data, id);
+	return { ...data, recurring: data.recurring.filter((r) => r.id !== id) };
+}
+
+/**
+ * Marks `occurrence` handled; it must be the next one (they're handled in order), whether it's due
+ * yet or not (paying ahead is fine). Leaves `edited` alone.
+ */
+function handle(data: CashGuardData, id: Id, occurrence: CivilDate): CashGuardData {
+	const r = recurringWith(data, id);
+	const next = nextOccurrence(r);
+	if (next !== occurrence) {
+		const name = `“${r.description}”`;
+		// e.g. a second Enter, or another device handled it and the sync arrived meanwhile
+		if (r.handled !== null && occurrence <= r.handled) throw new EditError(`This occurrence of ${name} is already entered or skipped.`);
+		if (next === null) throw new EditError(`${name} has no more occurrences.`);
+		throw new EditError(occurrence < next ? `This is no longer an occurrence of ${name}; its schedule changed.` : `Handle the earlier occurrences of ${name} first.`);
+	}
+	return { ...data, recurring: data.recurring.map((x) => (x === r ? { ...r, handled: occurrence } : x)) };
+}
+
+/**
+ * Enters an occurrence as a transaction (`draft`: its date may differ from the occurrence's, e.g.
+ * a payment a day late) and marks it handled; `accountId`: the account whose balance changes by
+ * it, or null. It must exist: a template's account that was deleted meanwhile means none, which the
+ * caller resolves. One change, so one undo takes it all back.
+ */
+export function confirmOccurrence(
+	data: CashGuardData,
+	id: Id,
+	occurrence: CivilDate,
+	draft: TransactionDraft,
+	accountId: Id | null,
+	now: UtcSeconds,
+): { data: CashGuardData; transactionId: Id } {
+	const handled = handle(data, id, occurrence);
+	const added = addTransaction(handled, draft, now);
+	return { data: accountId === null ? added.data : adjustAccount(added.data, accountId, draftTotal(draft), now), transactionId: added.id };
+}
+
+/** Skips an occurrence (it didn't happen); it must be the next one. */
+export function skipOccurrence(data: CashGuardData, id: Id, occurrence: CivilDate): CashGuardData {
+	return handle(data, id, occurrence);
 }
 
 // ------------------------------------------------------------------------------------- suggestions
