@@ -178,10 +178,18 @@ test('a failing backup shows, and the next change tries again', async ({ page })
 	await addTransaction(page, 'Not backed up yet');
 	await expect(page.getByRole('alert')).toContainText("The backup file couldn't be written: Can't write", { timeout: 8000 });
 
+	// it stays until dismissed or fixed
+	await page.waitForTimeout(6500);
+	await expect(page.getByRole('alert')).toBeVisible();
+	await page.getByRole('alert').getByRole('button', { name: 'Dismiss' }).click();
+	await expect(page.getByRole('alert')).toBeHidden();
+	await addTransaction(page, 'Still not backed up');
+	await expect(page.getByRole('alert')).toBeVisible({ timeout: 8000 });
+
 	await onFake(page, 'fake.failWrites = false');
 	await addTransaction(page, 'Backed up again');
 	await expect(page.getByRole('alert')).toBeHidden({ timeout: 8000 });
-	expect(await transactionsIn(page, BACKUP)).toBe(48);
+	expect(await transactionsIn(page, BACKUP)).toBe(49);
 });
 
 test('changes made before restarting are backed up after the restart', async ({ page }) => {

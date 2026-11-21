@@ -5,6 +5,7 @@
 <script lang="ts">
 	import { addAccount, deleteAccount, sumCents, totalAmount, updateAccount, type Account, type Cents, type Id } from '../core';
 	import { attempt } from './attempt';
+	import { showError } from './notices.svelte';
 	import { formatDay, formatEuro } from './display';
 	import { displayKeys, shortcuts } from './shortcuts.svelte';
 	import AmountInput from './ui/AmountInput.svelte';
@@ -80,7 +81,7 @@
 		if (!row) return;
 		const { account } = row;
 		const index = accounts.indexOf(account);
-		if (await attempt(notify, () => workspace.edit(`Delete account “${account.name}”`, (d) => deleteAccount(d, account.id)))) {
+		if (await attempt(showError, () => workspace.edit(`Delete account “${account.name}”`, (d) => deleteAccount(d, account.id)))) {
 			// the one that took its place
 			selectedKey = accounts[Math.min(index, accounts.length - 1)]?.id ?? null;
 			notify(`Deleted account “${account.name}”.`, true);

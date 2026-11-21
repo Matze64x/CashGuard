@@ -16,6 +16,7 @@
 		type RecurringDraft,
 	} from '../core';
 	import { attempt } from './attempt';
+	import { showError } from './notices.svelte';
 	import { clock } from './clock.svelte';
 	import { formatDate, formatEuro, plural } from './display';
 	import RecurringEditor from './RecurringEditor.svelte';
@@ -110,7 +111,7 @@
 	async function remove(r: Recurring | undefined) {
 		if (!r) return;
 		const next = templates[selectedIndex + 1] ?? templates[selectedIndex - 1];
-		if (await attempt(notify, () => workspace.edit(`Delete recurring “${r.description}”`, (d) => deleteRecurring(d, r.id)))) {
+		if (await attempt(showError, () => workspace.edit(`Delete recurring “${r.description}”`, (d) => deleteRecurring(d, r.id)))) {
 			selectedId = next?.id ?? null;
 			notify(`Deleted recurring “${r.description}”.`, true);
 		}

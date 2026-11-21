@@ -27,6 +27,7 @@
 		type TransactionDraft,
 	} from '../core';
 	import { attempt } from './attempt';
+	import { showError } from './notices.svelte';
 	import { formatDate, formatEuro, plural } from './display';
 	import { filter } from './filter.svelte';
 	import FilterBar from './FilterBar.svelte';
@@ -169,7 +170,7 @@
 		if (!t) return;
 		const next = visible[selectedIndex + 1] ?? visible[selectedIndex - 1];
 		const label = t.description || 'transaction';
-		if (await attempt(notify, () => workspace.edit(`Delete “${label}”`, (d) => deleteTransaction(d, t.id)))) {
+		if (await attempt(showError, () => workspace.edit(`Delete “${label}”`, (d) => deleteTransaction(d, t.id)))) {
 			selectedId = next?.id ?? null;
 			notify(`Deleted “${label}”.`, true);
 		}

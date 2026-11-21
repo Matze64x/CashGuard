@@ -8,6 +8,7 @@
 	import { errorMessage } from './lib/errors';
 	import ExploreView from './lib/ExploreView.svelte';
 	import ImportDialog from './lib/ImportDialog.svelte';
+	import { notices } from './lib/notices.svelte';
 	import SettingsDialog from './lib/SettingsDialog.svelte';
 	import { displayKeys, shortcuts } from './lib/shortcuts.svelte';
 	import TransactionsView from './lib/TransactionsView.svelte';
@@ -43,9 +44,9 @@
 	});
 
 	/** `undo`: offer to undo the last edit (e.g. after deleting) */
-	let notice = $state<{ text: string; error: boolean; undo?: boolean } | null>(null);
+	/** `undo`: offer to undo the last change (e.g. after deleting) */
 	function notify(text: string, undo = false) {
-		notice = { text, error: false, undo };
+		notices.info(text, undo);
 	}
 
 	let settingsOpen = $state(false);
@@ -102,11 +103,6 @@
 			{ keys: ['Mod+s'], description: 'Export the file', group: 'File', inFields: true, when: () => !busy, run: exportFile },
 		]),
 	);
-	$effect(() => {
-		if (!notice || notice.error) return;
-		const timer = setTimeout(() => (notice = null), 5000);
-		return () => clearTimeout(timer);
-	});
 
 	let runs = 0;
 	/** The run whose message is shown (0: none of them) */
@@ -119,11 +115,11 @@
 			// an action that finishes late (e.g. opening a file still sets up watching it) must not
 			// replace or clear the message of one started after it; errors always show
 			if (id < shownBy) return;
-			notice = text ? { text, error: false } : null;
+			if (text) notices.info(text);
+			else notices.clearInfo();
 			shownBy = text ? id : 0;
 		} catch (e) {
-			notice = { text: `Something went wrong: ${errorMessage(e)}`, error: true };
-			shownBy = Math.max(shownBy, id);
+			notices.error(`Something went wrong: ${errorMessage(e)}`);
 		}
 	}
 
@@ -218,15 +214,7 @@
 </header>
 
 <main class:wide={section === 'explore'}>
-	{#if workspace.backupError}
-		<p class="notice error" role="alert">The backup file couldn't be written: {workspace.backupError} It's tried again with the next change.</p>
-	{/if}
-	{#if notice}
-		<p class="notice" class:error={notice.error} role={notice.error ? 'alert' : 'status'}>
-			{notice.text}
-			{#if notice.undo && workspace.undoLabel}<button class="link" onclick={undo}>Undo <kbd>{displayKeys('Mod+z')}</kbd></button>{/if}
-		</p>
-	{/if}
+
 	{#if loadError}
 		<p class="notice error" role="alert">Your data can't be loaded, so nothing can be changed right now. {loadError}</p>
 	{:else if workspace.ready}
@@ -252,6 +240,23 @@
 		</div>
 	{/if}
 </main>
+
+<!-- floating, so a message coming or going never shifts the page -->
+<div class="notices">
+	{#if workspace.backupError}
+		<p class="notice error" role="alert">
+			<span>The backup file couldn't be written: {workspace.backupError} It's tried again with the next change.</span>
+			<button class="dismiss" aria-label="Dismiss" title="Dismiss" onclick={() => (workspace.backupError = null)}>×</button>
+		</p>
+	{/if}
+	{#each notices.list as n (n.id)}
+		<p class="notice" class:error={n.error} role={n.error ? 'alert' : 'status'}>
+			<span>{n.text}</span>
+			{#if n.undo && workspace.undoLabel}<button class="link" onclick={undo}>Undo <kbd>{displayKeys('Mod+z')}</kbd></button>{/if}
+			<button class="dismiss" aria-label="Dismiss" title="Dismiss" onclick={() => notices.dismiss(n.id)}>×</button>
+		</p>
+	{/each}
+</div>
 
 {#if shortcuts.helpOpen}
 	<ShortcutHelp onclose={() => (shortcuts.helpOpen = false)} />
@@ -397,5 +402,47 @@
 		background: none;
 		border: 1px solid var(--negative);
 		color: var(--negative);
+	}
+	.notices {
+		position: fixed;
+		z-index: 10;
+		left: 50%;
+		bottom: max(1rem, env(safe-area-inset-bottom));
+		transform: translateX(-50%);
+		width: min(36rem, calc(100vw - 1.5rem));
+		display: grid;
+		gap: 0.5rem;
+		/* only the messages take clicks, not the space between them */
+		pointer-events: none;
+	}
+	.notices .notice {
+		pointer-events: auto;
+		margin: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.5rem 0.5rem 0.9rem;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		box-shadow: 0 0.25rem 1rem rgb(0 0 0 / 0.18);
+	}
+	.notices .notice > span {
+		flex: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.notices .notice.error {
+		border-color: var(--negative);
+		background: var(--surface);
+	}
+	.dismiss {
+		flex: none;
+		min-height: 0;
+		padding: 0 0.5rem;
+		border: none;
+		background: none;
+		color: var(--muted);
+		font-size: 1.2rem;
+		line-height: 1.5;
 	}
 </style>

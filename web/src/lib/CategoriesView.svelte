@@ -2,6 +2,7 @@
 <script lang="ts">
 	import { addCategory, categoryUsage, deleteCategory, describeUse, updateCategory, type Category, type Id } from '../core';
 	import { attempt } from './attempt';
+	import { showError } from './notices.svelte';
 	import { CATEGORY_COLORS } from './palette';
 	import { shortcuts } from './shortcuts.svelte';
 	import ColorPicker from './ui/ColorPicker.svelte';
@@ -85,7 +86,7 @@
 		const use = usage.get(c.id);
 		if (use) return notify(`“${c.name}” is used by ${describeUse(use)}, so it can't be deleted.`);
 		const next = categories[selectedIndex + 1] ?? categories[selectedIndex - 1];
-		if (await attempt(notify, () => workspace.edit(`Delete category “${c.name}”`, (d) => deleteCategory(d, c.id)))) {
+		if (await attempt(showError, () => workspace.edit(`Delete category “${c.name}”`, (d) => deleteCategory(d, c.id)))) {
 			selectedId = next?.id ?? null;
 			notify(`Deleted category “${c.name}”.`, true);
 		}
