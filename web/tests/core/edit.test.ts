@@ -124,34 +124,40 @@ describe('categories and accounts', () => {
 
 	it('only a changed balance stamps an account', () => {
 		const data = addAccount(empty, 'Bank', cents(100), at(1));
-		expect(updateAccount(data, 0, { name: 'Checking' }, at(2)).accounts[0]).toEqual({ name: 'Checking', amount: 100, edited: 1 });
-		expect(updateAccount(data, 0, { amount: cents(150) }, at(3)).accounts[0]).toEqual({ name: 'Bank', amount: 150, edited: 3 });
-		expect(deleteAccount(data, 0).accounts).toEqual([]);
+		const { id } = data.accounts[0]!;
+		expect(id).toMatch(/^[1-9]\d*$/);
+		expect(updateAccount(data, id, { name: 'Checking' }, at(2)).accounts[0]).toEqual({ id, name: 'Checking', amount: 100, edited: 1 });
+		expect(updateAccount(data, id, { amount: cents(150) }, at(3)).accounts[0]).toEqual({ id, name: 'Bank', amount: 150, edited: 3 });
+		expect(deleteAccount(data, id).accounts).toEqual([]);
+		// a second one gets another id
+		expect(addAccount(data, 'Bank', cents(1), at(2)).accounts[1]!.id).not.toBe(id);
 	});
 
-	it('refuses to change an account that another one replaced at its position', () => {
+	it('refuses to change an account that is gone, or that a sync changed meanwhile', () => {
 		const data = addAccount(empty, 'Bank', cents(100), at(1));
 		const seen = data.accounts[0]!;
-		const synced = addAccount({ ...data, accounts: [] }, 'Wallet', cents(5), at(2));
-		expect(() => updateAccount(synced, 0, { amount: cents(1) }, at(3), seen)).toThrow(EditError);
-		expect(() => deleteAccount(synced, 0, seen)).toThrow(EditError);
-		expect(updateAccount(data, 0, { amount: cents(1) }, at(3), seen).accounts[0]!.amount).toBe(1);
+		const synced = updateAccount(data, seen.id, { amount: cents(5) }, at(2));
+		expect(() => updateAccount(synced, seen.id, { amount: cents(1) }, at(3), seen)).toThrow(EditError);
+		expect(updateAccount(data, seen.id, { amount: cents(1) }, at(3), seen).accounts[0]!.amount).toBe(1);
+		const gone = deleteAccount(data, seen.id);
+		expect(() => updateAccount(gone, seen.id, { amount: cents(1) }, at(3))).toThrow(EditError);
+		expect(() => deleteAccount(gone, seen.id)).toThrow(EditError);
 	});
 
 	it('returns the same data for changes that change nothing (no undo entry)', () => {
 		const withAccount = addAccount(empty, 'Bank', cents(100), at(1));
-		expect(updateAccount(withAccount, 0, { name: 'Bank', amount: cents(100) }, at(2))).toBe(withAccount);
+		expect(updateAccount(withAccount, withAccount.accounts[0]!.id, { name: 'Bank', amount: cents(100) }, at(2))).toBe(withAccount);
 		const { data, id } = addCategory(empty, 'Food', '#00ff00ff');
 		expect(updateCategory(data, id, { name: 'Food', color: '#00FF00FF' })).toBe(data);
 		expect(deleteTransaction(data, '42' as Id)).toBe(data);
 	});
 
-	it('adjusts a balance by a payment, but only the account it means', () => {
-		const data = addAccount(empty, 'Bank', cents(100), at(1));
-		const bank = data.accounts[0]!;
-		expect(adjustAccount(data, 0, bank, cents(-30), at(4)).accounts[0]).toEqual({ name: 'Bank', amount: 70, edited: 4 });
-		expect(() => adjustAccount(data, 0, { ...bank, name: 'Wallet' }, cents(-30), at(4))).toThrow(EditError);
-		expect(() => adjustAccount(data, 1, bank, cents(-30), at(4))).toThrow(EditError);
+	it('adjusts a balance by a payment', () => {
+		const data = addAccount(addAccount(empty, 'Bank', cents(100), at(1)), 'Wallet', cents(20), at(1));
+		const [bank, wallet] = data.accounts;
+		const paid = adjustAccount(data, wallet!.id, cents(-30), at(4));
+		expect(paid.accounts).toEqual([bank, { ...wallet, amount: -10, edited: 4 }]);
+		expect(() => adjustAccount(data, '42' as Id, cents(-30), at(4))).toThrow(EditError);
 	});
 
 	it('totals a draft, also one split into parts', () => {

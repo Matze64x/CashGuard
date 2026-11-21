@@ -1,5 +1,7 @@
 #include "cg_file_handler.hpp"
+#include <charconv>
 #include <fstream>
+#include <map>
 #include <set>
 #include "transaction_model.hpp"
 #include "rapidjson/document.h"
@@ -8,7 +10,40 @@
 #include "util/log.hpp"
 #include "util/random_generator.hpp"
 
-const char* version_string = "cgt_0.4.0";
+const char* version_string = "cgt_0.5.0";
+// the version before account ids: still read, accounts get ids derived from their names
+const char* legacy_version_string = "cgt_0.4.0";
+
+// The id an account of a legacy file gets: the 64-bit FNV-1a hash of its name's UTF-8 bytes (0 becomes
+// 1), the n-th repetition of a name (n >= 1) keyed as name, NUL, n. Must match `legacyAccountIds` in
+// web/src/core/ids.ts, so both clients and every device give an account the same id.
+static uint64_t legacy_account_id(const std::string& name, int32_t occurrence)
+{
+	std::string key = name;
+	if (occurrence > 0)
+	{
+		key.push_back('\0');
+		key += std::to_string(occurrence);
+	}
+	uint64_t hash = 0xcbf29ce484222325ull;
+	for (const char c : key)
+	{
+		hash ^= static_cast<uint8_t>(c);
+		hash *= 0x100000001b3ull;
+	}
+	return hash == 0 ? 1 : hash;
+}
+
+// A canonical uint64 id ("0" or digits without a leading zero, at most 2^64 - 1), like the web
+// client's `parseId`; std::stoull would also take signs, spaces, leading zeros and trailing junk.
+static bool parse_id(const auto& rj_object, uint64_t& id)
+{
+	if (!rj_object.HasMember("ID") || !rj_object["ID"].IsString()) return false;
+	const std::string_view text(rj_object["ID"].GetString(), rj_object["ID"].GetStringLength());
+	if (text.empty() || (text.size() > 1 && text[0] == '0')) return false;
+	const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), id);
+	return error == std::errc() && end == text.data() + text.size();
+}
 
 Transaction parse_transaction(const auto& rj_transaction)
 {
@@ -45,14 +80,18 @@ bool CGFileHandler::load_from_file(const std::filesystem::path& file_path, Trans
 	if (file_content.size() == 0) return true;
 
 	rapidjson::Document doc;
-	doc.Parse(file_content.c_str());
+	// refuse invalid UTF-8: the web client reads such bytes as U+FFFD, so the ids both derive from
+	// an account name in a legacy file would differ
+	doc.Parse<rapidjson::kParseValidateEncodingFlag>(file_content.c_str());
 	if (doc.HasParseError())
 	{
 		cglog::error("Failed to parse file \"{}\"", file_path.string());
 		return false;
 	}
 
-	if (std::string(doc["Version"].GetString()) != std::string(version_string))
+	const std::string version = doc["Version"].GetString();
+	const bool legacy = version == legacy_version_string;
+	if (version != version_string && !legacy)
 	{
 		cglog::error("Unsupported version in file \"{}\"", file_path.string());
 		return false;
@@ -69,9 +108,21 @@ bool CGFileHandler::load_from_file(const std::filesystem::path& file_path, Trans
 		}
 		category_model.add(category);
 	}
+	std::set<uint64_t> account_ids;
+	std::map<std::string, int32_t> name_occurrences;
 	for (const auto& rj_account : doc["Accounts"].GetArray())
 	{
 		Account account{.name = rj_account["Name"].GetString()};
+		if (legacy) account.id = legacy_account_id(account.name, name_occurrences[account.name]++);
+		else if (!parse_id(rj_account, account.id))
+		{
+			cglog::error("Missing or invalid account ID!");
+			return false;
+		}
+		if (!account_ids.emplace(account.id).second)
+		{
+			CG_THROW("Duplicate Account ID: {}", std::to_string(account.id));
+		}
 		if (!to_amount(rj_account["Amount"].GetString(), account.amount))
 		{
 			cglog::error("Failed to parse amount!");
@@ -161,6 +212,10 @@ bool CGFileHandler::save_to_file(const std::filesystem::path& file_path, const T
 	{
 		rapidjson::Value json_object;
 		json_object.SetObject();
+		{
+			rapidjson::Value value(std::to_string(account.id).c_str(), allocator);
+			json_object.AddMember("ID", value, allocator);
+		}
 		{
 			rapidjson::Value value(account.name.c_str(), allocator);
 			json_object.AddMember("Name", value, allocator);

@@ -36,7 +36,8 @@ function tx(id: string, fields: { amount?: number; edited?: number; category?: s
 	return normalizeGroup(t);
 }
 const cat = (id: string, name = `c${id}`): Category => ({ id: id as Id, name, color: '#000000FF' });
-const acc = (name: string, amount: number, edited = 0): Account => ({ name, amount: cents(amount), edited: edited as UtcSeconds });
+/** An account; its id is its name unless given */
+const acc = (name: string, amount: number, edited = 0, id = name): Account => ({ id: id as Id, name, amount: cents(amount), edited: edited as UtcSeconds });
 const data = (fields: { t?: Transaction[]; c?: Category[]; a?: Account[] } = {}): CashGuardData => ({
 	transactions: sortNewestFirst(fields.t ?? []),
 	categories: fields.c ?? [],
@@ -257,27 +258,33 @@ const scenarios: Scenario[] = [
 		conflicts: ['Bank:deleted-and-changed'],
 	},
 	{
-		name: 'accounts: a rename is a delete plus an add (accounts have no ids yet)',
+		name: 'accounts: a rename on one side and a new balance on the other -> both kept',
 		base: BASE,
-		ours: variant({ a: [acc('Checking', 100)] }),
+		ours: variant({ a: [acc('Checking', 100, 0, 'Bank')] }),
+		theirs: variant({ a: [acc('Bank', 170, 6)] }),
+		expected: variant({ a: [acc('Checking', 170, 6, 'Bank')] }),
+	},
+	{
+		name: 'accounts: renamed differently on both sides -> one name wins, the balance change is kept',
+		base: BASE,
+		ours: variant({ a: [acc('Checking', 100, 0, 'Bank')] }),
+		theirs: variant({ a: [acc('Giro', 170, 6, 'Bank')] }),
+		expected: variant({ a: [acc('Giro', 170, 6, 'Bank')] }),
+		conflicts: ['Bank:changed-on-both-sides'],
+	},
+	{
+		name: 'accounts: a rename alone is kept',
+		base: BASE,
+		ours: variant({ a: [acc('Checking', 100, 0, 'Bank')] }),
 		theirs: BASE,
-		expected: variant({ a: [acc('Checking', 100)] }),
+		expected: variant({ a: [acc('Checking', 100, 0, 'Bank')] }),
 	},
 	{
-		name: 'accounts: repeated names are matched by occurrence',
-		base: data({ a: [acc('Bank', 1), acc('Bank', 2)] }),
-		ours: data({ a: [acc('Bank', 1), acc('Bank', 5, 1)] }),
-		theirs: data({ a: [acc('Bank', 1), acc('Bank', 2), acc('Cash', 3)] }),
-		expected: data({ a: [acc('Bank', 1), acc('Bank', 5, 1), acc('Cash', 3)] }),
-	},
-	{
-		name: 'accounts: known limitation: deleting an earlier one of two same-named accounts shifts the matching',
-		base: data({ a: [acc('Bank', 1), acc('Bank', 2)] }),
-		ours: data({ a: [acc('Bank', 2)] }),
-		theirs: data({ a: [acc('Bank', 1), acc('Bank', 5, 1)] }),
-		// ideally just [Bank 5]; fixed once accounts have ids
-		expected: data({ a: [acc('Bank', 2), acc('Bank', 5, 1)] }),
-		conflicts: ['Bank:deleted-and-changed'],
+		name: 'accounts: same-named accounts are told apart by id',
+		base: data({ a: [acc('Bank', 1, 0, 'b1'), acc('Bank', 2, 0, 'b2')] }),
+		ours: data({ a: [acc('Bank', 2, 0, 'b2')] }),
+		theirs: data({ a: [acc('Bank', 1, 0, 'b1'), acc('Bank', 5, 1, 'b2')] }),
+		expected: data({ a: [acc('Bank', 5, 1, 'b2')] }),
 	},
 	{
 		name: 'no common base: both versions are combined, nothing counts as deleted',
@@ -363,15 +370,13 @@ describe('merge properties (random documents and edits)', () => {
 				if (deepEqual(o!.get(k), b!.get(k)) && !conflictKeys.has(k)) expect(m!.get(k)).toEqual(c!.get(k));
 			}
 		};
-		const uniqueNames = (accounts: readonly Account[]) => new Set(accounts.map((a) => a.name)).size === accounts.length;
 		for (const { base, ours, theirs } of cases) {
 			for (const [changing, other] of [[ours, theirs], [theirs, ours]] as const) {
 				const { data: m, conflicts } = merge(base, ours, theirs);
 				const keys = new Set([...conflicts.transactions, ...conflicts.categories, ...conflicts.accounts].map((c) => c.key));
 				check((t: Transaction) => t.id, base.transactions, changing.transactions, other.transactions, m.transactions, keys);
 				check((c: Category) => c.id, base.categories, changing.categories, other.categories, m.categories, keys);
-				// accounts are matched by name, so only check them where names are unique
-				if ([base, ours, theirs].every((d) => uniqueNames(d.accounts))) check((a: Account) => a.name, base.accounts, changing.accounts, other.accounts, m.accounts, keys);
+				check((a: Account) => a.id, base.accounts, changing.accounts, other.accounts, m.accounts, keys);
 			}
 		}
 	});

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { FORMAT_VERSION, NO_CATEGORY, parseCashGuard, serializeCashGuard, type CashGuardData, type ParseResult } from '../../src/core';
+import { FORMAT_VERSION, LEGACY_FORMAT_VERSION, NO_CATEGORY, parseCashGuard, serializeCashGuard, type CashGuardData, type ParseResult } from '../../src/core';
 import { randomDocument } from './random-data';
 
 const FIXTURES = fileURLToPath(new URL('../fixtures', import.meta.url));
@@ -22,7 +22,7 @@ function doc(transaction: Record<string, unknown> = {}, extra: Record<string, un
 	return JSON.stringify({
 		Version: FORMAT_VERSION,
 		Categories: [{ ID: '7', Name: 'Food', Color: '#FF0000FF' }],
-		Accounts: [{ Name: 'Bank', Amount: '+1.00', Edited: '01.01.2026 10:00:00' }],
+		Accounts: [{ ID: '3', Name: 'Bank', Amount: '+1.00', Edited: '01.01.2026 10:00:00' }],
 		Transactions: [
 			{
 				ID: '1',
@@ -111,7 +111,14 @@ describe('validation', () => {
 	it('reports problems with their location instead of throwing', () => {
 		expect(errorsOf(parseCashGuard('{'))[0]).toMatch(/^: Not valid JSON/);
 		expect(errorsOf(parseCashGuard('[]'))).toEqual([': The file must contain a JSON object']);
-		expect(errorsOf(parseCashGuard(doc({}, { Version: 'cgt_0.3.0' })))).toEqual(['Version: Unsupported version "cgt_0.3.0", expected "cgt_0.4.0"']);
+		expect(errorsOf(parseCashGuard(doc({}, { Version: 'cgt_0.3.0' })))).toEqual(['Version: Unsupported version "cgt_0.3.0", expected "cgt_0.5.0"']);
+		expect(errorsOf(parseCashGuard(doc({}, { Version: 'cgt_0.10.0' })))).toEqual([
+			'Version: The file was written by a newer version of CashGuard (format "cgt_0.10.0"). Update the app (restart it) to open it.',
+		]);
+		// half of a UTF-16 pair can only come from an escape; a whole pair is fine
+		expect(errorsOf(parseCashGuard(doc({ Description: '\ud800' })))).toEqual(['Transactions[0].Description: Must not contain an invalid character (a lone surrogate escape)']);
+		expect(errorsOf(parseCashGuard(doc({ Description: 'x\udc00' })))).toHaveLength(1);
+		expect(errorsOf(parseCashGuard(doc({ Description: '💶' })))).toEqual([]);
 		expect(errorsOf(parseCashGuard(doc({ Amount: 'lots' })))).toEqual(['Transactions[0].Amount: Invalid amount: "lots"']);
 		expect(errorsOf(parseCashGuard(doc({ Amount: 12 })))).toEqual(['Transactions[0].Amount: Must be a string']);
 		expect(errorsOf(parseCashGuard(doc({ Date: '31.02.2026' })))).toEqual(['Transactions[0].Date: Invalid date (expected DD.MM.YYYY, years 1678–2261): "31.02.2026"']);
@@ -154,6 +161,31 @@ describe('validation', () => {
 		expect(errorsOf(parseCashGuard(doc({ Transactions: [sub] })))).toEqual(['Transactions[0].Transactions[0].ID: Duplicate transaction id 1']);
 		const categories = [{ ID: '7', Name: 'a', Color: '#000000FF' }, { ID: '7', Name: 'b', Color: '#000000FF' }];
 		expect(errorsOf(parseCashGuard(doc({}, { Categories: categories })))).toEqual(['Categories[1].ID: Duplicate category id 7']);
+		const account = { ID: '3', Name: 'Bank', Amount: '+1.00', Edited: '01.01.2026 10:00:00' };
+		expect(errorsOf(parseCashGuard(doc({}, { Accounts: [account, { ...account, Name: 'Cash' }] })))).toEqual(['Accounts[1].ID: Duplicate account id 3']);
+		expect(errorsOf(parseCashGuard(doc({}, { Accounts: [{ ...account, ID: undefined }] })))).toEqual(['Accounts[0].ID: Missing']);
+	});
+
+	it('reads files from before account ids: ids derived from the names, alike on every device', () => {
+		const account = { Name: 'Bank', Amount: '+1.00', Edited: '01.01.2026 10:00:00' };
+		const accounts = [account, { ...account, Name: 'Café 💶' }, { ...account, Amount: '+2.00' }];
+		const legacy = parsed(doc({}, { Version: LEGACY_FORMAT_VERSION, Accounts: accounts }));
+		// FNV-1a 64 of "Bank", "Café 💶" and the second "Bank" ("Bank", NUL, "1"); the C++ client agrees (conformance test)
+		expect(legacy.accounts.map((a) => [a.id, a.name, a.amount])).toEqual([
+			['13925658533498293399', 'Bank', 100],
+			['13691665715867055498', 'Café 💶', 100],
+			['3087832629438022316', 'Bank', 200],
+		]);
+		// written in the current version, with the ids
+		expect(serializeCashGuard(legacy)).toContain(`"Version": "${FORMAT_VERSION}"`);
+		expect(parsed(serializeCashGuard(legacy))).toEqual(legacy);
+		// the legacy fixture (repeated, empty and unicode names), upgraded; the C++ client upgrades it alike
+		const fixture = readFileSync(`${FIXTURES}/legacy/accounts-0.4.0.json`, 'utf8');
+		expect(serializeCashGuard(parsed(fixture))).toBe(readFileSync(`${FIXTURES}/legacy/accounts-0.4.0.upgraded.json`, 'utf8'));
+		// an id in a legacy file is ignored
+		expect(parseCashGuard(doc({}, { Version: LEGACY_FORMAT_VERSION, Accounts: [{ ...account, ID: '3' }] })).warnings).toEqual([
+			{ path: 'Accounts[0].ID', message: 'Ignored: in files of version cgt_0.4.0, account ids come from the names' },
+		]);
 	});
 
 	it('rejects nested groups and the reserved category id 0', () => {

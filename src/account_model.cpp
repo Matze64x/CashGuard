@@ -1,4 +1,5 @@
 #include "account_model.hpp"
+#include "util/random_generator.hpp"
 
 int32_t AccountModel::count() const
 {
@@ -38,6 +39,18 @@ void AccountModel::add(const Account& account)
 {
 	accounts.push_back(account);
 	dirty = true;
+}
+
+uint64_t AccountModel::new_id() const
+{
+	for (;;)
+	{
+		const uint64_t id = static_cast<uint64_t>(rng::random_int64());
+		if (id == 0) continue;
+		bool taken = false;
+		for (const Account& account : accounts) taken = taken || account.id == id;
+		if (!taken) return id;
+	}
 }
 
 void AccountModel::remove(int32_t index)

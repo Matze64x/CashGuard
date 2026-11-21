@@ -6,6 +6,7 @@
 
 struct Account
 {
+	uint64_t id = 0;
 	std::string name;
 	Amount amount;
 	DateTime edited;
@@ -23,6 +24,8 @@ public:
 	void set_amount(int32_t index, const Amount& amount);
 	void set_edited(int32_t index, const DateTime& edited);
 	void add(const Account& account);
+	/** A random id that no account has yet */
+	uint64_t new_id() const;
 	void remove(int32_t index);
 	void clear();
 	const std::vector<Account>& get_data() const;

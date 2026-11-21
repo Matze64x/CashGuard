@@ -97,7 +97,7 @@
 		list.focus();
 	}
 
-	async function save(draft: TransactionDraft, another: boolean, account: { index: number; account: Account } | null) {
+	async function save(draft: TransactionDraft, another: boolean, account: Account | null) {
 		const target = editing;
 		// a second Enter while saving must not add the transaction twice
 		if (!target || saving) return;
@@ -111,12 +111,12 @@
 					const result = addTransaction(d, draft, now);
 					created = result.id;
 					if (!account) return result.data;
-					const adjusted = adjustAccount(result.data, account.index, account.account, draftTotal(draft), now);
-					balance = adjusted.accounts[account.index]!.amount;
+					const adjusted = adjustAccount(result.data, account.id, draftTotal(draft), now);
+					balance = adjusted.accounts.find((a) => a.id === account.id)!.amount;
 					return adjusted;
 				});
 				selectedId = created;
-				if (account && balance !== null) notify(`${account.account.name} is now at ${formatEuro(balance)}.`, true);
+				if (account && balance !== null) notify(`${account.name} is now at ${formatEuro(balance)}.`, true);
 			} else {
 				const id = target.id;
 				await workspace.edit(`Edit “${draft.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, draft, now));

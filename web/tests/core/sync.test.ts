@@ -29,7 +29,7 @@ const tx = (id: string, amount = -100, edited = 0): Transaction => ({
 	added: 0 as UtcSeconds,
 	edited: edited as UtcSeconds,
 });
-const acc = (name: string, amount: number): Account => ({ name, amount: cents(amount), edited: 0 as UtcSeconds });
+const acc = (name: string, amount: number, id = name): Account => ({ id: id as Id, name, amount: cents(amount), edited: 0 as UtcSeconds });
 const data = (transactions: Transaction[], accounts: Account[] = []): CashGuardData => ({ categories: [], accounts, transactions: sortNewestFirst(transactions) });
 const ids = (d: CashGuardData) => d.transactions.map((t) => t.id).sort();
 
@@ -40,8 +40,8 @@ const exported = (state: SyncState): SyncState => ({ ...state, exported: state.w
 
 describe('summarizeChanges', () => {
 	it('counts added, changed and deleted records of every kind', () => {
-		const before = data([tx('1'), tx('2')], [acc('Bank', 1), acc('Bank', 2)]);
-		const after = data([tx('1', -5), tx('3')], [acc('Bank', 1)]);
+		const before = data([tx('1'), tx('2')], [acc('Bank', 1, 'b1'), acc('Bank', 2, 'b2')]);
+		const after = data([tx('1', -5), tx('3')], [acc('Bank', 1, 'b1')]);
 		expect(summarizeChanges(before, after)).toEqual({
 			transactions: { added: 1, changed: 1, deleted: 1 },
 			categories: { added: 0, changed: 0, deleted: 0 },

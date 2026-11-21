@@ -25,6 +25,7 @@ export interface Category {
 }
 
 export interface Account {
+	readonly id: Id;
 	readonly name: string;
 	readonly amount: Cents;
 	readonly edited: UtcSeconds;

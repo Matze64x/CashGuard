@@ -10,8 +10,9 @@ const KEY = 'cashguard-settings-v1';
 interface Values {
 	dateStyle: DateStyle;
 	/**
-	 * The account whose balance a new transaction updates, by name (accounts have no ids yet), or
-	 * null. Per device: on the phone it's usually the card just paid with, on the computer none.
+	 * The account whose balance a new transaction updates, by id (or by name, as stored before
+	 * accounts had ids; see `findAccount`), or null. Per device: on the phone it's usually the card
+	 * just paid with, on the computer none.
 	 */
 	balanceAccount: string | null;
 }
@@ -62,3 +63,9 @@ class Settings {
 }
 
 export const settings = new Settings();
+
+/** The remembered account: by id, or by name as remembered before accounts had ids */
+export function findAccount<A extends { id: string; name: string }>(accounts: readonly A[], remembered: string | null): A | undefined {
+	if (remembered === null) return undefined;
+	return accounts.find((a) => a.id === remembered) ?? accounts.find((a) => a.name === remembered);
+}

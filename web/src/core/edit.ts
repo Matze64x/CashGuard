@@ -150,27 +150,26 @@ export function deleteCategory(data: CashGuardData, id: Id): CashGuardData {
 }
 
 // ------------------------------------------------------------------------------------- accounts
-// Accounts have no ids yet, so they're addressed by position. Changes pass the account they mean
-// (`expected`): if a sync moved another one to that position meanwhile, they throw instead of
-// changing the wrong account.
 
-function accountAt(data: CashGuardData, index: number, expected: Account | undefined): Account {
-	const account = data.accounts[index];
-	if (!account) throw new EditError(`Unknown account ${index}`);
-	if (expected && !deepEqual(account, expected)) throw new EditError(`The account “${expected.name}” changed meanwhile; please try again.`);
-	return account;
+function accountWith(data: CashGuardData, id: Id): { account: Account; index: number } {
+	const index = data.accounts.findIndex((a) => a.id === id);
+	if (index < 0) throw new EditError('The account no longer exists; it may have been deleted on another device.');
+	return { account: data.accounts[index]!, index };
 }
 
 export function addAccount(data: CashGuardData, name: string, amount: Cents, now: UtcSeconds): CashGuardData {
-	return { ...data, accounts: [...data.accounts, { name, amount, edited: now }] };
+	const id = newId(new Set(data.accounts.map((a) => a.id)));
+	return { ...data, accounts: [...data.accounts, { id, name, amount, edited: now }] };
 }
 
 /**
  * `edited` records when the balance was last updated, so only a changed amount stamps it. Returns
- * the data unchanged if nothing actually changed.
+ * the data unchanged if nothing actually changed. `expected`: the account as the user saw it when
+ * entering the changes; if a sync changed it meanwhile, this throws instead of overwriting that.
  */
-export function updateAccount(data: CashGuardData, index: number, changes: Partial<Pick<Account, 'name' | 'amount'>>, now: UtcSeconds, expected?: Account): CashGuardData {
-	const old = accountAt(data, index, expected);
+export function updateAccount(data: CashGuardData, id: Id, changes: Partial<Pick<Account, 'name' | 'amount'>>, now: UtcSeconds, expected?: Account): CashGuardData {
+	const { account: old, index } = accountWith(data, id);
+	if (expected && !deepEqual(old, expected)) throw new EditError(`The account “${expected.name}” changed meanwhile; please try again.`);
 	const amountChanged = changes.amount !== undefined && changes.amount !== old.amount;
 	const updated: Account = { ...old, ...changes, edited: amountChanged ? now : old.edited };
 	if (deepEqual(updated, old)) return data;
@@ -183,14 +182,14 @@ export function draftTotal(draft: TransactionDraft): Cents {
 }
 
 /** Changes an account's balance by `by`, e.g. by a payment just entered. */
-export function adjustAccount(data: CashGuardData, index: number, expected: Account, by: Cents, now: UtcSeconds): CashGuardData {
-	const account = accountAt(data, index, expected);
-	return updateAccount(data, index, { amount: addCents(account.amount, by) }, now);
+export function adjustAccount(data: CashGuardData, id: Id, by: Cents, now: UtcSeconds): CashGuardData {
+	const { account } = accountWith(data, id);
+	return updateAccount(data, id, { amount: addCents(account.amount, by) }, now);
 }
 
-export function deleteAccount(data: CashGuardData, index: number, expected?: Account): CashGuardData {
-	accountAt(data, index, expected);
-	return { ...data, accounts: data.accounts.filter((_, i) => i !== index) };
+export function deleteAccount(data: CashGuardData, id: Id): CashGuardData {
+	accountWith(data, id);
+	return { ...data, accounts: data.accounts.filter((a) => a.id !== id) };
 }
 
 // ------------------------------------------------------------------------------------- suggestions

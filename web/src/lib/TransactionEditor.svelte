@@ -21,7 +21,7 @@
 		type TransactionDraft,
 	} from '../core';
 	import { formatEuro } from './display';
-	import { settings } from './settings.svelte';
+	import { findAccount, settings } from './settings.svelte';
 	import { shortcuts } from './shortcuts.svelte';
 	import AmountInput from './ui/AmountInput.svelte';
 	import DateInput from './ui/DateInput.svelte';
@@ -45,7 +45,7 @@
 		 * `another`: the user wants to enter the next transaction right away. `account`: the account
 		 * whose balance should change by the transaction's amount.
 		 */
-		onsave: (draft: TransactionDraft, another: boolean, account: { index: number; account: Account } | null) => void;
+		onsave: (draft: TransactionDraft, another: boolean, account: Account | null) => void;
 		onclose: () => void;
 	} = $props();
 
@@ -75,10 +75,10 @@
 	const categories = $derived([...data.categories].sort((a, b) => a.name.localeCompare(b.name)));
 	const partsTotal = $derived(parts && parts.every((p) => p.amount !== null) ? sumCents(parts.map((p) => p.amount!)) : null);
 
-	// the remembered account, if it still exists (-1: don't update a balance)
+	// the remembered account, if it still exists ('': don't update a balance)
 	// svelte-ignore state_referenced_locally
-	let accountIndex = $state(isNew && settings.balanceAccount !== null ? data.accounts.findIndex((a) => a.name === settings.balanceAccount) : -1);
-	const account = $derived(data.accounts[accountIndex]);
+	let accountId = $state<Id | ''>((isNew && findAccount(data.accounts, settings.balanceAccount)?.id) || '');
+	const account = $derived(data.accounts.find((a) => a.id === accountId));
 	const draftAmount = $derived(parts ? partsTotal : amount);
 
 	/** Fill in category and amount of a new transaction from the last time this description was used. */
@@ -105,8 +105,8 @@
 		error = null;
 		const result = draft();
 		if (!result) return;
-		if (isNew) settings.balanceAccount = account?.name ?? null;
-		onsave(result, another, account ? { index: accountIndex, account } : null);
+		if (isNew) settings.balanceAccount = account?.id ?? null;
+		onsave(result, another, account ?? null);
 	}
 
 	/** The form's transaction, or null after showing what's missing */
@@ -166,9 +166,9 @@
 			{#if isNew && data.accounts.length > 0}
 				<label for="tx-account">Account</label>
 				<div class="account">
-					<select id="tx-account" bind:value={accountIndex}>
-						<option value={-1}>Don't update a balance</option>
-						{#each data.accounts as a, i (i)}<option value={i}>{a.name || '(unnamed)'}</option>{/each}
+					<select id="tx-account" bind:value={accountId}>
+						<option value="">Don't update a balance</option>
+						{#each data.accounts as a (a.id)}<option value={a.id}>{a.name || '(unnamed)'}</option>{/each}
 					</select>
 					{#if account}
 						<span class="balance" aria-live="polite">

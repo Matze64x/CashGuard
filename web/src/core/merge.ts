@@ -2,11 +2,14 @@
  * Three-way merge of two versions of the data that were edited independently (e.g. on the phone
  * and on the desktop), relative to the last version both had in common.
  *
- * Records are matched by key: transactions and categories by id, accounts by name. A transaction
+ * Records are matched by id: transactions, categories and accounts. A transaction
  * group is one record including its sub-transactions. For every record:
  * - same on both sides             -> keep it
  * - changed on one side only       -> take that change (including adding or deleting it)
- * - changed differently on both    -> the later `Edited` timestamp wins; reported as a conflict
+ * - changed differently on both    -> the later `Edited` timestamp wins; reported as a conflict.
+ *                                     An account's name and its balance (amount with `Edited`)
+ *                                     merge separately: a rename on one side and a new balance on
+ *                                     the other are both kept, without a conflict
  * - deleted on one side, changed   -> keep the changed version; reported as a conflict
  *   on the other
  * Categories have no timestamp, and timestamps can tie: then a fixed order of the two versions'
@@ -31,7 +34,7 @@ export type ConflictReason = 'changed-on-both-sides' | 'deleted-and-changed' | '
 
 export interface Conflict<T> {
 	readonly reason: ConflictReason;
-	/** The record's id, or the account name */
+	/** The record's id */
 	readonly key: string;
 	/** The versions of the record; `undefined` where it doesn't exist (not yet, or deleted) */
 	readonly base: T | undefined;
@@ -55,6 +58,8 @@ interface RecordKind<T> {
 	keys(records: readonly T[]): string[];
 	/** Positive if `a` was edited later than `b`, negative if earlier, 0 if unknown or equal. */
 	compareEdited(a: T, b: T): number;
+	/** Both sides' changes to a record combined, if they touch different parts of it; else null */
+	combine?(base: T, ours: T, theirs: T): T | null;
 }
 
 /** The winner of two different versions: the later edit, else a fixed order of their contents. */
@@ -81,33 +86,21 @@ function mergeRecords<T>(kind: RecordKind<T>, base: readonly T[], ours: readonly
 		if (deepEqual(o, t) || deepEqual(b, t)) kept = o;
 		else if (deepEqual(b, o)) kept = t;
 		else if (o === undefined || t === undefined) [kept, reason] = [(o ?? t)!, 'deleted-and-changed'];
-		else [kept, reason] = [newer(kind, o, t), 'changed-on-both-sides'];
+		else {
+			kept = (b !== undefined && kind.combine?.(b, o, t)) || undefined;
+			if (kept === undefined) [kept, reason] = [newer(kind, o, t), 'changed-on-both-sides'];
+		}
 		if (kept !== undefined) merged.push(kept);
-		// account keys of repeated names carry their occurrence after a NUL; report the plain name
-		if (reason) conflicts.push({ reason, key: key.split('\0')[0]!, base: b, ours: o, theirs: t, kept: kept! });
+		if (reason) conflicts.push({ reason, key, base: b, ours: o, theirs: t, kept: kept! });
 	}
 	return { merged, conflicts };
-}
-
-/**
- * Accounts have no id yet, so they're matched by name. Names aren't necessarily unique, so repeated
- * names get their occurrence appended (after a NUL, which names can't contain). Known limitation:
- * deleting an earlier one of several accounts with the same name shifts the matching.
- */
-function accountKeys(accounts: readonly Account[]): string[] {
-	const seen = new Map<string, number>();
-	return accounts.map(({ name }) => {
-		const n = seen.get(name) ?? 0;
-		seen.set(name, n + 1);
-		return n === 0 ? name : `${name}\0${n}`;
-	});
 }
 
 /** How records of each kind are matched between versions: one unique key per record, in order. */
 export const RECORD_KEYS = {
 	transactions: (ts: readonly Transaction[]): string[] => ts.map((t) => t.id),
 	categories: (cs: readonly Category[]): string[] => cs.map((c) => c.id),
-	accounts: accountKeys,
+	accounts: (as: readonly Account[]): string[] => as.map((a) => a.id),
 };
 
 /** Records by key, see `RECORD_KEYS` */
@@ -118,7 +111,15 @@ export function byKey<T>(keys: (records: readonly T[]) => string[], records: rea
 
 const TRANSACTIONS: RecordKind<Transaction> = { keys: RECORD_KEYS.transactions, compareEdited: (a, b) => a.edited - b.edited };
 const CATEGORIES: RecordKind<Category> = { keys: RECORD_KEYS.categories, compareEdited: () => 0 };
-const ACCOUNTS: RecordKind<Account> = { keys: RECORD_KEYS.accounts, compareEdited: (a, b) => a.edited - b.edited };
+/** An account's name, and its balance with the time it was updated, change independently */
+function combineAccounts(base: Account, ours: Account, theirs: Account): Account | null {
+	const balance = (a: Account) => ({ amount: a.amount, edited: a.edited });
+	const pick = <V>(b: V, o: V, t: V): { value: V } | null => (deepEqual(o, b) ? { value: t } : deepEqual(t, b) || deepEqual(o, t) ? { value: o } : null);
+	const name = pick(base.name, ours.name, theirs.name);
+	const amount = pick(balance(base), balance(ours), balance(theirs));
+	return name && amount ? { ...ours, name: name.value, ...amount.value } : null;
+}
+const ACCOUNTS: RecordKind<Account> = { keys: RECORD_KEYS.accounts, compareEdited: (a, b) => a.edited - b.edited, combine: combineAccounts };
 
 /** Removes top-level transactions whose id is now a sub-transaction of a merged group. */
 function dropTransactionsMovedIntoGroups(

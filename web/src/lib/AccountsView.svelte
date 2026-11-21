@@ -3,7 +3,7 @@
 	A difference means a transaction is missing or wrong.
 -->
 <script lang="ts">
-	import { addAccount, deleteAccount, sumCents, totalAmount, updateAccount, type Account, type Cents } from '../core';
+	import { addAccount, deleteAccount, sumCents, totalAmount, updateAccount, type Account, type Cents, type Id } from '../core';
 	import { attempt } from './attempt';
 	import { formatDay, formatEuro } from './display';
 	import { shortcuts } from './shortcuts.svelte';
@@ -19,21 +19,18 @@
 	const transactionsTotal = $derived(totalAmount(workspace.data.transactions));
 	const difference = $derived(accountsTotal - transactionsTotal);
 
-	// accounts have no ids yet, so the list (and the edits) address them by position
-	type Row = { account: Account; index: number };
-	const rows = $derived(accounts.map((account, index): Row => ({ account, index })));
-	let selectedKey = $state<`${number}` | null>(null);
-	const selected = $derived(rows.find((r) => String(r.index) === selectedKey));
-	/** `original`: the account as the dialog opened, so saving can't hit another one moved into its place */
-	let editing = $state<{ original: Row | null; name: string; amount: Cents | null } | null>(null);
+	type Row = { account: Account };
+	const rows = $derived(accounts.map((account): Row => ({ account })));
+	let selectedKey = $state<Id | null>(null);
+	const selected = $derived(rows.find((r) => r.account.id === selectedKey));
+	/** `original`: the account as the dialog opened, so saving can't overwrite a change synced meanwhile */
+	let editing = $state<{ original: Account | null; name: string; amount: Cents | null } | null>(null);
 	let saving = false;
-	let list: SelectableList<Row, `${number}`>;
+	let list: SelectableList<Row, Id>;
 	let listElement = $state<HTMLElement>();
 
-	const select = (index: number) => (selectedKey = index >= 0 ? `${index}` : null);
-
 	function openEdit(row: Row | undefined) {
-		if (row) editing = { original: row, name: row.account.name, amount: row.account.amount };
+		if (row) editing = { original: row.account, name: row.account.name, amount: row.account.amount };
 	}
 
 	function close() {
@@ -53,9 +50,9 @@
 			const { original } = target;
 			if (original === null) {
 				await workspace.edit(`Add account “${name}”`, (d, now) => addAccount(d, name, amount, now));
-				select(accounts.length - 1);
+				selectedKey = accounts.at(-1)?.id ?? null;
 			} else {
-				await workspace.edit(`Edit account “${name}”`, (d, now) => updateAccount(d, original.index, { name, amount }, now, original.account));
+				await workspace.edit(`Edit account “${name}”`, (d, now) => updateAccount(d, original.id, { name, amount }, now, original));
 			}
 		});
 		saving = false;
@@ -64,9 +61,11 @@
 
 	async function remove(row: Row | undefined) {
 		if (!row) return;
-		const { account, index } = row;
-		if (await attempt(notify, () => workspace.edit(`Delete account “${account.name}”`, (d) => deleteAccount(d, index, account)))) {
-			select(Math.min(index, accounts.length - 1));
+		const { account } = row;
+		const index = accounts.indexOf(account);
+		if (await attempt(notify, () => workspace.edit(`Delete account “${account.name}”`, (d) => deleteAccount(d, account.id)))) {
+			// the one that took its place
+			selectedKey = accounts[Math.min(index, accounts.length - 1)]?.id ?? null;
 			notify(`Deleted account “${account.name}”.`, true);
 		}
 	}
@@ -93,7 +92,7 @@
 	bind:selected={selectedKey}
 	bind:element={listElement}
 	items={rows}
-	key={(r) => `${r.index}`}
+	key={(r) => r.account.id}
 	label="Accounts"
 	{active}
 	group="Accounts"

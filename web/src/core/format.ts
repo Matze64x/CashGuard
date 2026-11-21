@@ -5,11 +5,13 @@
  * can be loaded and saved by either client without spurious diffs. All values are JSON strings.
  */
 import { formatFileDate, formatFileDateTime, MAX_YEAR, MIN_YEAR, parseFileDate, parseFileDateTime } from './dates';
-import { NO_CATEGORY, parseId, type Id } from './ids';
+import { legacyAccountIds, NO_CATEGORY, parseId, type Id } from './ids';
 import { formatAmount, parseAmount } from './money';
 import { normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Transaction } from './model';
 
-export const FORMAT_VERSION = 'cgt_0.4.0';
+export const FORMAT_VERSION = 'cgt_0.5.0';
+/** The version before account ids: still read (accounts get ids from their names, see `legacyAccountIds`) */
+export const LEGACY_FORMAT_VERSION = 'cgt_0.4.0';
 
 export interface Issue {
 	/** Location in the file, e.g. `Transactions[3].Transactions[1].Amount` */
@@ -23,6 +25,7 @@ export type ParseResult =
 
 const TRANSACTION_KEYS = ['ID', 'Date', 'Category', 'Amount', 'Description', 'Added', 'Edited', 'Transactions'];
 const COLOR_PATTERN = /^#[0-9A-Fa-f]{8}$/;
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 const DATE_FORMAT = `date (expected DD.MM.YYYY, years ${MIN_YEAR}–${MAX_YEAR})`;
 const TIMESTAMP_FORMAT = `timestamp (expected DD.MM.YYYY HH:MM:SS, years ${MIN_YEAR}–${MAX_YEAR})`;
 
@@ -41,6 +44,9 @@ class Parser {
 	readonly warnings: Issue[] = [];
 	readonly categoryIds = new Set<Id>([NO_CATEGORY]);
 	readonly transactionIds = new Set<Id>();
+	readonly accountIds = new Set<Id>();
+	/** Reading a file from before account ids (`LEGACY_FORMAT_VERSION`) */
+	legacy = false;
 
 	error(path: string, message: string): null {
 		this.errors.push({ path, message });
@@ -59,7 +65,10 @@ class Parser {
 		const value = object[key];
 		if (typeof value === 'string') {
 			// the C++ client reads strings as C strings and would cut them off here
-			return value.includes('\0') ? this.error(join(path, key), 'Must not contain a NUL character') : value;
+			if (value.includes('\0')) return this.error(join(path, key), 'Must not contain a NUL character');
+			// half of a UTF-16 pair (only possible as an escape): not text, and the C++ client refuses the file
+			if (LONE_SURROGATE.test(value)) return this.error(join(path, key), 'Must not contain an invalid character (a lone surrogate escape)');
+			return value;
 		}
 		return this.error(join(path, key), value === undefined ? 'Missing' : 'Must be a string');
 	}
@@ -90,14 +99,19 @@ class Parser {
 		return { id, name, color };
 	}
 
-	account(value: unknown, path: string): Account | null {
-		const object = this.object(value, path, ['Name', 'Amount', 'Edited']);
+	/** In a legacy file, accounts have no id yet: `id` is null, to be derived from all names */
+	account(value: unknown, path: string): (Omit<Account, 'id'> & { id: Id | null }) | null {
+		const object = this.object(value, path, ['ID', 'Name', 'Amount', 'Edited']);
 		if (!object) return null;
+		if (this.legacy && 'ID' in object) this.warnings.push({ path: join(path, 'ID'), message: `Ignored: in files of version ${LEGACY_FORMAT_VERSION}, account ids come from the names` });
+		const id = this.legacy ? null : this.field(object, 'ID', path, parseId, 'id');
 		const name = this.string(object, 'Name', path);
 		const amount = this.field(object, 'Amount', path, parseAmount, 'amount');
 		const edited = this.field(object, 'Edited', path, parseFileDateTime, TIMESTAMP_FORMAT);
-		if (name === null || amount === null || edited === null) return null;
-		return { name, amount, edited };
+		if (id !== null && this.accountIds.has(id)) return this.error(join(path, 'ID'), `Duplicate account id ${id}`);
+		if ((id === null && !this.legacy) || name === null || amount === null || edited === null) return null;
+		if (id !== null) this.accountIds.add(id);
+		return { id, name, amount, edited };
 	}
 
 	/** Categories must be parsed before transactions, so category references can be checked. */
@@ -154,10 +168,16 @@ export function parseCashGuard(content: string): ParseResult {
 	}
 	const version = p.string(root, 'Version', '');
 	if (version === null) return failed();
-	if (version !== FORMAT_VERSION) {
-		p.error('Version', `Unsupported version "${version}", expected "${FORMAT_VERSION}"`);
+	if (version !== FORMAT_VERSION && version !== LEGACY_FORMAT_VERSION) {
+		p.error(
+			'Version',
+			isNewerVersion(version)
+				? `The file was written by a newer version of CashGuard (format "${version}"). Update the app (restart it) to open it.`
+				: `Unsupported version "${version}", expected "${FORMAT_VERSION}"`,
+		);
 		return failed();
 	}
+	p.legacy = version === LEGACY_FORMAT_VERSION;
 	p.object(root, '', ['Version', 'Categories', 'Accounts', 'Transactions']);
 
 	const categories = p.array(root, 'Categories', '').map((value, i) => p.category(value, `Categories[${i}]`));
@@ -166,11 +186,31 @@ export function parseCashGuard(content: string): ParseResult {
 
 	if (p.errors.length > 0) return failed();
 	const valid = <T>(items: (T | null)[]): T[] => items.filter((item) => item !== null);
+	const parsedAccounts = valid(accounts);
+	const ids = p.legacy ? legacyAccountIds(parsedAccounts.map((a) => a.name)) : parsedAccounts.map((a) => a.id!);
+	// (derived ids can't repeat for valid names, short of a 64-bit hash collision)
+	if (new Set(ids).size !== ids.length) {
+		p.error('Accounts', 'Two accounts got the same id from their names; rename one of them in the other CashGuard client, then open the file again');
+		return failed();
+	}
 	return {
 		ok: true,
-		data: { categories: valid(categories), accounts: valid(accounts), transactions: sortNewestFirst(valid(transactions)) },
+		data: {
+			categories: valid(categories),
+			accounts: parsedAccounts.map((a, i) => ({ ...a, id: ids[i]! })),
+			transactions: sortNewestFirst(valid(transactions)),
+		},
 		warnings: p.warnings,
 	};
+}
+
+/** Whether a version string like "cgt_1.2.3" is later than `FORMAT_VERSION` */
+function isNewerVersion(version: string): boolean {
+	const parts = (v: string) => /^cgt_(\d+)\.(\d+)\.(\d+)$/.exec(v)?.slice(1).map(Number);
+	const [theirs, ours] = [parts(version), parts(FORMAT_VERSION)!];
+	if (!theirs) return false;
+	for (let i = 0; i < 3; i++) if (theirs[i] !== ours[i]) return theirs[i]! > ours[i]!;
+	return false;
 }
 
 // ------------------------------------------------------------------------------------- writing
@@ -222,7 +262,7 @@ export function serializeCashGuard(data: CashGuardData): string {
 			Categories: data.categories
 				.filter((c) => c.id !== NO_CATEGORY)
 				.map((c) => ({ ID: c.id, Name: c.name, Color: c.color.toUpperCase() })),
-			Accounts: data.accounts.map((a) => ({ Name: a.name, Amount: formatAmount(a.amount), Edited: formatFileDateTime(a.edited) })),
+			Accounts: data.accounts.map((a) => ({ ID: a.id, Name: a.name, Amount: formatAmount(a.amount), Edited: formatFileDateTime(a.edited) })),
 			Transactions: sortNewestFirst(data.transactions.map(normalizeGroup)).map(transactionToJson),
 		},
 		'',

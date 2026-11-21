@@ -83,7 +83,7 @@ function generator(seed: number, usedIds = new Set<string>()) {
 	const accountAmount = (): Cents => cents(pick([Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER, int(-1e12, 1e12)]));
 	const color = (): string => '#' + Array.from({ length: 8 }, () => pick([...'0123456789ABCDEF'])).join('');
 	const category = (): Category => ({ id: id(), name: text(), color: color() });
-	const account = (): Account => ({ name: pick([text(), 'Bank', 'Cash']), amount: accountAmount(), edited: timestamp() });
+	const account = (): Account => ({ id: id(), name: pick([text(), 'Bank', 'Cash']), amount: accountAmount(), edited: timestamp() });
 
 	const transaction = (categoryIds: readonly Id[], sameDateAs?: Transaction): Transaction => {
 		const added = timestamp();

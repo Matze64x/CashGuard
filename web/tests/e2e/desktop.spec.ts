@@ -8,6 +8,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { FORMAT_VERSION } from '../../src/core/format';
 
 const FIXTURE = readFileSync(fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta.url)), 'utf8');
 const PATH = '/home/user/Sync/cashguard.json';
@@ -105,7 +106,7 @@ const fakeState = (page: Page) => page.evaluate(() => JSON.parse(JSON.stringify(
 const transactionsOnDisk = async (page: Page, path = PATH) => JSON.parse((await fakeState(page)).disk[path] ?? '{"Transactions":[]}').Transactions.length;
 
 const RENAME = `const doc = JSON.parse(fake.disk[arg]); doc.Transactions[0].Description = 'Renamed in the C++ client'; fake.disk[arg] = JSON.stringify(doc);`;
-const EMPTY = `fake.disk[arg] = JSON.stringify({ Version: 'cgt_0.4.0', Categories: [], Accounts: [], Transactions: [] });`;
+const EMPTY = `fake.disk[arg] = JSON.stringify({ Version: '${FORMAT_VERSION}', Categories: [], Accounts: [], Transactions: [] });`;
 
 async function openLinkedFile(page: Page) {
 	await page.getByRole('button', { name: 'Open file…' }).click();
@@ -173,7 +174,7 @@ test('replacing the file never overwrites a change that arrived meanwhile', asyn
 
 test('a damaged file is reported after a retry, and can be replaced', async ({ page }) => {
 	await openLinkedFile(page);
-	await onFake(page, `fake.disk[arg] = '{ "Version": "cgt_0.4.0", "Transa';`, PATH, true);
+	await onFake(page, `fake.disk[arg] = '{ "Version": "${FORMAT_VERSION}", "Transa';`, PATH, true);
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toContainText("The file can't be read");
 	await dialog.getByRole('button', { name: 'Replace it with my data' }).click();

@@ -459,6 +459,7 @@ void AccountsDialog::draw(AccountModel& account_model)
 	if (ImGui::Button("Add##AccountsDialog"))
 	{
 		Account new_account;
+		new_account.id = account_model.new_id();
 		new_account.edited = Clock::now();
 		account_model.add(new_account);
 	}
