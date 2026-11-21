@@ -8,6 +8,7 @@
 	import ExploreView from './lib/ExploreView.svelte';
 	import ImportDialog from './lib/ImportDialog.svelte';
 	import { notices } from './lib/notices.svelte';
+	import { SyncManager } from './lib/sync-manager.svelte';
 	import SettingsDialog from './lib/SettingsDialog.svelte';
 	import { displayKeys, shortcuts } from './lib/shortcuts.svelte';
 	import TransactionsView from './lib/TransactionsView.svelte';
@@ -22,6 +23,8 @@
 	let section = $state<(typeof SECTIONS)[number]['id']>('transactions');
 
 	const workspace = new Workspace();
+	// end-to-end tests drive the sync through this (dev builds only; removed from production builds)
+	if (import.meta.env.DEV) Object.assign(window, { __cashguardTest: { workspace, SyncManager, notices } });
 	let loadError = $state<string | null>(null);
 	$effect(() => {
 		const stop = workspace.start().catch((e: unknown) => {

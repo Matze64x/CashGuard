@@ -1,5 +1,8 @@
 /** Persists the workspace in the browser (IndexedDB), as file-format text. */
-import { get, set } from 'idb-keyval';
+import { createStore, del, get, promisifyRequest } from 'idb-keyval';
+
+// idb-keyval's default database and store, opened explicitly to write several keys in one transaction
+const store = createStore('keyval-store', 'keyval');
 
 export interface StoredSnapshot {
 	readonly working: string;
@@ -18,14 +21,42 @@ const KEY = 'cashguard-workspace-v2';
 // only told about saves of other tabs (a second channel object in the same tab would hear them).
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('cashguard-workspace');
 
-export async function loadWorkspace(): Promise<StoredWorkspace | undefined> {
-	return get<StoredWorkspace>(KEY);
+/** The data last agreed on with another device (see `core/peer-sync.ts`), as file-format text */
+export interface StoredBaseText {
+	readonly text: string;
+	readonly hash: string;
 }
 
-/** Saves and tells other open tabs of the app, so they reload instead of overwriting it later. */
-export async function saveWorkspace(workspace: StoredWorkspace): Promise<void> {
-	await set(KEY, workspace);
+const baseKey = (peer: string) => `cashguard-base-v1:${peer}`;
+
+export async function loadWorkspace(): Promise<StoredWorkspace | undefined> {
+	return get<StoredWorkspace>(KEY, store);
+}
+
+export async function loadBase(peer: string): Promise<StoredBaseText | undefined> {
+	return get<StoredBaseText>(baseKey(peer), store);
+}
+
+/**
+ * Saves the workspace and, if given, another device's base (null: delete it) in one transaction:
+ * either both are saved or neither. Tells other open tabs, so they reload instead of overwriting
+ * it later.
+ */
+export async function saveWorkspace(workspace: StoredWorkspace, base?: { peer: string; value: StoredBaseText | null }): Promise<void> {
+	await store('readwrite', (s) => {
+		s.put(workspace, KEY);
+		if (base) {
+			if (base.value) s.put(base.value, baseKey(base.peer));
+			else s.delete(baseKey(base.peer));
+		}
+		return promisifyRequest(s.transaction);
+	});
 	channel?.postMessage('saved');
+}
+
+/** Forgets another device's base (when it's unpaired). */
+export async function deleteBase(peer: string): Promise<void> {
+	await del(baseKey(peer), store);
 }
 
 /** Calls `onChange` when another tab saved the workspace. Returns a function to stop listening. */

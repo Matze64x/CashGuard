@@ -13,6 +13,7 @@
  */
 import {
 	EMPTY_DATA,
+	hashText,
 	nowUtcSeconds,
 	parseCashGuard,
 	planImport,
@@ -20,13 +21,15 @@ import {
 	type CashGuardData,
 	type ImportPlan,
 	type Issue,
+	type StoredBase,
+	type SyncStore,
 	type UtcSeconds,
 } from '../core';
 import * as desktop from './desktop';
 import { errorMessage } from './errors';
 import { saveFile } from './files';
 import { settings } from './settings.svelte';
-import { loadWorkspace, requestPersistentStorage, saveWorkspace, watchWorkspace, type StoredSnapshot } from './storage';
+import { deleteBase, loadBase, loadWorkspace, requestPersistentStorage, saveWorkspace, watchWorkspace, type StoredBaseText, type StoredSnapshot } from './storage';
 
 const DEFAULT_FILE_NAME = 'cashguard.json';
 /** How long the backup waits after a change, so a burst of edits writes it once */
@@ -88,7 +91,10 @@ interface UndoEntry {
 	readonly label: string;
 }
 
-export class Workspace {
+/** A change of the working copy: `peer` is the device a sync came from (null: an edit, an import, another tab) */
+export type ChangeListener = (peer: string | null) => void;
+
+export class Workspace implements SyncStore {
 	readonly isDesktop = desktop.isDesktop;
 
 	// $state.raw: snapshots are replaced as a whole, never mutated, so deep reactivity isn't needed
@@ -118,6 +124,9 @@ export class Workspace {
 	#backupTimer: ReturnType<typeof setTimeout> | undefined;
 	/** The working copy last written to the backup file (in memory: each start writes it once) */
 	#backedUp: CashGuardData | null = null;
+	/** The bases loaded so far (see `core/peer-sync.ts`), by peer; null: none stored */
+	#bases = new Map<string, StoredBase | null>();
+	#listeners = new Set<ChangeListener>();
 
 	/** Loads the stored data. Throws if storage is unavailable or the data is damaged. */
 	async load(): Promise<void> {
@@ -139,8 +148,13 @@ export class Workspace {
 		void requestPersistentStorage();
 		await this.load();
 		const stopWatchingTabs = watchWorkspace(() =>
-			this.load().then(() => {
+			this.#serial(async () => {
+				const before = this.#current.working;
+				await this.load();
+				// (another tab may have synced too)
+				this.#bases.clear();
 				this.revision++;
+				if (this.#current.working !== before) this.#emit(null);
 			}),
 		);
 		let stopWatchingClose = () => {};
@@ -312,6 +326,62 @@ export class Workspace {
 		await this.#commit({ ...this.#current, working }, null);
 	}
 
+	// ------------------------------------------------------------------ syncing with other devices
+
+	/** Calls `listener` after each change of the working copy. Returns a function to stop. */
+	onChange(listener: ChangeListener): () => void {
+		this.#listeners.add(listener);
+		return () => this.#listeners.delete(listener);
+	}
+
+	#emit(peer: string | null): void {
+		for (const listener of this.#listeners) listener(peer);
+	}
+
+	current(): CashGuardData {
+		return this.#current.working;
+	}
+
+	/** `SyncStore`: a sync's change of the working copy and the peer's base, saved in one transaction. */
+	transact<T>(peer: string, change: (working: CashGuardData, base: StoredBase | null) => { working: CashGuardData; base: StoredBase | null; value: T }): Promise<T> {
+		return this.#serial(async () => {
+			const base = await this.#base(peer);
+			const before = this.#current.working;
+			const result = change(before, base);
+			const workingChanged = result.working !== before;
+			const baseChanged = result.base !== base;
+			if (workingChanged || baseChanged) {
+				const stored: StoredBaseText | null = result.base && { text: serialize(result.base.data), hash: result.base.hash };
+				// a sync's change invalidates "undo import" like an edit does
+				await this.#commit({ ...this.#current, working: result.working }, workingChanged ? null : this.#beforeImport, baseChanged ? { peer, value: stored } : undefined, peer);
+				this.#bases.set(peer, result.base);
+			}
+			return result.value;
+		});
+	}
+
+	async #base(peer: string): Promise<StoredBase | null> {
+		const cached = this.#bases.get(peer);
+		if (cached !== undefined) return cached;
+		const stored = await loadBase(peer);
+		let base: StoredBase | null = null;
+		if (stored) {
+			const result = parseCashGuard(stored.text);
+			// a damaged or outdated base only means merging without one (nothing counts as deleted)
+			if (result.ok && hashText(stored.text) === stored.hash) base = { data: result.data, hash: stored.hash };
+		}
+		this.#bases.set(peer, base);
+		return base;
+	}
+
+	/** Forgets what was last agreed on with a device (it was unpaired). */
+	forgetPeer(peer: string): Promise<void> {
+		return this.#serial(async () => {
+			await deleteBase(peer);
+			this.#bases.delete(peer);
+		});
+	}
+
 	#serial<T>(task: () => Promise<T>): Promise<T> {
 		const run = this.#queue.then(task, task);
 		this.#queue = run.catch(() => undefined);
@@ -322,11 +392,14 @@ export class Workspace {
 	 * Saves and then shows a new state. `beforeImport` is what "Undo import" restores; any change
 	 * other than an import or export (e.g. editing) must pass null, so undo can't discard it.
 	 */
-	async #commit(next: Snapshot, beforeImport: Snapshot | null): Promise<void> {
-		await saveWorkspace({ current: toStored(next), beforeImport: beforeImport && toStored(beforeImport) });
+	async #commit(next: Snapshot, beforeImport: Snapshot | null, base?: { peer: string; value: StoredBaseText | null }, cause: string | null = null): Promise<void> {
+		await saveWorkspace({ current: toStored(next), beforeImport: beforeImport && toStored(beforeImport) }, base);
 		const changed = next.working !== this.#current.working;
 		this.#current = next;
 		this.#beforeImport = beforeImport;
-		if (changed) this.#scheduleBackup();
+		if (changed) {
+			this.#scheduleBackup();
+			this.#emit(cause);
+		}
 	}
 }
