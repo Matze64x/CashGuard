@@ -41,6 +41,12 @@ export async function chooseNewFile(): Promise<string | null> {
 	return path && !path.endsWith('.json') ? `${path}.json` : path;
 }
 
+/** Where the desktop app keeps its own data (working copy, settings, backups), and whether that's the portable folder. */
+export async function dataLocation(): Promise<{ path: string; portable: boolean } | null> {
+	const location = await invoke<[string, boolean] | null>('data_location', {});
+	return location && { path: location[0], portable: location[1] };
+}
+
 export function readFile(path: string): Promise<string> {
 	return invoke<string>('read_synced_file', { path });
 }

@@ -1,0 +1,81 @@
+# Builds the desktop app's packages, by hand only (Actions tab -> "Desktop builds" -> Run workflow).
+# The packages are attached to the run as artifacts (kept 30 days):
+#   Linux:   .deb, .AppImage, and the portable version (.tar.gz: AppImage + CashGuard-data folder)
+#   Windows: installer (-setup.exe, no admin rights needed), and the portable version (.zip:
+#            CashGuard.exe + CashGuard-data folder; needs the WebView2 runtime, which Windows 10
+#            and 11 have)
+# Windows packages are built here because Tauri can't fully build them on Linux.
+name: Desktop builds
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux packages
+    # the oldest supported Ubuntu: the AppImage then also runs on older distributions
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # from https://v2.tauri.app/start/prerequisites/ (Debian/Ubuntu)
+      - name: Install Tauri's system libraries
+        run: >-
+          sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file
+          libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: rustup update stable && rustup default stable
+      - run: npm ci
+        working-directory: web
+      - run: npm run tauri build -- --bundles deb,appimage
+        working-directory: web
+      - run: sh scripts/package-portable.sh
+        working-directory: web
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cashguard-linux
+          path: |
+            web/src-tauri/target/release/bundle/deb/*.deb
+            web/src-tauri/target/release/bundle/appimage/*.AppImage
+            web/src-tauri/target/release/bundle/portable/*.tar.gz
+          retention-days: 30
+
+  windows:
+    name: Windows packages
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: rustup update stable && rustup default stable
+      - run: npm ci
+        working-directory: web
+      - run: npm run tauri build -- --bundles nsis
+        working-directory: web
+      # the program alone runs too (Tauri links everything in); the folder next to it makes it portable
+      - name: Pack the portable version
+        shell: pwsh
+        working-directory: web
+        run: |
+          $version = node -p "require('./src-tauri/tauri.conf.json').version"
+          $dir = "src-tauri/target/release/bundle/portable/CashGuard_${version}_x64-portable"
+          New-Item -ItemType Directory -Force "$dir/CashGuard-data" | Out-Null
+          Copy-Item src-tauri/target/release/cashguard.exe "$dir/CashGuard.exe"
+          Copy-Item scripts/portable-readme.txt "$dir/CashGuard-data/README.txt"
+          Compress-Archive -Path $dir -DestinationPath "$dir.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cashguard-windows
+          path: |
+            web/src-tauri/target/release/bundle/nsis/*-setup.exe
+            web/src-tauri/target/release/bundle/portable/*.zip
+          retention-days: 30

@@ -17,6 +17,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::data_dir::DataDir;
+
 /// Event sent to the frontend when the watched file may have changed on disk.
 pub const CHANGED_EVENT: &str = "synced-file-changed";
 /// Error prefixes the frontend reacts to (the rest of the message is for humans).
@@ -156,12 +158,18 @@ pub fn read_synced_file(path: PathBuf) -> Result<String, String> {
 #[tauri::command(async)]
 pub fn write_synced_file(app: AppHandle, path: PathBuf, contents: String, expected: Option<String>) -> Result<(), String> {
     let expected = expected.as_deref().map_or(Expected::Missing, Expected::Content);
-    let backup_dir = app.path().app_data_dir().ok().map(|d| d.join("backups"));
+    let backup_dir = app.try_state::<DataDir>().map(|d| d.backups());
     write_atomic(&path, &contents, expected, backup_dir.as_deref()).map_err(|e| match e {
         WriteError::Changed => format!("{CHANGED_ERROR} {} changed on disk", path.display()),
         WriteError::Exists => format!("{EXISTS_ERROR} {} already exists", path.display()),
         WriteError::Io(e) => format!("Can't write {}: {e}", path.display()),
     })
+}
+
+/// Where the app keeps its own data, and whether that's the portable folder (for the settings).
+#[tauri::command]
+pub fn data_location(app: AppHandle) -> Option<(PathBuf, bool)> {
+    app.try_state::<DataDir>().map(|d| (d.path.clone(), d.portable))
 }
 
 #[tauri::command(async)]

@@ -63,6 +63,7 @@ async function installFakeTauri(page: Page) {
 					fake.writes.push(p);
 					fake.save();
 				},
+				data_location: () => ['/home/me/CashGuard-data', true],
 				watch_synced_file: ({ path }) => {
 					if (fake.failWatch) throw `Can't watch ${path}: No such file or directory`;
 				},
@@ -215,4 +216,10 @@ test('a file that disappeared is reported, and the app stays usable', async ({ p
 	await page.reload();
 	await expect(page.getByRole('alert')).toContainText("Can't watch");
 	await expect(page.getByRole('button', { name: 'Open file…' })).toBeEnabled();
+});
+
+test('the settings say where the app keeps its data', async ({ page }) => {
+	await page.getByRole('button', { name: 'Settings' }).click();
+	await expect(page.getByRole('dialog')).toContainText('Portable: the app keeps its data');
+	await expect(page.getByRole('dialog')).toContainText('/home/me/CashGuard-data');
 });
