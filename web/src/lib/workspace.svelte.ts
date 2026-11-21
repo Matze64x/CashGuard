@@ -292,7 +292,7 @@ export class Workspace {
 		if (!result.ok) return { ...source, ok: false, errors: result.errors };
 		const same = path === this.#current.filePath;
 		const { working } = from;
-		const nothingToCarry = !needsWrite(from) || working.transactions.length + working.categories.length + working.accounts.length === 0;
+		const nothingToCarry = !needsWrite(from) || working.transactions.length + working.categories.length + working.accounts.length + working.recurring.length === 0;
 		if (!same && nothingToCarry) {
 			await this.#serial(() => this.#commit({ sync: { working: result.data, base: result.data, exported: null }, fileName: source.fileName, filePath: path }, null));
 			await this.#watch(path);

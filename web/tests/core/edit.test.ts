@@ -30,7 +30,7 @@ import {
 import { randomDocument } from './random-data';
 
 const at = (seconds: number) => seconds as UtcSeconds;
-const empty: CashGuardData = { categories: [], accounts: [], transactions: [] };
+const empty: CashGuardData = { categories: [], accounts: [], recurring: [], transactions: [] };
 const draft = (fields: Partial<TransactionDraft> = {}): TransactionDraft => ({
 	date: '2026-03-01' as CivilDate,
 	description: 'Supermarket',
@@ -117,7 +117,7 @@ describe('categories and accounts', () => {
 		const renamed = updateCategory(data, id, { name: 'Groceries', color: '#00ff00ff' });
 		expect(renamed.categories).toEqual([{ id, name: 'Groceries', color: '#00FF00FF' }]);
 		const used = addTransaction(renamed, draft({ categoryId: id }), at(1)).data;
-		expect(categoryUsage(used).get(id)).toBe(1);
+		expect(categoryUsage(used).get(id)).toEqual({ transactions: 1, recurring: 0 });
 		expect(() => deleteCategory(used, id)).toThrow('used by 1 transaction');
 		expect(deleteCategory(renamed, id).categories).toEqual([]);
 	});

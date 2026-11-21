@@ -14,6 +14,7 @@ import {
 	type Cents,
 	type CivilDate,
 	type Id,
+	type Recurring,
 	type Transaction,
 	type UtcSeconds,
 } from '../../src/core';
@@ -105,7 +106,29 @@ function generator(seed: number, usedIds = new Set<string>()) {
 		return normalizeGroup({ ...base, edited: Math.max(base.edited, ...subs.map((x) => x.edited)) as UtcSeconds, subTransactions: subs });
 	};
 
-	return { rnd, int, pick, text, timestamp, amount, accountAmount, category, account, transaction, group };
+	const schedule = (): Recurring['schedule'] => {
+		const unit = pick(['month', 'week'] as const);
+		const days = [...new Set(Array.from({ length: int(1, 4) }, () => int(1, unit === 'month' ? 31 : 7)))].sort((a, b) => a - b);
+		return { unit, every: pick([1, 1, 2, 3, 12, int(1, 999)]), days };
+	};
+	const recurring = (categoryIds: readonly Id[], accountIds: readonly Id[]): Recurring => {
+		const [start, end, handled] = [date(), date(), date()];
+		return {
+			id: id(),
+			description: text(),
+			categoryId: pick(categoryIds),
+			amount: rnd() < 0.4 ? null : amount(),
+			// sometimes an account that doesn't exist (any more)
+			accountId: rnd() < 0.4 ? null : rnd() < 0.8 && accountIds.length > 0 ? pick(accountIds) : id(),
+			schedule: schedule(),
+			start,
+			end: rnd() < 0.6 || end < start ? null : end,
+			handled: rnd() < 0.3 ? null : handled,
+			edited: timestamp(),
+		};
+	};
+
+	return { rnd, int, pick, text, date, timestamp, amount, accountAmount, category, account, transaction, group, schedule, recurring };
 }
 
 export function randomDocument(seed: number): CashGuardData {
@@ -117,15 +140,17 @@ export function randomDocument(seed: number): CashGuardData {
 		const t = g.transaction(categoryIds, transactions[transactions.length - 1]);
 		transactions.push(g.rnd() < 0.2 ? g.group(categoryIds, t) : t);
 	}
+	const accounts = Array.from({ length: g.int(0, 5) }, g.account);
 	return {
 		categories,
-		accounts: Array.from({ length: g.int(0, 5) }, g.account),
+		accounts,
+		recurring: Array.from({ length: g.int(0, 4) }, () => g.recurring(categoryIds, accounts.map((a) => a.id))),
 		transactions: sortNewestFirst(transactions),
 	};
 }
 
-function usedCategories(transactions: readonly Transaction[]): Set<Id> {
-	return new Set(transactions.flatMap((t) => [t.categoryId, ...(t.subTransactions ?? []).map((s) => s.categoryId)]));
+function usedCategories(transactions: readonly Transaction[], recurring: readonly Recurring[]): Set<Id> {
+	return new Set([...transactions.flatMap((t) => [t.categoryId, ...(t.subTransactions ?? []).map((s) => s.categoryId)]), ...recurring.map((r) => r.categoryId)]);
 }
 
 /**
@@ -134,9 +159,14 @@ function usedCategories(transactions: readonly Transaction[]): Set<Id> {
  * particular, only unused categories are deleted, and every edit moves the `edited` time forward.
  */
 export function randomEdit(data: CashGuardData, seed: number): CashGuardData {
-	const usedIds = new Set<string>([...data.categories.map((c) => c.id), ...data.transactions.flatMap((t) => [t.id, ...(t.subTransactions ?? []).map((s) => s.id)])]);
+	const usedIds = new Set<string>([
+		...data.categories.map((c) => c.id),
+		...data.accounts.map((a) => a.id),
+		...data.recurring.map((r) => r.id),
+		...data.transactions.flatMap((t) => [t.id, ...(t.subTransactions ?? []).map((s) => s.id)]),
+	]);
 	const g = generator(seed, usedIds);
-	let { categories, accounts, transactions } = data;
+	let { categories, accounts, recurring, transactions } = data;
 	const categoryIds = () => [NO_CATEGORY, ...categories.map((c) => c.id)];
 	const lastSecond = Date.UTC(MAX_YEAR, 11, 31, 23, 59, 59) / 1000;
 	const later = (time: number): UtcSeconds => Math.min(time + g.int(1, 10 ** 6), lastSecond) as UtcSeconds;
@@ -151,7 +181,9 @@ export function randomEdit(data: CashGuardData, seed: number): CashGuardData {
 		const t = transactions[ti];
 		const subs = t?.subTransactions;
 		const si = g.int(0, (subs?.length ?? 0) - 1);
-		switch (g.int(0, 14)) {
+		const ri = g.int(0, recurring.length - 1);
+		const rec = recurring[ri];
+		switch (g.int(0, 18)) {
 			case 0:
 				transactions = [...transactions, g.transaction(categoryIds())];
 				break;
@@ -197,7 +229,7 @@ export function randomEdit(data: CashGuardData, seed: number): CashGuardData {
 				break;
 			}
 			case 11: {
-				const used = usedCategories(transactions);
+				const used = usedCategories(transactions, recurring);
 				const unused = categories.filter((c) => !used.has(c.id));
 				if (unused.length > 0) {
 					const victim = g.pick(unused);
@@ -220,7 +252,28 @@ export function randomEdit(data: CashGuardData, seed: number): CashGuardData {
 				if (a) accounts = g.rnd() < 0.5 ? removeAt(accounts, ai) : replaceAt(accounts, ai, { ...a, name: g.text(), edited: later(a.edited) });
 				break;
 			}
+			case 15:
+				recurring = [...recurring, g.recurring(categoryIds(), accounts.map((a) => a.id))];
+				break;
+			case 16: // change the template (its `edited` is the template's)
+				if (rec) {
+					const changed = g.pick([
+						{ description: g.text(), schedule: g.schedule() },
+						{ amount: g.rnd() < 0.5 ? null : g.amount() },
+						{ categoryId: g.pick(categoryIds()) },
+						{ accountId: g.rnd() < 0.5 ? null : (g.pick(accounts)?.id ?? null) },
+						{ start: g.date(), end: null },
+					]);
+					recurring = replaceAt(recurring, ri, { ...rec, ...changed, edited: later(rec.edited) });
+				}
+				break;
+			case 17: // handle occurrences (mostly forward; sometimes an undo goes back), without touching the template
+				if (rec) recurring = replaceAt(recurring, ri, { ...rec, handled: g.rnd() < 0.15 ? null : g.date() });
+				break;
+			case 18:
+				if (rec) recurring = removeAt(recurring, ri);
+				break;
 		}
 	}
-	return { categories, accounts, transactions: sortNewestFirst(transactions) };
+	return { categories, accounts, recurring, transactions: sortNewestFirst(transactions) };
 }

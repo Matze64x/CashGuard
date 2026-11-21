@@ -23,6 +23,7 @@ function doc(transaction: Record<string, unknown> = {}, extra: Record<string, un
 		Version: FORMAT_VERSION,
 		Categories: [{ ID: '7', Name: 'Food', Color: '#FF0000FF' }],
 		Accounts: [{ ID: '3', Name: 'Bank', Amount: '+1.00', Edited: '01.01.2026 10:00:00' }],
+		Recurring: [],
 		Transactions: [
 			{
 				ID: '1',
@@ -77,7 +78,7 @@ describe('round trip (byte-identical to the C++ client)', () => {
 	});
 
 	it('empty file is an empty database', () => {
-		expect(parsed('')).toEqual({ categories: [], accounts: [], transactions: [] });
+		expect(parsed('')).toEqual({ categories: [], accounts: [], recurring: [], transactions: [] });
 	});
 
 	it('sorts transactions newest first and recomputes group amounts', () => {
@@ -85,6 +86,7 @@ describe('round trip (byte-identical to the C++ client)', () => {
 			Version: FORMAT_VERSION,
 			Categories: [],
 			Accounts: [],
+			Recurring: [],
 			Transactions: [
 				{ ID: '5', Date: '01.01.2020', Category: '0', Amount: '+0.00', Description: 'old', Added: '01.01.2020 00:00:00', Edited: '01.01.2020 00:00:00' },
 				{
@@ -111,7 +113,7 @@ describe('validation', () => {
 	it('reports problems with their location instead of throwing', () => {
 		expect(errorsOf(parseCashGuard('{'))[0]).toMatch(/^: Not valid JSON/);
 		expect(errorsOf(parseCashGuard('[]'))).toEqual([': The file must contain a JSON object']);
-		expect(errorsOf(parseCashGuard(doc({}, { Version: 'cgt_0.3.0' })))).toEqual(['Version: Unsupported version "cgt_0.3.0", expected "cgt_0.5.0"']);
+		expect(errorsOf(parseCashGuard(doc({}, { Version: 'cgt_0.3.0' })))).toEqual(['Version: Unsupported version "cgt_0.3.0", expected "cgt_0.6.0"']);
 		expect(errorsOf(parseCashGuard(doc({}, { Version: 'cgt_0.10.0' })))).toEqual([
 			'Version: The file was written by a newer version of CashGuard (format "cgt_0.10.0"). Update the app (restart it) to open it.',
 		]);
@@ -169,7 +171,7 @@ describe('validation', () => {
 	it('reads files from before account ids: ids derived from the names, alike on every device', () => {
 		const account = { Name: 'Bank', Amount: '+1.00', Edited: '01.01.2026 10:00:00' };
 		const accounts = [account, { ...account, Name: 'Café 💶' }, { ...account, Amount: '+2.00' }];
-		const legacy = parsed(doc({}, { Version: LEGACY_FORMAT_VERSION, Accounts: accounts }));
+		const legacy = parsed(doc({}, { Version: LEGACY_FORMAT_VERSION, Accounts: accounts, Recurring: undefined }));
 		// FNV-1a 64 of "Bank", "Café 💶" and the second "Bank" ("Bank", NUL, "1"); the C++ client agrees (conformance test)
 		expect(legacy.accounts.map((a) => [a.id, a.name, a.amount])).toEqual([
 			['13925658533498293399', 'Bank', 100],
@@ -179,13 +181,57 @@ describe('validation', () => {
 		// written in the current version, with the ids
 		expect(serializeCashGuard(legacy)).toContain(`"Version": "${FORMAT_VERSION}"`);
 		expect(parsed(serializeCashGuard(legacy))).toEqual(legacy);
-		// the legacy fixture (repeated, empty and unicode names), upgraded; the C++ client upgrades it alike
-		const fixture = readFileSync(`${FIXTURES}/legacy/accounts-0.4.0.json`, 'utf8');
-		expect(serializeCashGuard(parsed(fixture))).toBe(readFileSync(`${FIXTURES}/legacy/accounts-0.4.0.upgraded.json`, 'utf8'));
 		// an id in a legacy file is ignored
-		expect(parseCashGuard(doc({}, { Version: LEGACY_FORMAT_VERSION, Accounts: [{ ...account, ID: '3' }] })).warnings).toEqual([
+		expect(parseCashGuard(doc({}, { Version: LEGACY_FORMAT_VERSION, Accounts: [{ ...account, ID: '3' }], Recurring: undefined })).warnings).toEqual([
 			{ path: 'Accounts[0].ID', message: 'Ignored: in files of version cgt_0.4.0, account ids come from the names' },
 		]);
+	});
+
+	// (the C++ client upgrades them alike: conformance test)
+	it.each(readdirSync(`${FIXTURES}/legacy`).filter((name) => name.endsWith('.json') && !name.endsWith('.upgraded.json')))('upgrades the older version in legacy/%s', (name) => {
+		const upgraded = readFileSync(`${FIXTURES}/legacy/${name.replace(/\.json$/, '.upgraded.json')}`, 'utf8');
+		expect(serializeCashGuard(parsed(readFileSync(`${FIXTURES}/legacy/${name}`, 'utf8')))).toBe(upgraded);
+	});
+
+	it('reads files from before recurring transactions', () => {
+		const before = parsed(doc({}, { Version: 'cgt_0.5.0', Recurring: undefined }));
+		expect(before.recurring).toEqual([]);
+		expect(serializeCashGuard(before)).toContain('"Recurring": []');
+		expect(parseCashGuard(doc({}, { Version: 'cgt_0.5.0' })).warnings.map((w) => w.path)).toEqual(['Recurring']);
+		expect(errorsOf(parseCashGuard(doc({}, { Recurring: undefined })))).toEqual(['Recurring: Missing']);
+	});
+
+	it('reads and checks recurring transactions', () => {
+		const template = {
+			ID: '9', Description: 'Savings plan', Category: '7', Amount: '', Account: '', Every: '1', Unit: 'month', Days: '1,8,15,22',
+			Start: '01.12.2026', End: '', Handled: '', Edited: '01.01.2026 10:00:00',
+		};
+		const one = (changes: Record<string, unknown>) => doc({}, { Recurring: [{ ...template, ...changes }] });
+		expect(parsed(one({})).recurring).toEqual([
+			{
+				id: '9', description: 'Savings plan', categoryId: '7', amount: null, accountId: null, schedule: { unit: 'month', every: 1, days: [1, 8, 15, 22] },
+				start: '2026-12-01', end: null, handled: null, edited: Date.UTC(2026, 0, 1, 10) / 1000,
+			},
+		]);
+		expect(parsed(one({ Amount: '-50.00', Account: '3', Unit: 'week', Days: '1,7', Every: '2', End: '31.12.2027', Handled: '07.12.2026' })).recurring[0]).toMatchObject({
+			amount: -5000, accountId: '3', schedule: { unit: 'week', every: 2, days: [1, 7] }, end: '2027-12-31', handled: '2026-12-07',
+		});
+		expect(errorsOf(parseCashGuard(one({ Days: '8,1' })))).toEqual(['Recurring[0].Days: Invalid days (expected e.g. "1,15", 1–31, ascending): "8,1"']);
+		expect(errorsOf(parseCashGuard(one({ Days: '1,1' })))).toHaveLength(1);
+		expect(errorsOf(parseCashGuard(one({ Days: '32' })))).toHaveLength(1);
+		expect(errorsOf(parseCashGuard(one({ Unit: 'week', Days: '8' })))).toEqual(['Recurring[0].Days: Invalid weekdays (expected e.g. "1,5", 1 = Monday … 7 = Sunday, ascending): "8"']);
+		expect(errorsOf(parseCashGuard(one({ Unit: 'day' })))).toEqual(['Recurring[0].Unit: Invalid unit (expected month or week): "day"']);
+		expect(errorsOf(parseCashGuard(one({ Every: '0' })))).toHaveLength(1);
+		expect(errorsOf(parseCashGuard(one({ Every: '1000' })))).toHaveLength(1);
+		expect(errorsOf(parseCashGuard(one({ End: '30.11.2026' })))).toEqual(['Recurring[0].End: Must not be before the start']);
+		expect(errorsOf(parseCashGuard(one({ Amount: 'x' })))).toEqual(['Recurring[0].Amount: Invalid amount (or empty: asked each time): "x"']);
+		expect(errorsOf(parseCashGuard(one({ Start: '' })))).toHaveLength(1);
+		expect(errorsOf(parseCashGuard(one({ Handled: undefined })))).toEqual(['Recurring[0].Handled: Missing']);
+		expect(errorsOf(parseCashGuard(doc({}, { Recurring: [template, template] })))).toEqual(['Recurring[1].ID: Duplicate recurring transaction id 9']);
+		// a category deleted meanwhile (e.g. in the C++ client, which doesn't know templates): no category
+		const orphan = parseCashGuard(one({ Category: '8' }));
+		expect(orphan.ok && orphan.data.recurring[0]!.categoryId).toBe(NO_CATEGORY);
+		expect(orphan.warnings).toEqual([{ path: 'Recurring[0].Category', message: 'Unknown category id 8; it will use no category' }]);
 	});
 
 	it('rejects nested groups and the reserved category id 0', () => {
@@ -200,8 +246,8 @@ describe('validation', () => {
 	});
 
 	it('warns about unknown keys (they are dropped on save)', () => {
-		const result = parseCashGuard(doc({ Note: 'hi' }, { Recurring: [] }));
+		const result = parseCashGuard(doc({ Note: 'hi' }, { Budgets: [] }));
 		expect(result.ok).toBe(true);
-		expect(result.warnings.map((w) => w.path)).toEqual(['Recurring', 'Transactions[0].Note']);
+		expect(result.warnings.map((w) => w.path)).toEqual(['Budgets', 'Transactions[0].Note']);
 	});
 });

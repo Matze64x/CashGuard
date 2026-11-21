@@ -23,7 +23,7 @@ export interface SyncState {
 	readonly exported: CashGuardData | null;
 }
 
-export const EMPTY_DATA: CashGuardData = Object.freeze({ categories: [], accounts: [], transactions: [] });
+export const EMPTY_DATA: CashGuardData = Object.freeze({ categories: [], accounts: [], recurring: [], transactions: [] });
 
 export const INITIAL_SYNC_STATE: SyncState = Object.freeze({ working: EMPTY_DATA, base: null, exported: null });
 
@@ -43,6 +43,7 @@ function keyed(data: CashGuardData) {
 		transactions: byKey(RECORD_KEYS.transactions, data.transactions),
 		categories: byKey(RECORD_KEYS.categories, data.categories),
 		accounts: byKey(RECORD_KEYS.accounts, data.accounts),
+		recurring: byKey(RECORD_KEYS.recurring, data.recurring),
 	} as const satisfies { [K in keyof typeof RECORD_KEYS]: Map<string, unknown> };
 }
 
@@ -54,7 +55,12 @@ export function summarizeChanges(before: CashGuardData | null, after: CashGuardD
 		changed: [...am].filter(([k, r]) => bm.has(k) && !deepEqual(bm.get(k), r)).length,
 		deleted: [...bm.keys()].filter((k) => !am.has(k)).length,
 	});
-	return { transactions: count(b.transactions, a.transactions), categories: count(b.categories, a.categories), accounts: count(b.accounts, a.accounts) };
+	return {
+		transactions: count(b.transactions, a.transactions),
+		categories: count(b.categories, a.categories),
+		accounts: count(b.accounts, a.accounts),
+		recurring: count(b.recurring, a.recurring),
+	};
 }
 
 export function totalChanges(summary: ChangeSummary): number {
@@ -95,7 +101,7 @@ export interface ImportPlan {
 
 function importWarnings(state: SyncState, theirs: CashGuardData, changes: ChangeSummary): ImportWarning[] {
 	const warnings: ImportWarning[] = [];
-	const total = (d: CashGuardData) => d.transactions.length + d.categories.length + d.accounts.length;
+	const total = (d: CashGuardData) => d.transactions.length + d.categories.length + d.accounts.length + d.recurring.length;
 	if (total(theirs) === 0 && total(state.working) > 0) warnings.push('empty-file');
 	else if (state.base && state.base.transactions.length > 0) {
 		const known = new Set(state.base.transactions.map((t) => t.id));
@@ -134,8 +140,7 @@ export type FileSyncPlan =
 export function planFileSync(state: SyncState, file: CashGuardData): FileSyncPlan {
 	if (state.base && deepEqual(file, state.base)) return deepEqual(state.working, state.base) ? { kind: 'unchanged' } : { kind: 'write' };
 	const plan = planImport(state, file);
-	const { transactions, categories, accounts } = plan.merge.conflicts;
-	const automatic = plan.warnings.length === 0 && transactions.length + categories.length + accounts.length === 0;
+	const automatic = plan.warnings.length === 0 && Object.values(plan.merge.conflicts).every((list) => list.length === 0);
 	return { kind: 'import', plan, automatic };
 }
 

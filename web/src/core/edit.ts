@@ -134,18 +134,33 @@ export function updateCategory(data: CashGuardData, id: Id, changes: Partial<Pic
 	return { ...data, categories: data.categories.map((c) => (c === old ? updated : c)) };
 }
 
-/** How many transactions (including sub-transactions) use each category. */
-export function categoryUsage(data: CashGuardData): Map<Id, number> {
-	const usage = new Map<Id, number>();
-	for (const t of data.transactions) {
-		for (const x of [t, ...(t.subTransactions ?? [])]) usage.set(x.categoryId, (usage.get(x.categoryId) ?? 0) + 1);
-	}
+export interface CategoryUse {
+	/** Transactions, including sub-transactions */
+	readonly transactions: number;
+	readonly recurring: number;
+}
+
+/** How many transactions and recurring transactions use each category (only used ones are listed). */
+export function categoryUsage(data: CashGuardData): Map<Id, CategoryUse> {
+	const usage = new Map<Id, CategoryUse>();
+	const count = (id: Id, kind: keyof CategoryUse) => {
+		const use = usage.get(id) ?? { transactions: 0, recurring: 0 };
+		usage.set(id, { ...use, [kind]: use[kind] + 1 });
+	};
+	for (const t of data.transactions) for (const x of [t, ...(t.subTransactions ?? [])]) count(x.categoryId, 'transactions');
+	for (const r of data.recurring) count(r.categoryId, 'recurring');
 	return usage;
 }
 
+/** "3 transactions and 1 recurring transaction" */
+export function describeUse({ transactions, recurring }: CategoryUse): string {
+	const n = (count: number, what: string) => `${count} ${what}${count === 1 ? '' : 's'}`;
+	return [transactions > 0 && n(transactions, 'transaction'), recurring > 0 && n(recurring, 'recurring transaction')].filter(Boolean).join(' and ');
+}
+
 export function deleteCategory(data: CashGuardData, id: Id): CashGuardData {
-	const used = categoryUsage(data).get(id) ?? 0;
-	if (used > 0) throw new EditError(`The category is used by ${used} transaction${used === 1 ? '' : 's'}`);
+	const use = categoryUsage(data).get(id);
+	if (use) throw new EditError(`The category is used by ${describeUse(use)}`);
 	return { ...data, categories: data.categories.filter((c) => c.id !== id) };
 }
 

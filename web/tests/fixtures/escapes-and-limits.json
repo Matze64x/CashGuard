@@ -1,5 +1,5 @@
 {
-    "Version": "cgt_0.5.0",
+    "Version": "cgt_0.6.0",
     "Categories": [
         {
             "ID": "42",
@@ -21,6 +21,7 @@
             "Edited": "01.01.1678 00:00:00"
         }
     ],
+    "Recurring": [],
     "Transactions": [
         {
             "ID": "5",

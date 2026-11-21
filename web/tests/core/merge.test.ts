@@ -14,6 +14,7 @@ import {
 	type ConflictReason,
 	type Id,
 	type MergeResult,
+	type Recurring,
 	type Transaction,
 	type UtcSeconds,
 } from '../../src/core';
@@ -38,16 +39,35 @@ function tx(id: string, fields: { amount?: number; edited?: number; category?: s
 const cat = (id: string, name = `c${id}`): Category => ({ id: id as Id, name, color: '#000000FF' });
 /** An account; its id is its name unless given */
 const acc = (name: string, amount: number, edited = 0, id = name): Account => ({ id: id as Id, name, amount: cents(amount), edited: edited as UtcSeconds });
-const data = (fields: { t?: Transaction[]; c?: Category[]; a?: Account[] } = {}): CashGuardData => ({
+/** A recurring transaction: monthly on the 1st, handled through `handled` (a day in 2026-01) */
+const rec = (id: string, fields: Partial<Omit<Recurring, 'handled'>> & { handled?: number | null } = {}): Recurring => {
+	const { handled = null, ...rest } = fields;
+	return {
+		id: id as Id,
+		description: `r${id}`,
+		categoryId: NO_CATEGORY,
+		amount: null,
+		accountId: null,
+		schedule: { unit: 'month', every: 1, days: [1] },
+		start: '2026-01-01' as CivilDate,
+		end: null,
+		edited: 0 as UtcSeconds,
+		...rest,
+		handled: handled === null ? null : (`2026-01-${String(handled).padStart(2, '0')}` as CivilDate),
+	};
+};
+const data = (fields: { t?: Transaction[]; c?: Category[]; a?: Account[]; r?: Recurring[] } = {}): CashGuardData => ({
 	transactions: sortNewestFirst(fields.t ?? []),
 	categories: fields.c ?? [],
 	accounts: fields.a ?? [],
+	recurring: fields.r ?? [],
 });
 
 /** "key:reason" for every conflict, to compare compactly */
 function conflictSummary(result: MergeResult): string[] {
-	const { transactions, categories, accounts } = result.conflicts;
-	return [...transactions, ...categories, ...accounts].map((c) => `${c.key}:${c.reason}`);
+	return Object.values(result.conflicts)
+		.flat()
+		.map((c) => `${c.key}:${c.reason}`);
 }
 
 interface Scenario {
@@ -273,6 +293,65 @@ const scenarios: Scenario[] = [
 		conflicts: ['Bank:changed-on-both-sides'],
 	},
 	{
+		name: 'recurring: handled further on both sides -> the later',
+		base: data({ r: [rec('5', { handled: 1 })] }),
+		ours: data({ r: [rec('5', { handled: 8 })] }),
+		theirs: data({ r: [rec('5', { handled: 15 })] }),
+		expected: data({ r: [rec('5', { handled: 15 })] }),
+	},
+	{
+		name: 'recurring: a changed template on one side and handled occurrences on the other -> both kept',
+		base: data({ r: [rec('5')] }),
+		ours: data({ r: [rec('5', { amount: cents(-500), edited: 1 as UtcSeconds })] }),
+		theirs: data({ r: [rec('5', { handled: 1 })] }),
+		expected: data({ r: [rec('5', { amount: cents(-500), handled: 1, edited: 1 as UtcSeconds })] }),
+	},
+	{
+		name: 'recurring: an undone occurrence on one side is kept, also when the other side changed the template',
+		base: data({ r: [rec('5', { handled: 10 })] }),
+		ours: data({ r: [rec('5', { handled: 5 })] }),
+		theirs: data({ r: [rec('5', { description: 'Flat', handled: 10, edited: 2 as UtcSeconds })] }),
+		expected: data({ r: [rec('5', { description: 'Flat', handled: 5, edited: 2 as UtcSeconds })] }),
+	},
+	{
+		name: 'recurring: changed differently on both sides -> the newer template wins, handled merges on its own',
+		base: data({ r: [rec('5')] }),
+		ours: data({ r: [rec('5', { description: 'Rent', handled: 8, edited: 1 as UtcSeconds })] }),
+		theirs: data({ r: [rec('5', { description: 'Flat', edited: 2 as UtcSeconds })] }),
+		expected: data({ r: [rec('5', { description: 'Flat', handled: 8, edited: 2 as UtcSeconds })] }),
+		conflicts: ['5:changed-on-both-sides'],
+	},
+	{
+		name: 'recurring: deleted on one side, only handled on the other -> deleted',
+		base: data({ r: [rec('5', { handled: 1 })] }),
+		ours: data({ r: [] }),
+		theirs: data({ r: [rec('5', { handled: 8 })] }),
+		expected: data({ r: [] }),
+	},
+	{
+		name: 'recurring: deleted on one side, template changed on the other -> the change is kept',
+		base: data({ r: [rec('5')] }),
+		ours: data({ r: [] }),
+		theirs: data({ r: [rec('5', { description: 'Flat', edited: 2 as UtcSeconds })] }),
+		expected: data({ r: [rec('5', { description: 'Flat', edited: 2 as UtcSeconds })] }),
+		conflicts: ['5:deleted-and-changed'],
+	},
+	{
+		name: 'recurring: no common base, the same template handled differently -> the later, no conflict',
+		base: null,
+		ours: data({ r: [rec('5', { handled: 8 })] }),
+		theirs: data({ r: [rec('5', { handled: 1 })] }),
+		expected: data({ r: [rec('5', { handled: 8 })] }),
+	},
+	{
+		name: 'recurring: a category deleted on one side but used by a template on the other is restored',
+		base: data({ c: [cat('7')] }),
+		ours: data({ c: [] }),
+		theirs: data({ c: [cat('7')], r: [rec('5', { categoryId: '7' as Id })] }),
+		expected: data({ c: [cat('7')], r: [rec('5', { categoryId: '7' as Id })] }),
+		conflicts: ['7:deleted-category-in-use'],
+	},
+	{
 		name: 'accounts: a rename alone is kept',
 		base: BASE,
 		ours: variant({ a: [acc('Checking', 100, 0, 'Bank')] }),
@@ -373,10 +452,11 @@ describe('merge properties (random documents and edits)', () => {
 		for (const { base, ours, theirs } of cases) {
 			for (const [changing, other] of [[ours, theirs], [theirs, ours]] as const) {
 				const { data: m, conflicts } = merge(base, ours, theirs);
-				const keys = new Set([...conflicts.transactions, ...conflicts.categories, ...conflicts.accounts].map((c) => c.key));
+				const keys = new Set(Object.values(conflicts).flatMap((list: readonly { key: string }[]) => list.map((c) => c.key)));
 				check((t: Transaction) => t.id, base.transactions, changing.transactions, other.transactions, m.transactions, keys);
 				check((c: Category) => c.id, base.categories, changing.categories, other.categories, m.categories, keys);
 				check((a: Account) => a.id, base.accounts, changing.accounts, other.accounts, m.accounts, keys);
+				check((r: Recurring) => r.id, base.recurring, changing.recurring, other.recurring, m.recurring, keys);
 			}
 		}
 	});
@@ -425,7 +505,31 @@ describe('merge properties (random documents and edits)', () => {
 				expect(m.accounts).toContainEqual(c.kept);
 				expect([c.ours, c.theirs]).toContainEqual(c.kept);
 			}
+			// a recurring transaction's template comes from one side; how far it's handled merges on its own
+			const template = (r: Recurring | undefined) => r && { ...r, handled: null };
+			for (const c of conflicts.recurring) {
+				expect(m.recurring).toContainEqual(c.kept);
+				expect([c.ours, c.theirs].map(template)).toContainEqual(template(c.kept));
+			}
 		}
+	});
+
+	it('how far a recurring transaction is handled: one side’s change is kept, else the later of both', () => {
+		let checked = 0;
+		for (const { base, ours, theirs } of cases) {
+			const { data: m } = merge(base, ours, theirs);
+			const byId = (d: CashGuardData) => new Map(d.recurring.map((r) => [r.id, r]));
+			const [b, o, t] = [byId(base), byId(ours), byId(theirs)];
+			for (const r of m.recurring) {
+				const [vb, vo, vt] = [b.get(r.id), o.get(r.id), t.get(r.id)];
+				if (!vo || !vt) continue;
+				checked++;
+				const later = [vo.handled, vt.handled].reduce((x, y) => (x === null || (y !== null && y > x) ? y : x));
+				const expected = vb && vo.handled === vb.handled ? vt.handled : vb && vt.handled === vb.handled ? vo.handled : later;
+				expect(r.handled, r.id).toBe(expected);
+			}
+		}
+		expect(checked).toBeGreaterThan(100);
 	});
 
 	it('the merged data does not depend on which side merges (up to the order of categories and accounts)', () => {
@@ -433,6 +537,7 @@ describe('merge properties (random documents and edits)', () => {
 			transactions: d.transactions,
 			categories: d.categories.map(canonicalString).sort(),
 			accounts: d.accounts.map(canonicalString).sort(),
+			recurring: d.recurring.map(canonicalString).sort(),
 		});
 		for (const { base, ours, theirs } of cases) {
 			expect(canonical(merge(base, ours, theirs).data)).toEqual(canonical(merge(base, theirs, ours).data));

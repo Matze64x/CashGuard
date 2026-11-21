@@ -3,7 +3,7 @@
  * the C++ client byte-identically. Needs the C++ test binary (`ninja -C bDebug`); skipped otherwise.
  */
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { serializeCashGuard } from '../../src/core';
@@ -23,15 +23,17 @@ it.skipIf(!existsSync(CPP_TEST))('C++ client round-trips random documents writte
 	expect(result.stdout).toContain('300/300');
 });
 
-// files from before account ids: both clients must derive the same ids (see `legacyAccountIds`)
-it.skipIf(!existsSync(CPP_TEST))('C++ client upgrades a file from before account ids exactly like the web client', () => {
-	const legacy = fileURLToPath(new URL('../fixtures/legacy/accounts-0.4.0.json', import.meta.url));
-	const upgraded = fileURLToPath(new URL('../fixtures/legacy/accounts-0.4.0.upgraded.json', import.meta.url));
+// files of older versions: both clients must upgrade them alike (e.g. derive the same account ids,
+// see `legacyAccountIds`); each `legacy/<name>.json` has its upgrade in `legacy/<name>.upgraded.json`
+const LEGACY = fileURLToPath(new URL('../fixtures/legacy/', import.meta.url));
+const legacyFiles = readdirSync(LEGACY).filter((name) => name.endsWith('.json') && !name.endsWith('.upgraded.json'));
+
+it.skipIf(!existsSync(CPP_TEST)).each(legacyFiles)('C++ client upgrades %s exactly like the web client', (name) => {
 	const dir = `${OUTPUT}legacy/`;
 	rmSync(dir, { recursive: true, force: true });
 	mkdirSync(dir, { recursive: true });
-	copyFileSync(legacy, `${dir}accounts-0.4.0.json`);
+	copyFileSync(`${LEGACY}${name}`, `${dir}${name}`);
 	// (the C++ test reports a difference: the upgraded file isn't the old one; its saved copy is what counts)
-	spawnSync(CPP_TEST, ['accounts-0.4.0.json'], { cwd: dir, encoding: 'utf8' });
-	expect(readFileSync(`${dir}roundtrip_test_output/accounts-0.4.0.json`, 'utf8')).toBe(readFileSync(upgraded, 'utf8'));
+	spawnSync(CPP_TEST, [name], { cwd: dir, encoding: 'utf8' });
+	expect(readFileSync(`${dir}roundtrip_test_output/${name}`, 'utf8')).toBe(readFileSync(`${LEGACY}${name.replace(/\.json$/, '.upgraded.json')}`, 'utf8'));
 });

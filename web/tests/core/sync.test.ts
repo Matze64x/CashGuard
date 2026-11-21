@@ -30,7 +30,7 @@ const tx = (id: string, amount = -100, edited = 0): Transaction => ({
 	edited: edited as UtcSeconds,
 });
 const acc = (name: string, amount: number, id = name): Account => ({ id: id as Id, name, amount: cents(amount), edited: 0 as UtcSeconds });
-const data = (transactions: Transaction[], accounts: Account[] = []): CashGuardData => ({ categories: [], accounts, transactions: sortNewestFirst(transactions) });
+const data = (transactions: Transaction[], accounts: Account[] = []): CashGuardData => ({ categories: [], accounts, recurring: [], transactions: sortNewestFirst(transactions) });
 const ids = (d: CashGuardData) => d.transactions.map((t) => t.id).sort();
 
 /** The state after importing `file` into an empty app */
@@ -46,13 +46,14 @@ describe('summarizeChanges', () => {
 			transactions: { added: 1, changed: 1, deleted: 1 },
 			categories: { added: 0, changed: 0, deleted: 0 },
 			accounts: { added: 0, changed: 0, deleted: 1 },
+			recurring: { added: 0, changed: 0, deleted: 0 },
 		});
 		expect(totalChanges(summarizeChanges(before, after))).toBe(4);
 	});
 
 	it('counts everything as added without a previous version', () => {
 		const d = randomDocument(2);
-		expect(totalChanges(summarizeChanges(null, d))).toBe(d.transactions.length + d.categories.length + d.accounts.length);
+		expect(totalChanges(summarizeChanges(null, d))).toBe(d.transactions.length + d.categories.length + d.accounts.length + d.recurring.length);
 	});
 
 	it('finds no changes between equal versions', () => {

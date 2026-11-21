@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ChangeCounts, Conflict, ConflictReason, ImportWarning, Transaction } from '../core';
+	import type { ChangeCounts, ConflictReason, ImportWarning, MergeResult, Transaction } from '../core';
 	import { formatDate, formatEuro, plural } from './display';
 	import Modal from './ui/Modal.svelte';
 	import type { ImportCandidate } from './workspace.svelte';
@@ -47,19 +47,22 @@
 		return t.description ? `“${t.description}”` : `of ${formatDate(t.date)} (${formatEuro(t.amount)})`;
 	}
 
-	function conflictLines(conflicts: { transactions: readonly Conflict<Transaction>[]; categories: readonly Conflict<{ name: string }>[]; accounts: readonly Conflict<{ name: string }>[] }) {
+	function conflictLines(conflicts: MergeResult['conflicts']) {
 		return [
 			// for 'moved-into-group', `kept` is the group, so name the moved transaction itself
 			...conflicts.transactions.map((c) => `Transaction ${describeTransaction((c.reason === 'moved-into-group' ? (c.ours ?? c.theirs) : c.kept) ?? c.kept)} ${REASONS[c.reason]}`),
 			...conflicts.categories.map((c) => `Category “${c.kept.name}” ${REASONS[c.reason]}`),
 			...conflicts.accounts.map((c) => `Account “${c.kept.name}” ${REASONS[c.reason]}`),
+			...conflicts.recurring.map((c) => `Recurring transaction “${c.kept.description}” ${REASONS[c.reason]}`),
 		];
 	}
 
 	const changes = $derived.by(() => {
 		if (!candidate.ok) return [];
 		const c = candidate.plan.changes;
-		return [describe(c.transactions, 'Transactions'), describe(c.categories, 'Categories'), describe(c.accounts, 'Accounts')].filter((x) => x !== null);
+		return [describe(c.transactions, 'Transactions'), describe(c.categories, 'Categories'), describe(c.accounts, 'Accounts'), describe(c.recurring, 'Recurring transactions')].filter(
+			(x) => x !== null,
+		);
 	});
 	const conflicts = $derived(candidate.ok ? conflictLines(candidate.plan.merge.conflicts) : []);
 	const warnings = $derived(candidate.ok ? candidate.plan.warnings.map((w) => WARNINGS[w]) : []);

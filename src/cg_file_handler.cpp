@@ -10,9 +10,11 @@
 #include "util/log.hpp"
 #include "util/random_generator.hpp"
 
-const char* version_string = "cgt_0.5.0";
+const char* version_string = "cgt_0.6.0";
 // the version before account ids: still read, accounts get ids derived from their names
 const char* legacy_version_string = "cgt_0.4.0";
+// the version before recurring transactions: still read
+const char* before_recurring_version_string = "cgt_0.5.0";
 
 // The id an account of a legacy file gets: the 64-bit FNV-1a hash of its name's UTF-8 bytes (0 becomes
 // 1), the n-th repetition of a name (n >= 1) keyed as name, NUL, n. Must match `legacyAccountIds` in
@@ -77,6 +79,12 @@ bool CGFileHandler::load_from_file(const std::filesystem::path& file_path, Trans
 	transaction_model.dirty = false;
 	account_model.dirty = false;
 	category_model.dirty = false;
+	{
+		// a fresh document drops another file's, loaded before, with its memory (a pool that never frees)
+		rapidjson::Document fresh;
+		fresh.SetArray();
+		recurring.Swap(fresh);
+	}
 	if (file_content.size() == 0) return true;
 
 	rapidjson::Document doc;
@@ -91,10 +99,20 @@ bool CGFileHandler::load_from_file(const std::filesystem::path& file_path, Trans
 
 	const std::string version = doc["Version"].GetString();
 	const bool legacy = version == legacy_version_string;
-	if (version != version_string && !legacy)
+	const bool has_recurring = version == version_string;
+	if (!has_recurring && !legacy && version != before_recurring_version_string)
 	{
 		cglog::error("Unsupported version in file \"{}\"", file_path.string());
 		return false;
+	}
+	if (has_recurring)
+	{
+		if (!doc.HasMember("Recurring") || !doc["Recurring"].IsArray())
+		{
+			cglog::error("Missing recurring transactions in file \"{}\"", file_path.string());
+			return false;
+		}
+		recurring.CopyFrom(doc["Recurring"], recurring.GetAllocator());
 	}
 
 	std::set<uint64_t> ids;
@@ -231,6 +249,10 @@ bool CGFileHandler::save_to_file(const std::filesystem::path& file_path, const T
 		json_accounts.PushBack(json_object, allocator);
 	}
 	doc.AddMember("Accounts", json_accounts, allocator);
+
+	if (!recurring.IsArray()) recurring.SetArray(); // nothing loaded yet
+	rapidjson::Value json_recurring(recurring, allocator);
+	doc.AddMember("Recurring", json_recurring, allocator);
 
 	rapidjson::Value json_transactions;
 	json_transactions.SetArray();

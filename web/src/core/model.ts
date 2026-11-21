@@ -31,10 +31,41 @@ export interface Account {
 	readonly edited: UtcSeconds;
 }
 
+/**
+ * When a recurring transaction comes: every `every` months on the given days of the month (a day
+ * the month doesn't have means its last day), or every `every` weeks on the given weekdays (1 =
+ * Monday … 7 = Sunday), counted from the week of `start`. `days` is sorted and has no repeats.
+ */
+export interface Schedule {
+	readonly unit: 'month' | 'week';
+	readonly every: number;
+	readonly days: readonly number[];
+}
+
+/** A template for a transaction that comes again and again, e.g. rent or a savings plan */
+export interface Recurring {
+	readonly id: Id;
+	readonly description: string;
+	readonly categoryId: Id;
+	/** null: asked each time (e.g. a savings plan whose amount depends on the stock price) */
+	readonly amount: Cents | null;
+	/** The account whose balance confirming an occurrence updates; null: none. May name an account that was deleted since (then: none). */
+	readonly accountId: Id | null;
+	readonly schedule: Schedule;
+	/** The first day an occurrence can fall on */
+	readonly start: CivilDate;
+	/** The last day an occurrence can fall on; null: no end */
+	readonly end: CivilDate | null;
+	/** Occurrences up to and including this day are done (entered or skipped); null: none yet */
+	readonly handled: CivilDate | null;
+	readonly edited: UtcSeconds;
+}
+
 export interface CashGuardData {
 	/** Without the implicit "no category" (id 0). */
 	readonly categories: readonly Category[];
 	readonly accounts: readonly Account[];
+	readonly recurring: readonly Recurring[];
 	/** Sorted newest first, see `compareTransactions`. */
 	readonly transactions: readonly Transaction[];
 }

@@ -1,0 +1,71 @@
+{
+    "Version": "cgt_0.5.0",
+    "Categories": [
+        {
+            "ID": "42",
+            "Name": "Name with \"quotes\" and \\ and \u0007",
+            "Color": "#12AB34FF"
+        }
+    ],
+    "Accounts": [
+        {
+            "ID": "1480732465277196178",
+            "Name": "Konto\twith tab",
+            "Amount": "+90071992547409.91",
+            "Edited": "31.12.2261 23:59:59"
+        },
+        {
+            "ID": "14695981039346656037",
+            "Name": "",
+            "Amount": "-90071992547409.91",
+            "Edited": "01.01.1678 00:00:00"
+        }
+    ],
+    "Transactions": [
+        {
+            "ID": "5",
+            "Date": "31.12.2261",
+            "Category": "0",
+            "Amount": "-1.00",
+            "Description": "\u0001\u001F control characters",
+            "Added": "01.01.2026 10:00:00",
+            "Edited": "01.01.2026 10:00:00"
+        },
+        {
+            "ID": "4",
+            "Date": "01.01.2026",
+            "Category": "0",
+            "Amount": "-1.00",
+            "Description": "quote \" and backslash \\ and slash /",
+            "Added": "01.01.2026 10:00:00",
+            "Edited": "01.01.2026 10:00:00"
+        },
+        {
+            "ID": "3",
+            "Date": "29.02.2024",
+            "Category": "0",
+            "Amount": "-1.00",
+            "Description": "newline\nand tab\tand CR\r and \b and \f",
+            "Added": "01.01.2026 10:00:00",
+            "Edited": "01.01.2026 10:00:00"
+        },
+        {
+            "ID": "2",
+            "Date": "01.03.1700",
+            "Category": "0",
+            "Amount": "-1.00",
+            "Description": "DEL , line separator  , NBSP  ",
+            "Added": "01.01.2026 10:00:00",
+            "Edited": "01.01.2026 10:00:00"
+        },
+        {
+            "ID": "1",
+            "Date": "01.01.1678",
+            "Category": "0",
+            "Amount": "-1.00",
+            "Description": "Müsli 寿司 🍕 👨‍👩‍👧",
+            "Added": "01.01.2026 10:00:00",
+            "Edited": "01.01.2026 10:00:00"
+        }
+    ]
+}

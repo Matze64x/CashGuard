@@ -1,5 +1,5 @@
 {
-    "Version": "cgt_0.5.0",
+    "Version": "cgt_0.6.0",
     "Categories": [
         {
             "ID": "9429729637773252097",
@@ -121,6 +121,50 @@
             "Name": "Wallet (cash)",
             "Amount": "+105.71",
             "Edited": "04.10.2026 18:30:00"
+        }
+    ],
+    "Recurring": [
+        {
+            "ID": "7311468153170539201",
+            "Description": "Savings plan (ETF)",
+            "Category": "9429729637773252097",
+            "Amount": "",
+            "Account": "6438585235300372166",
+            "Every": "1",
+            "Unit": "month",
+            "Days": "1,8,15,22",
+            "Start": "01.01.2026",
+            "End": "",
+            "Handled": "15.11.2026",
+            "Edited": "18.11.2026 11:06:40"
+        },
+        {
+            "ID": "18446744073709551615",
+            "Description": "Rent “Flat” \t ünïcödé 💶",
+            "Category": "0",
+            "Amount": "-950.00",
+            "Account": "12345",
+            "Every": "1",
+            "Unit": "month",
+            "Days": "31",
+            "Start": "29.02.2024",
+            "End": "31.12.2261",
+            "Handled": "",
+            "Edited": "14.11.2023 22:13:20"
+        },
+        {
+            "ID": "1",
+            "Description": "",
+            "Category": "0",
+            "Amount": "+0.00",
+            "Account": "",
+            "Every": "999",
+            "Unit": "week",
+            "Days": "1,2,3,4,5,6,7",
+            "Start": "01.01.1678",
+            "End": "01.01.1678",
+            "Handled": "01.01.1678",
+            "Edited": "01.01.1970 00:00:00"
         }
     ],
     "Transactions": [

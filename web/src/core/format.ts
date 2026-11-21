@@ -7,11 +7,13 @@
 import { formatFileDate, formatFileDateTime, MAX_YEAR, MIN_YEAR, parseFileDate, parseFileDateTime } from './dates';
 import { legacyAccountIds, NO_CATEGORY, parseId, type Id } from './ids';
 import { formatAmount, parseAmount } from './money';
-import { normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Transaction } from './model';
+import { normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Recurring, type Transaction } from './model';
 
-export const FORMAT_VERSION = 'cgt_0.5.0';
+export const FORMAT_VERSION = 'cgt_0.6.0';
 /** The version before account ids: still read (accounts get ids from their names, see `legacyAccountIds`) */
 export const LEGACY_FORMAT_VERSION = 'cgt_0.4.0';
+/** The versions still read: before account ids, before recurring transactions, and the current one */
+const READABLE_VERSIONS = [LEGACY_FORMAT_VERSION, 'cgt_0.5.0', FORMAT_VERSION];
 
 export interface Issue {
 	/** Location in the file, e.g. `Transactions[3].Transactions[1].Amount` */
@@ -24,6 +26,10 @@ export type ParseResult =
 	| { readonly ok: false; readonly errors: readonly Issue[]; readonly warnings: readonly Issue[] };
 
 const TRANSACTION_KEYS = ['ID', 'Date', 'Category', 'Amount', 'Description', 'Added', 'Edited', 'Transactions'];
+const RECURRING_KEYS = ['ID', 'Description', 'Category', 'Amount', 'Account', 'Every', 'Unit', 'Days', 'Start', 'End', 'Handled', 'Edited'];
+const EVERY_PATTERN = /^[1-9]\d{0,2}$/;
+/** Days ascending, without repeats or spaces: "1,8,15,22" */
+const DAYS_PATTERN = /^[1-9]\d?(,[1-9]\d?)*$/;
 const COLOR_PATTERN = /^#[0-9A-Fa-f]{8}$/;
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 const DATE_FORMAT = `date (expected DD.MM.YYYY, years ${MIN_YEAR}–${MAX_YEAR})`;
@@ -45,6 +51,7 @@ class Parser {
 	readonly categoryIds = new Set<Id>([NO_CATEGORY]);
 	readonly transactionIds = new Set<Id>();
 	readonly accountIds = new Set<Id>();
+	readonly recurringIds = new Set<Id>();
 	/** Reading a file from before account ids (`LEGACY_FORMAT_VERSION`) */
 	legacy = false;
 
@@ -114,6 +121,56 @@ class Parser {
 		return { id, name, amount, edited };
 	}
 
+	/** Categories must be parsed before, so category references can be checked. */
+	recurring(value: unknown, path: string): Recurring | null {
+		const object = this.object(value, path, RECURRING_KEYS);
+		if (!object) return null;
+		const optional = <T>(key: string, parse: (text: string) => T | null, what: string): T | null | undefined => {
+			const text = this.string(object, key, path);
+			if (text === null) return undefined;
+			if (text === '') return null;
+			return parse(text) ?? (this.error(join(path, key), `Invalid ${what}: "${text}"`) ?? undefined);
+		};
+		const id = this.field(object, 'ID', path, parseId, 'id');
+		const description = this.string(object, 'Description', path);
+		let categoryId = this.field(object, 'Category', path, parseId, 'category id');
+		const amount = optional('Amount', parseAmount, 'amount (or empty: asked each time)');
+		const accountId = optional('Account', parseId, 'account id (or empty: none)');
+		const every = this.field(object, 'Every', path, (t) => (EVERY_PATTERN.test(t) ? Number(t) : null), 'interval (expected 1–999)');
+		const unit = this.field(object, 'Unit', path, (t) => (t === 'month' || t === 'week' ? t : null), 'unit (expected month or week)');
+		const start = this.field(object, 'Start', path, parseFileDate, DATE_FORMAT);
+		const end = optional('End', parseFileDate, DATE_FORMAT);
+		const handled = optional('Handled', parseFileDate, DATE_FORMAT);
+		const edited = this.field(object, 'Edited', path, parseFileDateTime, TIMESTAMP_FORMAT);
+		const lastDay = unit === 'week' ? 7 : 31;
+		const days = this.field(
+			object,
+			'Days',
+			path,
+			(t) => {
+				if (!DAYS_PATTERN.test(t)) return null;
+				const list = t.split(',').map(Number);
+				return list.every((d, i) => d <= lastDay && (i === 0 || d > list[i - 1]!)) ? list : null;
+			},
+			unit === 'week' ? 'weekdays (expected e.g. "1,5", 1 = Monday … 7 = Sunday, ascending)' : 'days (expected e.g. "1,15", 1–31, ascending)',
+		);
+		if (id !== null && this.recurringIds.has(id)) return this.error(join(path, 'ID'), `Duplicate recurring transaction id ${id}`);
+		if (start !== null && end && end < start) return this.error(join(path, 'End'), 'Must not be before the start');
+		if (categoryId !== null && !this.categoryIds.has(categoryId)) {
+			// a client that doesn't know templates may have deleted the category: no reason to refuse the
+			// file. (The file keeps the old id until the template is saved again; harmless.)
+			this.warnings.push({ path: join(path, 'Category'), message: `Unknown category id ${categoryId}; it will use no category` });
+			categoryId = NO_CATEGORY;
+		}
+		if (
+			id === null || description === null || categoryId === null || amount === undefined || accountId === undefined || every === null ||
+			unit === null || days === null || start === null || end === undefined || handled === undefined || edited === null
+		)
+			return null;
+		this.recurringIds.add(id);
+		return { id, description, categoryId, amount, accountId, schedule: { unit, every, days }, start, end, handled, edited };
+	}
+
 	/** Categories must be parsed before transactions, so category references can be checked. */
 	transaction(value: unknown, path: string, isSub = false): Transaction | null {
 		const object = this.object(value, path, TRANSACTION_KEYS);
@@ -153,7 +210,7 @@ class Parser {
  * An empty file (0 bytes) is a valid empty database, as in the C++ client.
  */
 export function parseCashGuard(content: string): ParseResult {
-	if (content.length === 0) return { ok: true, data: { categories: [], accounts: [], transactions: [] }, warnings: [] };
+	if (content.length === 0) return { ok: true, data: { categories: [], accounts: [], recurring: [], transactions: [] }, warnings: [] };
 	let root: unknown;
 	try {
 		root = JSON.parse(content);
@@ -168,7 +225,7 @@ export function parseCashGuard(content: string): ParseResult {
 	}
 	const version = p.string(root, 'Version', '');
 	if (version === null) return failed();
-	if (version !== FORMAT_VERSION && version !== LEGACY_FORMAT_VERSION) {
+	if (!READABLE_VERSIONS.includes(version)) {
 		p.error(
 			'Version',
 			isNewerVersion(version)
@@ -178,10 +235,13 @@ export function parseCashGuard(content: string): ParseResult {
 		return failed();
 	}
 	p.legacy = version === LEGACY_FORMAT_VERSION;
-	p.object(root, '', ['Version', 'Categories', 'Accounts', 'Transactions']);
+	// recurring transactions came with the current version
+	const hasRecurring = version === FORMAT_VERSION;
+	p.object(root, '', hasRecurring ? ['Version', 'Categories', 'Accounts', 'Recurring', 'Transactions'] : ['Version', 'Categories', 'Accounts', 'Transactions']);
 
 	const categories = p.array(root, 'Categories', '').map((value, i) => p.category(value, `Categories[${i}]`));
 	const accounts = p.array(root, 'Accounts', '').map((value, i) => p.account(value, `Accounts[${i}]`));
+	const recurring = hasRecurring ? p.array(root, 'Recurring', '').map((value, i) => p.recurring(value, `Recurring[${i}]`)) : [];
 	const transactions = p.array(root, 'Transactions', '').map((value, i) => p.transaction(value, `Transactions[${i}]`));
 
 	if (p.errors.length > 0) return failed();
@@ -198,6 +258,7 @@ export function parseCashGuard(content: string): ParseResult {
 		data: {
 			categories: valid(categories),
 			accounts: parsedAccounts.map((a, i) => ({ ...a, id: ids[i]! })),
+			recurring: valid(recurring),
 			transactions: sortNewestFirst(valid(transactions)),
 		},
 		warnings: p.warnings,
@@ -237,6 +298,23 @@ function write(value: JsonValue, indent: string): string {
 	return `{\n${entries.map(([k, v]) => `${inner}${quote(k)}: ${write(v, inner)}`).join(',\n')}\n${indent}}`;
 }
 
+function recurringToJson(r: Recurring): JsonValue {
+	return {
+		ID: r.id,
+		Description: r.description,
+		Category: r.categoryId,
+		Amount: r.amount === null ? '' : formatAmount(r.amount),
+		Account: r.accountId ?? '',
+		Every: String(r.schedule.every),
+		Unit: r.schedule.unit,
+		Days: r.schedule.days.join(','),
+		Start: formatFileDate(r.start),
+		End: r.end === null ? '' : formatFileDate(r.end),
+		Handled: r.handled === null ? '' : formatFileDate(r.handled),
+		Edited: formatFileDateTime(r.edited),
+	};
+}
+
 function transactionToJson(t: Transaction): JsonValue {
 	return {
 		ID: t.id,
@@ -263,6 +341,7 @@ export function serializeCashGuard(data: CashGuardData): string {
 				.filter((c) => c.id !== NO_CATEGORY)
 				.map((c) => ({ ID: c.id, Name: c.name, Color: c.color.toUpperCase() })),
 			Accounts: data.accounts.map((a) => ({ ID: a.id, Name: a.name, Amount: formatAmount(a.amount), Edited: formatFileDateTime(a.edited) })),
+			Recurring: data.recurring.map(recurringToJson),
 			Transactions: sortNewestFirst(data.transactions.map(normalizeGroup)).map(transactionToJson),
 		},
 		'',

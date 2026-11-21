@@ -33,7 +33,7 @@ async function installFakeTauri(page: Page) {
 			const listeners = new Set<number>();
 			let nextId = 1;
 			const fake = {
-				disk: { [path]: content, [other]: content.replace(/"Description": "[^"]*"/, '"Description": "only in the old file"') },
+				disk: { [path]: content, [other]: content.replace(/("Transactions": \[[\s\S]*?"Description": )"[^"]*"/, '$1"only in the old file"') },
 				writes: [] as string[],
 				dialogPath: path as string | null,
 				failWatch: false,
@@ -106,7 +106,7 @@ const fakeState = (page: Page) => page.evaluate(() => JSON.parse(JSON.stringify(
 const transactionsOnDisk = async (page: Page, path = PATH) => JSON.parse((await fakeState(page)).disk[path] ?? '{"Transactions":[]}').Transactions.length;
 
 const RENAME = `const doc = JSON.parse(fake.disk[arg]); doc.Transactions[0].Description = 'Renamed in the C++ client'; fake.disk[arg] = JSON.stringify(doc);`;
-const EMPTY = `fake.disk[arg] = JSON.stringify({ Version: '${FORMAT_VERSION}', Categories: [], Accounts: [], Transactions: [] });`;
+const EMPTY = `fake.disk[arg] = JSON.stringify({ Version: '${FORMAT_VERSION}', Categories: [], Accounts: [], Recurring: [], Transactions: [] });`;
 
 async function openLinkedFile(page: Page) {
 	await page.getByRole('button', { name: 'Open file…' }).click();
@@ -165,7 +165,7 @@ test('replacing the file never overwrites a change that arrived meanwhile', asyn
 	await expect(dialog).toContainText('This file is empty');
 
 	// while the prompt is open, the C++ client saves its full data again (no event yet)
-	await onFake(page, `fake.beforeNextWrite = arg;`, FIXTURE.replace(/"Description": "[^"]*"/, '"Description": "Saved by the C++ client"'));
+	await onFake(page, `fake.beforeNextWrite = arg;`, FIXTURE.replace(/("Transactions": \[[\s\S]*?"Description": )"[^"]*"/, '$1"Saved by the C++ client"'));
 	await dialog.getByRole('button', { name: 'Replace it with my data' }).click();
 	await expect(page.getByText('Saved by the C++ client')).toBeVisible();
 	expect((await fakeState(page)).writes).toEqual([]);

@@ -42,7 +42,7 @@ const categories = [
 ];
 
 function build(drafts: TransactionDraft[]): CashGuardData {
-	return drafts.reduce((data, draft, i) => addTransaction(data, draft, i as UtcSeconds).data, { categories, accounts: [], transactions: [] } as CashGuardData);
+	return drafts.reduce((data, draft, i) => addTransaction(data, draft, i as UtcSeconds).data, { categories, accounts: [], recurring: [], transactions: [] } as CashGuardData);
 }
 
 const tx = (date: string, description: string, amount: number, categoryId: Id = NO_CATEGORY): TransactionDraft => ({ date: d(date), description, categoryId, amount: cents(amount) });

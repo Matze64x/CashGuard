@@ -1,8 +1,7 @@
 <!-- Categories: add, rename, recolor, delete (only unused ones). Same keys as the transaction list. -->
 <script lang="ts">
-	import { addCategory, categoryUsage, deleteCategory, updateCategory, type Category, type Id } from '../core';
+	import { addCategory, categoryUsage, deleteCategory, describeUse, updateCategory, type Category, type Id } from '../core';
 	import { attempt } from './attempt';
-	import { plural } from './display';
 	import { CATEGORY_COLORS } from './palette';
 	import { shortcuts } from './shortcuts.svelte';
 	import ColorPicker from './ui/ColorPicker.svelte';
@@ -65,8 +64,8 @@
 
 	async function remove(c: Category | undefined) {
 		if (!c) return;
-		const used = usage.get(c.id) ?? 0;
-		if (used > 0) return notify(`“${c.name}” is used by ${plural(used, 'transaction')}, so it can't be deleted.`);
+		const use = usage.get(c.id);
+		if (use) return notify(`“${c.name}” is used by ${describeUse(use)}, so it can't be deleted.`);
 		const next = categories[selectedIndex + 1] ?? categories[selectedIndex - 1];
 		if (await attempt(notify, () => workspace.edit(`Delete category “${c.name}”`, (d) => deleteCategory(d, c.id)))) {
 			selectedId = next?.id ?? null;
@@ -107,7 +106,7 @@
 		<div class="row">
 			<span class="dot" style:background={c.color}></span>
 			<span class="name">{c.name || '(unnamed)'}</span>
-			<span class="usage">{usage.get(c.id) ? plural(usage.get(c.id)!, 'transaction') : 'unused'}</span>
+			<span class="usage">{usage.has(c.id) ? describeUse(usage.get(c.id)!) : 'unused'}</span>
 		</div>
 	{/snippet}
 	{#snippet empty()}
