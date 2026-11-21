@@ -17,6 +17,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             files::read_file,
             files::write_file,
+            files::file_exists,
             files::data_location,
         ])
         .setup(|app| {

@@ -28,7 +28,7 @@ fn split(path: &Path) -> std::io::Result<(PathBuf, OsString)> {
 pub fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
     let path = resolve(path);
     let (dir, name) = split(&path)?;
-    // the process id makes the name unique per app instance; writes within one are sequential
+    // the process id makes the name unique per app instance; the app writes one file at a time
     let tmp = dir.join(format!(".{}.tmp{}", name.to_string_lossy(), std::process::id()));
     let result = (|| {
         let mut file = fs::File::create(&tmp)?;
@@ -56,6 +56,11 @@ pub fn read_file(path: PathBuf) -> Result<String, String> {
 #[tauri::command(async)]
 pub fn write_file(path: PathBuf, contents: String) -> Result<(), String> {
     write_atomic(&path, &contents).map_err(|e| format!("Can't write {}: {e}", path.display()))
+}
+
+#[tauri::command(async)]
+pub fn file_exists(path: PathBuf) -> bool {
+    path.exists()
 }
 
 /// Where the app keeps its own data, and whether that's the portable folder (for the settings).

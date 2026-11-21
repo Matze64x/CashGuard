@@ -8,8 +8,9 @@
  * Exchanging data with a CashGuard file, in the browser and the desktop app alike: importing one
  * merges it in (preview first, can be undone), exporting hands the data out as a file. The desktop
  * app can also keep a backup file (`settings.backupPath`): written a few seconds after each change
- * and when the window closes, never read back by itself (restoring it is an import). A backup
- * counts as an export. Files are only written if they read back, and always atomically.
+ * and when the window closes, never read back by itself (restoring it is an import). A backup is
+ * NOT an export: `exported` is what reached another device, the merge base of the next import, and
+ * a backup never leaves this machine. Files are only written if they read back, and always atomically.
  */
 import {
 	INITIAL_SYNC_STATE,
@@ -132,6 +133,8 @@ export class Workspace {
 	/** Changes run one at a time, so they can't interleave */
 	#queue: Promise<unknown> = Promise.resolve();
 	#backupTimer: ReturnType<typeof setTimeout> | undefined;
+	/** The working copy last written to the backup file (in memory: each start writes it once) */
+	#backedUp: CashGuardData | null = null;
 
 	/** Loads the stored data. Throws if storage is unavailable or the data is damaged. */
 	async load(): Promise<void> {
@@ -160,8 +163,8 @@ export class Workspace {
 		let stopWatchingClose = () => {};
 		if (this.isDesktop) {
 			stopWatchingClose = await desktop.onWindowClose(() => this.flushBackup());
-			// changes made while the backup couldn't be written (or before there was one)
-			if (this.unexportedCount > 0) this.#scheduleBackup();
+			// catches up on changes the last run couldn't back up (e.g. it was killed)
+			this.#scheduleBackup();
 		}
 		return () => {
 			stopWatchingTabs();
@@ -208,24 +211,24 @@ export class Workspace {
 	async exportFile(): Promise<boolean> {
 		const handedOut = this.#current.sync.working;
 		const name = this.#current.fileName ?? DEFAULT_FILE_NAME;
-		let fileName = name;
 		if (this.isDesktop) {
 			const path = await desktop.chooseFileToSave('Export a CashGuard file', name);
 			if (!path) return false;
-			await desktop.writeFile(path, fileText(handedOut));
-			fileName = desktop.fileNameOf(path);
-		} else if (!(await saveFile(fileText(handedOut), name))) {
-			return false;
+			// (in the queue: no other write, e.g. the backup, can run at the same time)
+			await this.#serial(async () => {
+				await desktop.writeFile(path, fileText(handedOut));
+				await this.#markExported(handedOut, desktop.fileNameOf(path));
+			});
+			return true;
 		}
-		await this.#serial(() => this.#markExported(handedOut, fileName));
+		if (!(await saveFile(fileText(handedOut), name))) return false;
+		await this.#serial(() => this.#markExported(handedOut, name));
 		return true;
 	}
 
 	/** Changes made meanwhile (e.g. in another tab, or a save still in progress) are kept: only what was handed out counts as exported. Must run inside `#serial`. */
-	async #markExported(data: CashGuardData, fileName: string | null): Promise<void> {
-		const current = this.#current;
-		if (current.sync.exported === data && current.fileName === (fileName ?? current.fileName)) return;
-		await this.#commit({ sync: { ...current.sync, exported: data }, fileName: fileName ?? current.fileName }, this.#beforeImport);
+	async #markExported(data: CashGuardData, fileName: string): Promise<void> {
+		await this.#commit({ sync: { ...this.#current.sync, exported: data }, fileName }, this.#beforeImport);
 	}
 
 	// ------------------------------------------------------------------ desktop: backup file
@@ -233,6 +236,7 @@ export class Workspace {
 	/** Sets (or, with null, turns off) the backup file; a new one is written right away. */
 	async setBackupPath(path: string | null): Promise<void> {
 		settings.backupPath = path;
+		this.#backedUp = null;
 		this.backupError = null;
 		clearTimeout(this.#backupTimer);
 		if (path) await this.backupNow();
@@ -246,22 +250,22 @@ export class Workspace {
 			const path = settings.backupPath;
 			if (!this.isDesktop || !path) return;
 			const data = this.#current.sync.working;
+			if (data === this.#backedUp) return;
 			try {
 				await desktop.writeFile(path, fileText(data));
+				this.#backedUp = data;
 				this.backupError = null;
 			} catch (e) {
 				this.backupError = errorMessage(e);
-				return;
 			}
-			// (the backup file's name isn't suggested for exports)
-			await this.#markExported(data, null);
 		});
 	}
 
 	/** Writes a pending backup right away (e.g. the window is closing). */
 	async flushBackup(): Promise<void> {
+		// a change still being saved schedules its backup only when it's done: wait for it
+		await this.#queue;
 		if (this.#backupTimer !== undefined) await this.backupNow();
-		else await this.#queue;
 	}
 
 	#scheduleBackup(): void {

@@ -3,7 +3,7 @@
  * fake Tauri backend: an in-memory "disk" (kept in sessionStorage, so it survives reloads like a
  * real disk), file dialogs that return a configured path, and a window whose closing the test
  * requests like the user would. Matches @tauri-apps/api 2.x's IPC (invoke, transformCallback,
- * plugin:event|listen, plugin:dialog|open/save, plugin:window|destroy).
+ * plugin:event|listen, plugin:dialog|open/save/message, plugin:window|destroy).
  */
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -19,6 +19,9 @@ interface Fake {
 	dialogPath: string | null;
 	failWrites: boolean;
 	destroyed: boolean;
+	/** The answer to the next "replace?" question */
+	replace: boolean;
+	asked: string[];
 	fire(event: string): void;
 	save(): void;
 }
@@ -36,6 +39,8 @@ async function installFakeTauri(page: Page) {
 				dialogPath: file as string | null,
 				failWrites: false,
 				destroyed: false,
+				replace: true,
+				asked: [] as string[],
 				...(stored ? JSON.parse(stored) : {}),
 				fire: (event: string) => listeners.forEach((name, id) => name === event && callbacks[id]?.({ event, id, payload: null })),
 				save: () => sessionStorage.setItem('fake', JSON.stringify(fake)),
@@ -43,6 +48,13 @@ async function installFakeTauri(page: Page) {
 			const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
 				'plugin:dialog|open': () => fake.dialogPath,
 				'plugin:dialog|save': () => fake.dialogPath,
+				// `ask` (Yes/No buttons)
+				'plugin:dialog|message': ({ message }) => {
+					fake.asked.push(message as string);
+					fake.save();
+					return fake.replace ? 'Yes' : 'No';
+				},
+				file_exists: ({ path }) => fake.disk[path as string] !== undefined,
 				read_file: ({ path }) => {
 					const text = fake.disk[path as string];
 					if (text === undefined) throw `Can't read ${path}: No such file or directory`;
@@ -153,14 +165,14 @@ test('a cancelled dialog changes nothing', async ({ page }) => {
 test('the backup file: written when chosen, after changes, and when the window closes', async ({ page }) => {
 	await importFile(page);
 	await chooseBackup(page);
-	// written right away, and it counts as exported
+	// written right away
 	expect(await transactionsIn(page, BACKUP)).toBe(46);
-	await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible();
 
-	// a few seconds after a change
+	// a few seconds after a change; it's no export (the change hasn't reached another device)
 	await addTransaction(page, 'First');
 	expect(await transactionsIn(page, BACKUP)).toBe(46);
 	await expect.poll(() => transactionsIn(page, BACKUP), { timeout: 8000 }).toBe(47);
+	await expect(page.getByRole('button', { name: /^Export, 1 change not exported/ })).toBeVisible();
 
 	// closing writes a pending backup at once, then closes the window
 	await addTransaction(page, 'Second');
@@ -220,4 +232,48 @@ test('the settings say where the app keeps its data', async ({ page }) => {
 	await page.getByRole('button', { name: 'Settings' }).click();
 	await expect(page.getByRole('dialog')).toContainText('Portable: the app keeps its data');
 	await expect(page.getByRole('dialog')).toContainText('/home/me/CashGuard-data');
+});
+
+test('a backup is no export: importing the exported file later keeps the changes made since', async ({ page }) => {
+	await importFile(page);
+	await chooseBackup(page);
+	await addTransaction(page, 'Exported to the phone');
+	await onFake(page, 'fake.dialogPath = arg', '/home/user/Sync/phone.json');
+	await page.getByRole('button', { name: /^Export/ }).click();
+	await expect(page.getByRole('status')).toContainText('Exported.');
+
+	await addTransaction(page, 'Only on the desktop');
+	await expect.poll(() => transactionsIn(page, BACKUP), { timeout: 8000 }).toBe(48);
+	// the phone's file comes back unchanged
+	await page.getByRole('button', { name: 'Import' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Import “phone.json”' });
+	await expect(dialog).toContainText('Nothing new');
+	await dialog.getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByText('48 transactions')).toBeVisible();
+});
+
+test('closing while a change is still being saved backs it up', async ({ page }) => {
+	await importFile(page);
+	await chooseBackup(page);
+	await page.keyboard.press('n');
+	await page.keyboard.type('Saved while closing');
+	await page.getByRole('dialog').getByLabel('Amount', { exact: true }).fill('1');
+	await page.evaluate(() => {
+		(document.querySelector('dialog[open] button[type=submit]') as HTMLButtonElement).click();
+		(window as unknown as { fake: Fake }).fake.fire('tauri://close-requested');
+	});
+	await expect.poll(async () => (await fakeState(page)).destroyed).toBe(true);
+	expect(await transactionsIn(page, BACKUP)).toBe(47);
+});
+
+test('a name typed without .json still asks before replacing that file', async ({ page }) => {
+	await importFile(page);
+	await onFake(page, 'fake.disk["/home/user/Sync/phone.json"] = "keep me"; fake.dialogPath = "/home/user/Sync/phone"; fake.replace = false');
+	await page.getByRole('button', { name: /^Export/ }).click();
+	await expect.poll(async () => (await fakeState(page)).asked).toEqual(['phone.json already exists. Replace it?']);
+	expect((await fakeState(page)).disk['/home/user/Sync/phone.json']).toBe('keep me');
+
+	await onFake(page, 'fake.replace = true');
+	await page.getByRole('button', { name: /^Export/ }).click();
+	await expect.poll(() => transactionsIn(page, '/home/user/Sync/phone.json')).toBe(46);
 });

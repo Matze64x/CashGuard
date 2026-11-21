@@ -26,9 +26,15 @@ export async function chooseExistingFile(title: string): Promise<string | null> 
 
 /** Lets the user choose where to save a CashGuard file (the dialog asks before replacing one). Returns its path, or null. */
 export async function chooseFileToSave(title: string, defaultPath: string): Promise<string | null> {
-	const { save } = await import('@tauri-apps/plugin-dialog');
-	const path = await save({ title, filters: FILTERS, defaultPath });
-	return path && !/\.json$/i.test(path) ? `${path}.json` : path;
+	const { ask, save } = await import('@tauri-apps/plugin-dialog');
+	const chosen = await save({ title, filters: FILTERS, defaultPath });
+	if (!chosen || /\.json$/i.test(chosen)) return chosen;
+	// the extension is added after the dialog's own "replace?" question, so ask again for that name
+	const path = `${chosen}.json`;
+	if (await invoke<boolean>('file_exists', { path })) {
+		if (!(await ask(`${fileNameOf(path)} already exists. Replace it?`, { title, kind: 'warning' }))) return null;
+	}
+	return path;
 }
 
 export function readFile(path: string): Promise<string> {
