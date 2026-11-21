@@ -93,10 +93,14 @@
 	});
 
 	/** Runs an action and shows a failure instead of losing it in the console. */
+	let runs = 0;
 	async function run(action: () => Promise<string | null>) {
+		const id = ++runs;
 		try {
 			const text = await action();
-			notice = text ? { text, error: false } : null;
+			// an action that finishes after a later one started (e.g. opening a file still sets up
+			// watching it) must not replace or clear the later one's message; errors always show
+			if (id === runs) notice = text ? { text, error: false } : null;
 		} catch (e) {
 			notice = { text: `Something went wrong: ${errorMessage(e)}`, error: true };
 		}
