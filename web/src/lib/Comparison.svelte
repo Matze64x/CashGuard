@@ -71,7 +71,7 @@
 	</td>
 {/snippet}
 
-<h2>{side === 'expense' ? 'Expenses' : 'Income'} compared with the period before</h2>
+<h2>Compared with the period before</h2>
 {#if !comparison}
 	<p class="note">Choose a period with a start and an end to compare it.</p>
 {:else}

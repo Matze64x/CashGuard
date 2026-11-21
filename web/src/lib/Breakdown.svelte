@@ -4,9 +4,8 @@
 	Each row is a button: a category filters by it, a description goes into the search.
 -->
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import { ofSide, sumCents, totalsByCategory, totalsByDescription, type Side, type Transaction } from '../core';
-	import { categoryLabel, formatEuro, plural } from './display';
+	import { categoryLabel, describePeriod, formatEuro, plural } from './display';
 	import { filter } from './filter.svelte';
 	import { rowTarget } from './rows.svelte';
 	import type { Workspace } from './workspace.svelte';
@@ -15,14 +14,11 @@
 		workspace,
 		transactions,
 		side,
-		actions,
 	}: {
 		workspace: Workspace;
 		/** What the filter selects */
 		transactions: readonly Transaction[];
 		side: Side;
-		/** Controls shown next to the heading */
-		actions?: Snippet;
 	} = $props();
 
 	const categories = $derived(new Map(workspace.data.categories.map((c) => [c.id, c])));
@@ -36,14 +32,13 @@
 	const largest = $derived(Math.max(1, ...rows.map((r) => Math.abs(r.total))));
 	const percent = new Intl.NumberFormat('de-DE', { style: 'percent', maximumFractionDigits: 0 });
 
-	const heading = $derived(
-		`${side === 'expense' ? 'Expenses' : 'Income'} ${single !== null ? `in ${categoryLabel(single, categories.get(single))}, by description` : 'by category'}`,
-	);
+	// the period the amounts are for (the box around says expenses or income, by category)
+	const period = $derived(filter.current.from || filter.current.to ? describePeriod(filter.current.from, filter.current.to) : 'All time');
+	const heading = $derived(single !== null ? `${period}: ${categoryLabel(single, categories.get(single))}, by description` : period);
 </script>
 
 <div class="header">
 	<h2>{heading}</h2>
-	{@render actions?.()}
 </div>
 {#if rows.length === 0}
 	<p class="empty">Nothing here for the current filter.</p>

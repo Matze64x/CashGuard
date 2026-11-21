@@ -65,7 +65,9 @@ test('click a month to choose it, Shift+click to extend; the list follows', asyn
 	const chips = page.getByRole('list', { name: 'Active filters' });
 	await clickMonth(page, last.x);
 	await expect(chips).toContainText(last.name);
-	await expect(page.getByRole('heading', { name: last.name })).toBeVisible();
+	await expect(page.getByRole('region', { name: /^Totals/ }).getByRole('heading', { name: last.name })).toBeVisible();
+	// the breakdown says which period its amounts are for
+	await expect(page.getByRole('region', { name: 'Breakdown' }).getByRole('heading')).toHaveText(last.name);
 	await clickMonth(page, labels[0]!.x, true);
 	await expect(chips).toContainText(/ – /);
 
@@ -91,7 +93,7 @@ test('a period outside the data shows nothing, and mistyped dates are named', as
 	await dialog.getByLabel('From', { exact: true }).fill('1.1.2010');
 	await dialog.getByLabel('To', { exact: true }).fill('31.12.2010');
 	await page.keyboard.press('Enter');
-	await expect(page.getByRole('heading', { name: '2010' })).toBeVisible();
+	await expect(page.getByRole('region', { name: /^Totals/ }).getByRole('heading', { name: '2010' })).toBeVisible();
 	await expect(page.locator('.totals dd').first()).toHaveText('0,00 €');
 
 	// a transaction with a year typed wrong
@@ -112,20 +114,25 @@ test('a period outside the data shows nothing, and mistyped dates are named', as
 
 test('the breakdown: a category filters, then its descriptions show; income on request', async ({ page }) => {
 	const breakdown = page.getByRole('region', { name: 'Breakdown' });
-	await expect(breakdown.getByRole('heading')).toHaveText('Expenses by category');
+	// the box around it says what it shows, and has the switch for everything in it
+	const box = page.getByRole('region', { name: /by category$/ });
+	await expect(box.getByRole('heading', { level: 2 }).first()).toHaveText('Expenses by category');
+	// its own heading: the period the amounts are for
+	await expect(breakdown.getByRole('heading')).toHaveText('All time');
 	const groceries = breakdown.getByRole('button', { name: /^Groceries:/ });
 	// a list of buttons: works with the keyboard too
 	await groceries.focus();
 	await page.keyboard.press('Enter');
 	const chips = page.getByRole('list', { name: 'Active filters' });
 	await expect(chips).toContainText('Groceries');
-	await expect(breakdown.getByRole('heading')).toHaveText('Expenses in Groceries, by description');
+	await expect(breakdown.getByRole('heading')).toHaveText('All time: Groceries, by description');
 	await breakdown.getByRole('button', { name: /^Supermarket:/ }).click();
 	await expect(page.getByRole('searchbox')).toHaveValue('Supermarket');
 
 	await page.getByRole('button', { name: 'Remove filter: Groceries' }).click();
-	await breakdown.getByRole('radio', { name: 'Income' }).check();
-	await expect(breakdown.getByRole('heading')).toHaveText('Income by category');
+	await box.getByRole('radio', { name: 'Income' }).check();
+	await expect(page.getByRole('region', { name: 'Income by category' })).toBeVisible();
+	await expect(breakdown.getByRole('heading')).toHaveText('All time');
 
 	// a filter for expenses only decides the side
 	await page.getByRole('searchbox').fill('');
@@ -133,8 +140,9 @@ test('the breakdown: a category filters, then its descriptions show; income on r
 	await page.keyboard.press('f');
 	await page.getByRole('dialog').getByRole('combobox', { name: 'Type' }).selectOption('expense');
 	await page.keyboard.press('Enter');
-	await expect(breakdown.getByRole('heading')).toHaveText('Expenses by category');
-	await expect(breakdown.getByRole('radio', { name: 'Income' })).toBeDisabled();
+	await expect(page.getByRole('region', { name: 'Expenses by category' })).toBeVisible();
+	await expect(box.getByRole('radio', { name: 'Income' })).toBeDisabled();
+	await expect(box).toContainText('as the filter says');
 });
 
 test('by category: clicking a category in the chart filters by it', async ({ page }) => {
@@ -147,7 +155,7 @@ test('by category: clicking a category in the chart filters by it', async ({ pag
 	await page.mouse.click(box.x + box.width - 25, box.y + box.height - 62);
 	await page.waitForTimeout(500);
 	await expect(page.getByRole('list', { name: 'Active filters' })).toContainText(/\w/);
-	await expect(page.getByRole('region', { name: 'Breakdown' }).getByRole('heading')).toHaveText(/^Expenses in .+, by description$/);
+	await expect(page.getByRole('region', { name: 'Breakdown' }).getByRole('heading')).toHaveText(/^.+: .+, by description$/);
 });
 
 test('an empty description can not be searched for', async ({ page }) => {
@@ -198,7 +206,7 @@ test('an unfinished period is compared like for like', async ({ page }) => {
 
 test('trends: a row per category, by month or year; a row filters by its category', async ({ page }) => {
 	const trends = page.getByRole('region', { name: 'Trends' });
-	await expect(trends.getByRole('heading')).toHaveText('Expenses over time, by category');
+	await expect(trends.getByRole('heading')).toHaveText('Over time');
 	await expect(trends).toContainText('shows whole months');
 	// years: the fixture's data (2026) stays in the last 10 years for long
 	await trends.getByRole('radio', { name: 'Years' }).check();

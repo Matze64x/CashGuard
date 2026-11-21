@@ -85,113 +85,139 @@
 <div class="explore">
 	<div class="filter"><FilterBar {workspace} {active} onleave={() => showButton.focus()} /></div>
 
-	<section class="panel timeline" aria-label="Timeline">
-		<Timeline {workspace} matching={withoutPeriod} {side} />
-	</section>
+	<!-- what the filter selects, over time and in total -->
+	<div class="group overview">
+		<section class="part timeline" aria-label="Timeline">
+			<Timeline {workspace} matching={withoutPeriod} {side} />
+		</section>
 
-	<section class="panel breakdown" aria-label="Breakdown">
-		<Breakdown {workspace} transactions={result.transactions} {side}>
-			{#snippet actions()}
-				<!-- a filter for income only or expenses only decides -->
-				<Segmented
-					bind:value={() => side, (value) => (chosenSide = value)}
-					options={SIDES}
-					label="Expenses or income"
-					disabled={filter.current.kind !== 'all'}
-				/>
-			{/snippet}
-		</Breakdown>
-	</section>
-
-	<section class="panel totals" aria-label="Totals of the filtered transactions">
-		<h2>{filter.current.from || filter.current.to ? describePeriod(filter.current.from, filter.current.to) : 'All time'}</h2>
-		<dl>
-			<dt>Income</dt>
-			<dd class="income">{formatEuro(income)}</dd>
-			<dt>Expenses</dt>
-			<dd class="expenses">{formatEuro(expenses)}</dd>
-			<dt>Net</dt>
-			<dd>{formatEuro(result.total)}</dd>
-			{#if monthCount > 1}
-				<dt>Per month</dt>
-				<dd>{formatEuro(Math.round(result.total / monthCount) as Cents)} <span class="muted">over {monthCount} months</span></dd>
+		<section class="part totals" aria-label="Totals of the filtered transactions">
+			<h2>{filter.current.from || filter.current.to ? describePeriod(filter.current.from, filter.current.to) : 'All time'}</h2>
+			<dl>
+				<dt>Income</dt>
+				<dd class="income">{formatEuro(income)}</dd>
+				<dt>Expenses</dt>
+				<dd class="expenses">{formatEuro(expenses)}</dd>
+				<dt>Net</dt>
+				<dd>{formatEuro(result.total)}</dd>
+				{#if monthCount > 1}
+					<dt>Per month</dt>
+					<dd>{formatEuro(Math.round(result.total / monthCount) as Cents)} <span class="muted">over {monthCount} months</span></dd>
+				{/if}
+			</dl>
+			{#if estimate}
+				<div class="estimate" role="group" aria-labelledby="explore-estimate">
+					<h3 id="explore-estimate">Expected by {formatDate(estimate.to)}</h3>
+					<dl>
+						<dt>Income</dt>
+						<dd>{formatEuro(estimate.income)}</dd>
+						<dt>Expenses</dt>
+						<dd>{formatEuro(estimate.expenses)}</dd>
+						<dt>Net</dt>
+						<dd>{formatEuro(estimate.net)}</dd>
+					</dl>
+				</div>
 			{/if}
-		</dl>
-		{#if estimate}
-			<div class="estimate" role="group" aria-labelledby="explore-estimate">
-				<h3 id="explore-estimate">Expected by {formatDate(estimate.to)}</h3>
-				<dl>
-					<dt>Income</dt>
-					<dd>{formatEuro(estimate.income)}</dd>
-					<dt>Expenses</dt>
-					<dd>{formatEuro(estimate.expenses)}</dd>
-					<dt>Net</dt>
-					<dd>{formatEuro(estimate.net)}</dd>
-				</dl>
-			</div>
-		{/if}
-		<button bind:this={showButton} onclick={onshowtransactions} title="g t">
-			Show {isFiltered(filter.current) ? plural(result.transactions.length, 'transaction') : 'all transactions'}
-		</button>
-	</section>
+			<button bind:this={showButton} onclick={onshowtransactions} title="g t">
+				Show {isFiltered(filter.current) ? plural(result.transactions.length, 'transaction') : 'all transactions'}
+			</button>
+		</section>
+	</div>
 
-	<section class="panel trends" aria-label="Trends">
-		<CategoryTrends {workspace} matching={withoutPeriod} {side} />
-	</section>
-
-	<section class="panel comparison" aria-label="Comparison">
-		<Comparison {workspace} {side} />
+	<!-- by category: the expenses or the income, chosen once for everything in here -->
+	<section class="group by-category" aria-labelledby="explore-side">
+		<div class="group-head">
+			<h2 id="explore-side">{side === 'expense' ? 'Expenses' : 'Income'} by category</h2>
+			<!-- a filter for income only or expenses only decides -->
+			<Segmented
+				bind:value={() => side, (value) => (chosenSide = value)}
+				options={SIDES}
+				label="Expenses or income"
+				disabled={filter.current.kind !== 'all'}
+			/>
+			{#if filter.current.kind !== 'all'}<span class="muted note">as the filter says</span>{/if}
+		</div>
+		<section class="part breakdown" aria-label="Breakdown">
+			<Breakdown {workspace} transactions={result.transactions} {side} />
+		</section>
+		<section class="part comparison" aria-label="Comparison">
+			<Comparison {workspace} {side} />
+		</section>
+		<section class="part trends" aria-label="Trends">
+			<CategoryTrends {workspace} matching={withoutPeriod} {side} />
+		</section>
 	</section>
 </div>
 
 <style>
-	/* one column on phones, the breakdown next to the totals from tablets on; on wide screens
-	   (laptops) the totals go next to the timeline, the breakdown next to the comparison (both
-	   per category, for the same period), and the trends get the full width for their lines */
+	/* two boxes: the overview (timeline and totals) and, by category (expenses or income, chosen in
+	   its head), the breakdown, the comparison and the trends; their parts side by side where
+	   there's room. One column on phones. */
 	.explore {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		grid-template-areas: 'filter' 'timeline' 'breakdown' 'totals' 'trends' 'comparison';
-		align-items: start;
 		gap: 1rem;
 		padding: 1rem 0.75rem;
 	}
-	@media (min-width: 50rem) {
-		.explore {
-			grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-			grid-template-areas: 'filter filter' 'timeline timeline' 'breakdown totals' 'trends trends' 'comparison comparison';
-		}
-	}
-	@media (min-width: 80rem) {
-		.explore {
-			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 18rem;
-			grid-template-areas: 'filter filter filter' 'timeline timeline totals' 'breakdown comparison comparison' 'trends trends trends';
-		}
-	}
-	.filter {
-		grid-area: filter;
-	}
-	.timeline {
-		grid-area: timeline;
-	}
-	.breakdown {
-		grid-area: breakdown;
-	}
-	.totals {
-		grid-area: totals;
-	}
-	.trends {
-		grid-area: trends;
-	}
-	.comparison {
-		grid-area: comparison;
-	}
-	.panel {
+	.group {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		background: var(--surface);
 		border: 1px solid var(--border);
 		border-radius: 0.75rem;
+		min-width: 0;
+	}
+	.part {
 		padding: 1rem;
 		min-width: 0;
+	}
+	/* parts below one another are divided by a line */
+	.part + .part {
+		border-top: 1px solid var(--border);
+	}
+	.group-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 1rem;
+		padding: 0.85rem 1rem;
+		border-bottom: 1px solid var(--border);
+		border-radius: 0.75rem 0.75rem 0 0;
+		background: var(--accent-soft);
+	}
+	.group-head h2 {
+		margin: 0;
+		margin-right: auto;
+		font-size: 1.2rem;
+	}
+	.note {
+		font-size: 0.85rem;
+	}
+	@media (min-width: 80rem) {
+		.overview {
+			grid-template-columns: minmax(0, 1fr) 18rem;
+		}
+		.overview .totals {
+			border-top: none;
+			border-left: 1px solid var(--border);
+		}
+		.by-category {
+			grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+			grid-template-areas: 'head head' 'breakdown comparison' 'trends trends';
+		}
+		.group-head {
+			grid-area: head;
+		}
+		.breakdown {
+			grid-area: breakdown;
+		}
+		.comparison {
+			grid-area: comparison;
+			border-top: none;
+			border-left: 1px solid var(--border);
+		}
+		.trends {
+			grid-area: trends;
+		}
 	}
 	h2 {
 		margin: 0 0 0.75rem;

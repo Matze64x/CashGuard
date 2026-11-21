@@ -148,7 +148,7 @@
 </script>
 
 <div class="header">
-	<h2>{side === 'expense' ? 'Expenses' : 'Income'} over time, by category</h2>
+	<h2>Over time</h2>
 	<Segmented bind:value={unit} options={UNITS} label="Months or years" />
 </div>
 <p class="hint">
