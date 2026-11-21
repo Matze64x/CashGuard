@@ -91,7 +91,7 @@
 	<input
 		{id}
 		type="text"
-		inputmode="numeric"
+		inputmode="decimal"
 		autocomplete="off"
 		spellcheck="false"
 		placeholder={settings.dateStyle}
@@ -151,6 +151,8 @@
 		border: 1px solid var(--control-border);
 		border-radius: 0.5rem;
 		color: var(--muted);
+		/* iOS draws a date field at its own width, ignoring the CSS one: keep it inside the button */
+		overflow: hidden;
 	}
 	.calendar:hover {
 		border-color: var(--accent);
@@ -163,6 +165,9 @@
 	.calendar input {
 		position: absolute;
 		inset: 0;
+		-webkit-appearance: none;
+		appearance: none;
+		min-width: 0;
 		width: 100%;
 		height: 100%;
 		min-height: 0;

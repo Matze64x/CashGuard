@@ -177,7 +177,7 @@
 			{#if unit === 'month'}
 				<label for="rec-days">On days</label>
 				<div class="days">
-					<input id="rec-days" type="text" inputmode="numeric" autocomplete="off" bind:value={monthDays} placeholder="e.g. 1, 15" />
+					<input id="rec-days" type="text" inputmode="decimal" autocomplete="off" bind:value={monthDays} placeholder="e.g. 1, 15" />
 					<span class="hint">A day the month doesn't have means its last day.</span>
 				</div>
 			{:else}

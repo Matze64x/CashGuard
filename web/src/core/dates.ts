@@ -135,13 +135,14 @@ export function formatDateAs(date: CivilDate, style: DateStyle): string {
 }
 
 /**
- * Parses a typed date in the given style. Any of . / - or space separate the parts, and parts may
+ * Parses a typed date in the given style. Any of . , / - or space separate the parts (the comma:
+ * the iPhone's number pad with a separator has only that in some regions), and parts may
  * be left out from the end of the date: "5" is the 5th of `reference`'s month, "5.3" the 5th of March
  * in `reference`'s year (for DD.MM.YYYY). Two-digit years are 20xx. A full "YYYY-MM-DD" is always
  * accepted. Returns null for anything else, including dates outside the supported years.
  */
 export function parseDateInput(text: string, style: DateStyle, reference: CivilDate): CivilDate | null {
-	const parts = text.trim().replace(/[./\-\s]+$/, '').split(/[./\-\s]+/);
+	const parts = text.trim().replace(/[.,/\-\s]+$/, '').split(/[.,/\-\s]+/);
 	if (parts.length > 3 || !parts.every((p) => /^\d{1,4}$/.test(p))) return null;
 	let day: string | undefined, month: string | undefined, year: string | undefined;
 	if (parts.length === 3 && parts[0]!.length === 4) [year, month, day] = parts;

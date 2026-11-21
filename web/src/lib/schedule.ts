@@ -14,7 +14,8 @@ export function describeSchedule({ unit, every, days }: Schedule): string {
 
 /** Days of the month as typed: "1, 15" or "1 15" (any order, repeats ignored); null if invalid */
 export function parseMonthDays(text: string): number[] | null {
-	const parts = text.split(/[\s,;]+/).filter(Boolean);
+	// (any separator the phone's number pad offers: "," or ".", depending on the region)
+	const parts = text.split(/[\s,;.]+/).filter(Boolean);
 	if (parts.length === 0 || !parts.every((p) => /^\d{1,2}$/.test(p))) return null;
 	const days = [...new Set(parts.map(Number))].sort((a, b) => a - b);
 	return days.every((d) => d >= 1 && d <= 31) ? days : null;

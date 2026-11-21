@@ -110,6 +110,9 @@ describe('typed dates', () => {
 	it('fills in left-out parts from the reference date', () => {
 		expect(parseDateInput('5', 'DD.MM.YYYY', ref)).toBe('2026-11-05');
 		expect(parseDateInput('5.3.', 'DD.MM.YYYY', ref)).toBe('2026-03-05');
+		// the separator the phone's number pad has in some regions
+		expect(parseDateInput('5,3,26', 'DD.MM.YYYY', ref)).toBe('2026-03-05');
+		expect(parseDateInput('5,3', 'DD.MM.YYYY', ref)).toBe('2026-03-05');
 		expect(parseDateInput('5.3.25', 'DD.MM.YYYY', ref)).toBe('2025-03-05');
 		expect(parseDateInput('3/5', 'MM/DD/YYYY', ref)).toBe('2026-03-05');
 		expect(parseDateInput('5', 'MM/DD/YYYY', ref)).toBe('2026-11-05');
@@ -119,7 +122,7 @@ describe('typed dates', () => {
 		expect(parseDateInput('2025-03-05', 'MM/DD/YYYY', ref)).toBe('2025-03-05');
 	});
 	it('rejects invalid input', () => {
-		for (const text of ['', 'today', '31.2.2026', '1.13.2026', '1.1.300', '1.1.10000', '1.1.2026.1', '5,3'])
+		for (const text of ['', 'today', '31.2.2026', '1.13.2026', '1.1.300', '1.1.10000', '1.1.2026.1', '5;3'])
 			expect(parseDateInput(text, 'DD.MM.YYYY', ref), text).toBeNull();
 	});
 });
