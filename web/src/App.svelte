@@ -92,17 +92,22 @@
 		return () => clearTimeout(timer);
 	});
 
-	/** Runs an action and shows a failure instead of losing it in the console. */
 	let runs = 0;
+	/** The run whose message is shown (0: none of them) */
+	let shownBy = 0;
+	/** Runs an action and shows a failure instead of losing it in the console. */
 	async function run(action: () => Promise<string | null>) {
 		const id = ++runs;
 		try {
 			const text = await action();
-			// an action that finishes after a later one started (e.g. opening a file still sets up
-			// watching it) must not replace or clear the later one's message; errors always show
-			if (id === runs) notice = text ? { text, error: false } : null;
+			// an action that finishes late (e.g. opening a file still sets up watching it) must not
+			// replace or clear the message of one started after it; errors always show
+			if (id < shownBy) return;
+			notice = text ? { text, error: false } : null;
+			shownBy = text ? id : 0;
 		} catch (e) {
 			notice = { text: `Something went wrong: ${errorMessage(e)}`, error: true };
+			shownBy = Math.max(shownBy, id);
 		}
 	}
 
