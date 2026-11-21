@@ -6,9 +6,12 @@
 <script lang="ts">
 	import {
 		applyFilter,
+		chartPeriod,
 		isFiltered,
 		monthsBetween,
 		ofSide,
+		projection,
+		projectionBasis,
 		sumCents,
 		type Cents,
 		type CivilDate,
@@ -20,7 +23,7 @@
 	import Timeline from './charts/Timeline.svelte';
 	import CategoryTrends from './CategoryTrends.svelte';
 	import Comparison from './Comparison.svelte';
-	import { describePeriod, formatEuro, plural } from './display';
+	import { describePeriod, formatDate, formatEuro, plural } from './display';
 	import { filter } from './filter.svelte';
 	import FilterBar from './FilterBar.svelte';
 	import Segmented from './ui/Segmented.svelte';
@@ -56,6 +59,21 @@
 		const start = later(from ?? result.transactions.at(-1)?.date, all.at(-1)?.date);
 		const end = earlier(to ?? result.transactions[0]?.date, later(all[0]?.date, clock.today));
 		return start && end && start <= end ? monthsBetween(start, end).length : 0;
+	});
+	// a period that isn't over yet: where it's heading, by what usually comes in the rest of it
+	// (where the data starts like the charts, which leave out probably mistyped dates)
+	const oldest = $derived(chartPeriod(workspace.data.transactions, clock.today).oldest);
+	const estimate = $derived.by(() => {
+		const { from, to } = filter.current;
+		if (!from || !to) return null;
+		const basis = projectionBasis({ from, to }, clock.today, oldest);
+		if (basis === null) return null;
+		const project = projection(basis, withoutPeriod, (t) => (t.amount > 0 ? 'income' : 'expense'));
+		const toIncome = project('income', income);
+		const toExpenses = project('expense', expenses);
+		// (nothing more expected: nothing to show)
+		if (toIncome === null || toExpenses === null || (toIncome === income && toExpenses === expenses)) return null;
+		return { to, income: toIncome, expenses: toExpenses, net: sumCents([toIncome, toExpenses]) };
 	});
 	// (dates compare as text; a missing one doesn't count)
 	const later = (a?: CivilDate, b?: CivilDate) => (a && b ? (a > b ? a : b) : (a ?? b));
@@ -99,6 +117,19 @@
 				<dd>{formatEuro(Math.round(result.total / monthCount) as Cents)} <span class="muted">over {monthCount} months</span></dd>
 			{/if}
 		</dl>
+		{#if estimate}
+			<div class="estimate" role="group" aria-labelledby="explore-estimate">
+				<h3 id="explore-estimate">Expected by {formatDate(estimate.to)}</h3>
+				<dl>
+					<dt>Income</dt>
+					<dd>{formatEuro(estimate.income)}</dd>
+					<dt>Expenses</dt>
+					<dd>{formatEuro(estimate.expenses)}</dd>
+					<dt>Net</dt>
+					<dd>{formatEuro(estimate.net)}</dd>
+				</dl>
+			</div>
+		{/if}
 		<button bind:this={showButton} onclick={onshowtransactions} title="g t">
 			Show {isFiltered(filter.current) ? plural(result.transactions.length, 'transaction') : 'all transactions'}
 		</button>
@@ -173,6 +204,18 @@
 		gap: 0.3rem 2rem;
 		margin: 0 0 1rem;
 		font-variant-numeric: tabular-nums;
+	}
+	h3 {
+		margin: 0 0 0.4rem;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--muted);
+	}
+	/* the estimate: muted, set off by a dashed line like the estimates in the charts */
+	.estimate {
+		padding-top: 0.5rem;
+		border-top: 1px dashed var(--border);
+		color: var(--muted);
 	}
 	dt,
 	.muted {

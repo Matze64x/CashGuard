@@ -273,6 +273,105 @@ export function comparePeriod(period: Period, today: CivilDate): PeriodCompariso
 	}
 }
 
+/**
+ * How much to scale up what an unfinished period has so far, to estimate its whole: its days over
+ * the days with data so far (from its start, or from the `oldest` data if that's later, through
+ * today). Null if the period is over (or ends today), hasn't started, or has no data yet.
+ */
+export function projectionFactor(period: Period, today: CivilDate, oldest: CivilDate | null): number | null {
+	if (today < period.from || today >= period.to) return null;
+	const start = oldest !== null && oldest > period.from ? oldest : period.from;
+	if (start > today) return null;
+	return (daysBetween(period.from, period.to) + 1) / (daysBetween(start, today) + 1);
+}
+
+/**
+ * How to estimate an unfinished period's whole (see `projection`): what it has through `today`
+ * plus what usually comes in the rest of it, i.e. on average in the `rests` of the periods before
+ * (the same days after "today" in each). Without earlier periods with data: what it has through
+ * today scaled up by `factor` to its whole length.
+ */
+export type ProjectionBasis = { readonly period: Period; readonly today: CivilDate } & (
+	| { readonly kind: 'usual'; readonly rests: readonly Period[] }
+	| { readonly kind: 'scaled'; readonly factor: number }
+);
+
+/** How many earlier periods "usually" averages over: up to 12, as many as fit in 3 years */
+const USUAL_PERIODS = 12;
+const USUAL_MONTHS = 36;
+const USUAL_DAYS = 1096;
+
+/**
+ * The basis for projecting `period` (see `ProjectionBasis`), or null if it's over (or ends today),
+ * hasn't started, or has no data yet (`oldest`: the first date with data). Earlier periods are
+ * shifted like in `comparePeriod`: whole months by as many months (so a year by 12), other periods by
+ * as many days; one counts if the data reaches back to its "today". A rest may be empty (31.03.
+ * shifted to February), which counts as nothing to come.
+ */
+export function projectionBasis(period: Period, today: CivilDate, oldest: CivilDate | null): ProjectionBasis | null {
+	const factor = projectionFactor(period, today, oldest);
+	if (factor === null || oldest === null) return null;
+	const { from, to } = period;
+	const wholeMonths = monthOf(from).from === from && monthOf(to).to === to;
+	const span = wholeMonths ? monthNumber(to) - monthNumber(from) + 1 : daysBetween(from, to) + 1;
+	const count = Math.min(USUAL_PERIODS, Math.max(1, Math.floor((wholeMonths ? USUAL_MONTHS : USUAL_DAYS) / span)));
+	const rests: Period[] = [];
+	try {
+		for (let k = 1; k <= count; k++) {
+			const shift = (date: CivilDate) => (wholeMonths ? addMonths(date, -span * k) : addDays(date, -span * k));
+			const before = shift(today);
+			if (before < oldest) break;
+			// (addMonths clamps to the month's end, e.g. 31.03. → 28.02., so take the month's end)
+			rests.push({ from: addDays(before, 1), to: wholeMonths ? monthOf(shift(to)).to : shift(to) });
+		}
+	} catch {
+		// left the supported years: the periods so far are all there is
+	}
+	return rests.length > 0 ? { period, today, kind: 'usual', rests } : { period, today, kind: 'scaled', factor };
+}
+
+/**
+ * Estimates for the end of a period, per group of `transactions` (the ones to consider, of any
+ * date; `keyOf` groups them, e.g. by category, each group of one sign): given a group's total in
+ * the period, its estimate (see `ProjectionBasis`), or null if that's beyond what cents can hold
+ * exactly. What is already entered for after today counts once: as the rest, if it's more than
+ * what usually comes (else it's part of that). A group's usual rest averages only over the earlier
+ * periods since its first transaction, so a new category isn't diluted by the time before it.
+ */
+export function projection<K>(
+	basis: ProjectionBasis,
+	transactions: readonly Transaction[],
+	keyOf: (t: Transaction) => K,
+): (key: K, total: Cents) => Cents | null {
+	const { today, period } = basis;
+	const rests = basis.kind === 'usual' ? basis.rests : [];
+	const groups = new Map<K, { first: CivilDate; entered: number; rest: number }>();
+	for (const t of transactions) {
+		const key = keyOf(t);
+		let group = groups.get(key);
+		if (!group) groups.set(key, (group = { first: t.date, entered: 0, rest: 0 }));
+		if (t.date < group.first) group.first = t.date;
+		if (today < t.date && t.date <= period.to) group.entered += t.amount;
+		for (const rest of rests) if (rest.from <= t.date && t.date <= rest.to) group.rest += t.amount;
+	}
+	return (key, total) => {
+		const group = groups.get(key);
+		const entered = group?.entered ?? 0;
+		const throughToday = total - entered;
+		let value: number;
+		if (basis.kind === 'scaled') value = throughToday * basis.factor + entered;
+		else {
+			// the rests the group existed in (by their end): all its transactions in rests are in these
+			const counted = group ? rests.filter((rest) => rest.to >= group.first).length : 0;
+			const usual = counted === 0 ? 0 : group!.rest / counted;
+			value = throughToday + (Math.abs(entered) > Math.abs(usual) ? entered : usual);
+		}
+		// to whole cents, halves away from 0 (alike for both signs)
+		const rounded = Math.sign(value) * Math.round(Math.abs(value));
+		return Number.isSafeInteger(rounded) ? cents(rounded) : null;
+	};
+}
+
 /** The last 12 complete months before `today`'s month */
 export function lastTwelveMonths(today: CivilDate): Period {
 	const thisMonth = monthOf(today).from;

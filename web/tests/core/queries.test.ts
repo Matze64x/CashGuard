@@ -17,6 +17,9 @@ import {
 	ofSide,
 	periodPresets,
 	comparePeriod,
+	projection,
+	projectionBasis,
+	projectionFactor,
 	daysBetween,
 	totalsByCategory,
 	totalsByDescription,
@@ -25,6 +28,7 @@ import {
 	type CivilDate,
 	type Filter,
 	type Id,
+	type ProjectionBasis,
 	type TransactionDraft,
 	type UtcSeconds,
 } from '../../src/core';
@@ -214,6 +218,90 @@ describe('comparisons', () => {
 		// not started yet, or over: as it is
 		expect(comparePeriod({ from: d('2027-01-01'), to: d('2027-01-31') }, today)?.cut).toBe(false);
 		expect(daysBetween(d('2024-02-28'), d('2024-03-01'))).toBe(2);
+	});
+
+	it('projects an unfinished period from its days with data', () => {
+		const today = d('2026-11-20');
+		const november = monthOf(today);
+		expect(projectionFactor(november, today, d('2020-01-01'))).toBe(30 / 20);
+		// the data starts later: only its days count
+		expect(projectionFactor(november, today, d('2026-11-11'))).toBe(30 / 10);
+		expect(projectionFactor(yearOf(today), today, null)).toBe(365 / 324);
+		// over, ending today, not started, or no data yet: nothing to project
+		expect(projectionFactor(monthOf(d('2026-10-01')), today, null)).toBeNull();
+		expect(projectionFactor({ from: d('2026-11-01'), to: today }, today, null)).toBeNull();
+		expect(projectionFactor(monthOf(d('2026-12-01')), today, null)).toBeNull();
+		expect(projectionFactor(november, today, d('2026-11-21'))).toBeNull();
+	});
+
+	it('projects an unfinished period by what usually comes in its rest', () => {
+		const today = d('2026-11-20');
+		const november = monthOf(today);
+		const rests = (basis: ProjectionBasis | null) => (basis?.kind === 'usual' ? basis.rests : null);
+		// the same days after the 20th in up to 12 months before, as far as there is data
+		const basis = projectionBasis(november, today, d('2026-08-15'))!;
+		expect(basis).toMatchObject({ kind: 'usual', period: november, today });
+		expect(rests(basis)).toEqual([
+			{ from: '2026-10-21', to: '2026-10-31' },
+			{ from: '2026-09-21', to: '2026-09-30' },
+			{ from: '2026-08-21', to: '2026-08-31' },
+		]);
+		expect(rests(projectionBasis(november, today, d('2020-01-01')))).toHaveLength(12);
+		// a year: the rest of the years before, up to 3 (also for a leap year)
+		expect(rests(projectionBasis(yearOf(today), today, d('2020-01-01')))).toEqual([
+			{ from: '2025-11-21', to: '2025-12-31' },
+			{ from: '2024-11-21', to: '2024-12-31' },
+			{ from: '2023-11-21', to: '2023-12-31' },
+		]);
+		expect(rests(projectionBasis(yearOf(d('2028-01-01')), d('2028-02-29'), d('2020-01-01')))).toEqual([
+			{ from: '2027-03-01', to: '2027-12-31' },
+			{ from: '2026-03-01', to: '2026-12-31' },
+			{ from: '2025-03-01', to: '2025-12-31' },
+		]);
+		// several whole months: shifted by as many months
+		expect(rests(projectionBasis({ from: d('2026-10-01'), to: d('2026-12-31') }, today, d('2020-01-01')))?.[0]).toEqual({ from: '2026-08-21', to: '2026-09-30' });
+		// the end of March shifted to February: nothing left there
+		expect(rests(projectionBasis(monthOf(d('2026-03-01')), d('2026-03-30'), d('2026-02-01')))).toEqual([{ from: '2026-03-01', to: '2026-02-28' }]);
+		// other periods: shifted by their length in days
+		expect(rests(projectionBasis({ from: d('2026-11-11'), to: d('2026-11-30') }, today, d('2026-10-20')))).toEqual([{ from: '2026-11-01', to: '2026-11-10' }]);
+		// no earlier period with data: scaled up instead
+		expect(projectionBasis(november, today, d('2026-11-03'))).toMatchObject({ kind: 'scaled', factor: 30 / 18 });
+		expect(projectionBasis(monthOf(d('2026-10-01')), today, d('2020-01-01'))).toBeNull();
+		// at the supported years' limit: only what fits
+		expect(rests(projectionBasis(monthOf(d('1678-03-01')), d('1678-03-10'), d('1678-01-01')))).toHaveLength(2);
+
+		// monthly rent on the 1st, groceries on the 25th: so far + the average rest
+		const all = build([
+			tx('2026-11-01', 'Rent', -1000, RENT),
+			tx('2026-10-01', 'Rent', -1000, RENT),
+			tx('2026-10-25', 'Shop', -90, FOOD),
+			tx('2026-09-25', 'Shop', -30, FOOD),
+			tx('2026-09-01', 'Rent', -1000, RENT),
+			tx('2026-08-25', 'Shop', -60, FOOD),
+		]).transactions;
+		const estimate = projection(basis, all, (x) => x.categoryId);
+		expect(estimate(RENT, cents(-1000))).toBe(-1000);
+		expect(estimate(FOOD, cents(-10))).toBe(-70);
+		expect(estimate(NO_CATEGORY, cents(0))).toBe(0);
+	});
+
+	it('projects what is entered ahead once, and new groups by their own time', () => {
+		const today = d('2026-11-20');
+		const basis = projectionBasis(monthOf(today), today, d('2020-01-01'))!;
+		// rent entered ahead for the 28th, as usual: counted once
+		const rent = build([tx('2026-11-28', 'Rent', -800, RENT), tx('2026-10-28', 'Rent', -800, RENT), tx('2026-09-28', 'Rent', -800, RENT)]).transactions;
+		// (usually -800 after the 20th, and those -800 are entered already)
+		expect(projection(basis, rent, () => 0)(0, cents(-850))).toBe(-850);
+		// more entered ahead than usually comes: that counts instead
+		const big = build([tx('2026-11-25', 'Trip', -5000, FOOD), tx('2026-10-25', 'Shop', -60, FOOD)]).transactions;
+		expect(projection(basis, big, () => 0)(0, cents(-5010))).toBe(-5010);
+		// a category since September: averaged over its 2 months, not all 12
+		const recent = build([tx('2026-10-25', 'Shop', -100, FOOD), tx('2026-09-25', 'Shop', -100, FOOD), tx('2024-01-01', 'Rent', -800, RENT)]).transactions;
+		expect(projection(basis, recent, (t) => t.categoryId)(FOOD, cents(0))).toBe(-100);
+		// scaled: only what's through today, plus what's entered ahead
+		const scaled = { period: monthOf(today), today, kind: 'scaled', factor: 1.5 } as const;
+		expect(projection(scaled, rent, () => 0)(0, cents(-1001 - 800))).toBe(-1502 - 800);
+		expect(projection(scaled, [], () => 0)(0, cents(Number.MAX_SAFE_INTEGER))).toBeNull();
 	});
 
 	it('puts two periods side by side', () => {

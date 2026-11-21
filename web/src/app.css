@@ -9,6 +9,8 @@
 	--accent: #00756f;
 	--accent-text: #ffffff;
 	--accent-soft: rgb(0 117 111 / 0.12);
+	/* the same on the surface, opaque: for drawing "holes" over something on a hovered row */
+	--accent-soft-on-surface: color-mix(in srgb, var(--accent) 12%, var(--surface));
 	--positive: #1b7f3b;
 	--negative: #b3261e;
 	--warning: #8a5a00;
@@ -31,6 +33,7 @@
 		--accent: #3fb9b0;
 		--accent-text: #0b1513;
 		--accent-soft: rgb(63 185 176 / 0.15);
+		--accent-soft-on-surface: color-mix(in srgb, var(--accent) 15%, var(--surface));
 		--positive: #5ccf7f;
 		--negative: #ff8a80;
 		--warning: #f0b84a;

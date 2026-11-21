@@ -199,10 +199,10 @@ test('an unfinished period is compared like for like', async ({ page }) => {
 test('trends: a row per category, by month or year; a row filters by its category', async ({ page }) => {
 	const trends = page.getByRole('region', { name: 'Trends' });
 	await expect(trends.getByRole('heading')).toHaveText('Expenses over time, by category');
-	await expect(trends).toContainText('Whole months only');
+	await expect(trends).toContainText('shows whole months');
 	// years: the fixture's data (2026) stays in the last 10 years for long
 	await trends.getByRole('radio', { name: 'Years' }).check();
-	await expect(trends).toContainText('Whole years only');
+	await expect(trends).toContainText('shows whole years');
 	const rows = trends.getByRole('listitem');
 	const groceries = trends.getByRole('button', { name: /^Groceries: (on average .* per year|new this year|no whole year with it yet)/ });
 	await expect(groceries).toBeVisible();
@@ -211,4 +211,22 @@ test('trends: a row per category, by month or year; a row filters by its categor
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('list', { name: 'Active filters' })).toContainText('Groceries');
 	await expect(rows).toHaveCount(1);
+});
+
+test('an unfinished month shows where it is heading', async ({ page }) => {
+	// on the 20th of the fixture's last month, with what usually comes after the 20th before
+	await page.clock.setFixedTime(new Date('2026-11-20T12:00:00'));
+	await page.reload();
+	await page.keyboard.press('g');
+	await page.keyboard.press('e');
+	await expect(page.getByRole('region', { name: 'Timeline' })).toContainText('Dashed: where this month is heading, by what usually comes in the rest of a month');
+	await expect(page.getByRole('region', { name: 'Trends' })).toContainText('then dashed where this month is heading');
+
+	await page.keyboard.press('f');
+	await page.getByRole('dialog').getByRole('combobox', { name: 'Period' }).selectOption('This month');
+	await page.keyboard.press('Enter');
+	const expected = page.getByRole('group', { name: 'Expected by 30.11.2026' });
+	await expect(expected).toBeVisible();
+	// expenses as usual after the 20th; income: nothing usually comes then
+	await expect(expected).toContainText('Income 10.000,00 € Expenses -10.583,54 € Net -583,54 €');
 });

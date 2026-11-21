@@ -1,7 +1,8 @@
 <!--
 	Income (up) and expenses (down) per month for what the filter selects, apart from its period, in
 	light colors, with the month's net as a narrow solid bar in front and the running balance of all
-	transactions as a line on top (both can be switched off). Or, "by category": the expenses (or
+	transactions as a line on top (both can be switched off). The current month also shows, dashed,
+	where it's heading: what it has so far plus what usually comes in the rest of a month. Or, "by category": the expenses (or
 	income) of the largest categories stacked per month, clicking one filters by it. The filter's
 	period is highlighted; clicking a month sets it (Shift+click extends it). Made for the mouse and touch: the same period
 	can be set with the keyboard in the filter dialog. Shows the last 24 months (12 on phones) at
@@ -17,6 +18,8 @@
 		monthOf,
 		monthsBetween,
 		ofSide,
+		projection,
+		projectionBasis,
 		totalsByCategory,
 		type Cents,
 		type CivilDate,
@@ -57,6 +60,25 @@
 
 	const totals = $derived(monthlyTotals(matching, all, months));
 
+	/** The current month, if it's in the chart and not over: its index and how to project it */
+	const current = $derived.by(() => {
+		const index = months.indexOf(monthOf(clock.today).from);
+		const basis = projectionBasis(monthOf(clock.today), clock.today, range.oldest);
+		return index >= 0 && basis !== null ? { index, basis } : null;
+	});
+	/** The current month's totals projected to its end, as far as there is something to project */
+	const estimate = $derived.by(() => {
+		const t = current && totals[current.index];
+		if (!current || !t) return null;
+		const project = projection(current.basis, matching, (t) => (t.amount > 0 ? 'income' : 'expense'));
+		const income = project('income', t.income);
+		const expenses = project('expense', t.expenses);
+		// (nothing more expected: nothing to show)
+		return income === null || expenses === null || (income === t.income && expenses === t.expenses) ? null : { index: current.index, income, expenses };
+	});
+	/** Only the current month's value, the rest empty: for the dashed "still to come" bars */
+	const onlyCurrent = (value: number) => months.map((_, i) => (i === current?.index && value !== 0 ? value : null));
+
 	// by category: the side's transactions of the largest categories, as positive amounts
 	const stacks = $derived.by(() => {
 		if (view !== 'categories') return null;
@@ -75,6 +97,14 @@
 				values: byCategory.get(id)!.map((v) => Math.abs(v)),
 			})),
 			other: other.map((v) => Math.abs(v)),
+			/** The side's total of the current month projected to its end */
+			estimate: (() => {
+				if (!estimate) return null;
+				const key = side === 'expense' ? 'expenses' : 'income';
+				const sum = Math.abs(totals[estimate.index]![key]);
+				const value = Math.abs(estimate[key]);
+				return value === sum ? null : { index: estimate.index, sum, value };
+			})(),
 		};
 	});
 	const labels = $derived(months.map((month) => formatMonth(month, { year: '2-digit' })));
@@ -153,6 +183,8 @@
 	/** What a custom series' `renderItem` gets to work with (the part used here) */
 	type CustomApi = { value: (dimension: number) => number; coord: (point: number[]) => [number, number]; size: (size: number[]) => [number, number] };
 	const axisEuros = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
+	/** The rest of a month's projection: an outline with a dashed border */
+	const dashed = (color: string) => ({ color: 'transparent', borderColor: color, borderWidth: 1.5, borderType: 'dashed' as const });
 
 	const option = $derived.by(() => {
 		const c = theme.colors;
@@ -190,7 +222,7 @@
 					const i = params[0]?.dataIndex ?? -1;
 					const t = totals[i];
 					if (!t) return '';
-					return stacks ? categoryTooltip(t.month, i) : tooltipHtml(t.month, t.income, t.expenses, t.balance);
+					return stacks ? categoryTooltip(t.month, i) : tooltipHtml(t.month, t.income, t.expenses, t.balance, i);
 				},
 			},
 			xAxis: { type: 'category', data: labels, ...axis, splitLine: { show: false }, axisTick: { show: false } },
@@ -210,6 +242,15 @@
 							...(i === 0 && { markArea: highlight }),
 						})),
 						{ id: 'other', name: 'Other', type: 'bar', stack: 'category', data: stacks.other.map(euros), itemStyle: { color: c.border }, ...(stacks.series.length === 0 && { markArea: highlight }) },
+						{
+							id: 'projected',
+							name: 'Projected',
+							type: 'bar',
+							stack: 'category',
+							silent: true,
+							data: stacks.estimate ? onlyCurrent(euros(stacks.estimate.value - stacks.estimate.sum)) : [],
+							itemStyle: dashed(c.muted),
+						},
 					]
 				: [
 				{
@@ -226,6 +267,23 @@
 					stack: 'month',
 					data: totals.map((t) => euros(t.expenses)),
 					itemStyle: { color: c.negative, opacity: showNet ? 0.35 : 1 },
+				},
+				{
+					// what the current month is heading for, on top of what it has so far
+					name: 'Income projected',
+					type: 'bar',
+					stack: 'month',
+					silent: true,
+					data: estimate ? onlyCurrent(euros(estimate.income - totals[estimate.index]!.income)) : [],
+					itemStyle: dashed(c.positive),
+				},
+				{
+					name: 'Expenses projected',
+					type: 'bar',
+					stack: 'month',
+					silent: true,
+					data: estimate ? onlyCurrent(euros(estimate.expenses - totals[estimate.index]!.expenses)) : [],
+					itemStyle: dashed(c.negative),
 				},
 				{
 					// the net: a narrow bar centered on the month, in front of income and expenses
@@ -274,8 +332,16 @@
 		`<div style="display:flex;justify-content:space-between;gap:1rem"><span>${color ? `<span style="display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;margin-right:0.35rem;background:${color}"></span>` : ''}${escapeHtml(label)}</span><b>${formatEuro(value as Cents)}</b></div>`;
 	const tooltipTitle = (month: CivilDate) => `<div style="font-weight:600;margin-bottom:0.25rem">${describePeriod(month, monthOf(month).to)}</div>`;
 
-	function tooltipHtml(month: CivilDate, income: number, expenses: number, balance: number): string {
-		return `${tooltipTitle(month)}${tooltipRow('Income', income)}${tooltipRow('Expenses', expenses)}${tooltipRow('Net', income + expenses)}${tooltipRow('Balance', balance)}`;
+	/** The month's end projected (see `estimate`) under a heading, for the tooltip */
+	const tooltipEstimate = (rows: string) =>
+		`<div style="margin-top:0.4rem;padding-top:0.3rem;border-top:1px dashed ${theme.colors.border};color:${theme.colors.muted}">Expected by the month's end</div>${rows}`;
+
+	function tooltipHtml(month: CivilDate, income: number, expenses: number, balance: number, i: number): string {
+		const rest =
+			estimate?.index === i
+				? tooltipEstimate(`${tooltipRow('Income', estimate.income)}${tooltipRow('Expenses', estimate.expenses)}${tooltipRow('Net', estimate.income + estimate.expenses)}`)
+				: '';
+		return `${tooltipTitle(month)}${tooltipRow('Income', income)}${tooltipRow('Expenses', expenses)}${tooltipRow('Net', income + expenses)}${tooltipRow('Balance', balance)}${rest}`;
 	}
 
 	/** The month's categories, largest first (without the empty ones) */
@@ -285,7 +351,9 @@
 			.filter((r) => r.value !== 0)
 			.sort((a, b) => b.value - a.value);
 		const sum = rows.reduce((total, r) => total + r.value, 0);
-		return `${tooltipTitle(month)}${rows.map((r) => tooltipRow(r.name, r.value, r.color)).join('')}${tooltipRow(side === 'expense' ? 'Expenses' : 'Income', sum)}`;
+		const name = side === 'expense' ? 'Expenses' : 'Income';
+		const rest = stacks.estimate?.index === i ? tooltipEstimate(tooltipRow(name, stacks.estimate.value)) : '';
+		return `${tooltipTitle(month)}${rows.map((r) => tooltipRow(r.name, r.value, r.color)).join('')}${tooltipRow(name, sum)}${rest}`;
 	}
 
 	/** Category names are the user's text: shown as text, not as markup */
@@ -309,7 +377,11 @@
 <div aria-hidden="true">
 	<Chart {option} {onready} />
 </div>
-<p class="hint">Click a month to show it, Shift+click for several months. Zoom with the wheel or the slider.</p>
+<p class="hint">
+	Click a month to show it, Shift+click for several months. Zoom with the wheel or the slider.{current && (stacks ? stacks.estimate : estimate)
+		? ` Dashed: where this month is heading, ${current.basis.kind === 'usual' ? 'by what usually comes in the rest of a month' : 'at its pace so far'}.`
+		: ''}
+</p>
 {#if range.outside.length > 0}
 	<p class="outside" role="note">
 		Not in the chart, the {plural(range.outside.length, 'date seems', 'dates seem')} mistyped:
