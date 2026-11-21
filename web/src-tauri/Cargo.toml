@@ -21,3 +21,11 @@ tauri-plugin-single-instance = "2"
 
 [dev-dependencies]
 tempfile = "3"
+
+# small downloads: the Linux version doesn't bundle its browser engine, so the program is most of it
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

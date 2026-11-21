@@ -2,8 +2,7 @@
 //!
 //! Normally that's the system's app data directory. A folder named `CashGuard-data` next to the
 //! program makes it portable: everything goes into that folder instead, so the program and its
-//! data can be carried around together (e.g. on a USB stick). "Next to the program" means next to
-//! the `.exe`, or next to the `.AppImage` file (not its temporary mount point).
+//! data can be carried around together (e.g. on a USB stick).
 
 use std::path::{Path, PathBuf};
 
@@ -24,8 +23,7 @@ impl DataDir {
 
 /// The folder the program was started from.
 fn program_dir() -> Option<PathBuf> {
-    let program = std::env::var_os("APPIMAGE").map(PathBuf::from).or_else(|| std::env::current_exe().ok())?;
-    program.parent().map(Path::to_path_buf)
+    std::env::current_exe().ok()?.parent().map(Path::to_path_buf)
 }
 
 /// The portable data folder in `dir`, if there is one.

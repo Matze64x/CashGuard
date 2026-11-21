@@ -1,6 +1,7 @@
 # Builds the desktop app's packages, by hand only (Actions tab -> "Desktop builds" -> Run workflow).
 # The packages are attached to the run as artifacts (kept 30 days):
-#   Linux:   .deb, .AppImage, and the portable version (.tar.gz: AppImage + CashGuard-data folder)
+#   Linux:   .deb, and the portable version (.tar.gz: the program + CashGuard-data folder); both
+#            use the system's WebKitGTK 4.1 (most desktops have it; else install it)
 #   Windows: installer (-setup.exe, no admin rights needed), and the portable version (.zip:
 #            CashGuard.exe + CashGuard-data folder; needs the WebView2 runtime, which Windows 10
 #            and 11 have)
@@ -16,7 +17,7 @@ permissions:
 jobs:
   linux:
     name: Linux packages
-    # the oldest supported Ubuntu: the AppImage then also runs on older distributions
+    # the oldest supported Ubuntu: the program then also runs on older distributions (glibc)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
@@ -33,7 +34,7 @@ jobs:
       - run: rustup update stable && rustup default stable
       - run: npm ci
         working-directory: web
-      - run: npm run tauri build -- --bundles deb,appimage
+      - run: npm run tauri build -- --bundles deb
         working-directory: web
       - run: sh scripts/package-portable.sh
         working-directory: web
@@ -42,7 +43,6 @@ jobs:
           name: cashguard-linux
           path: |
             web/src-tauri/target/release/bundle/deb/*.deb
-            web/src-tauri/target/release/bundle/appimage/*.AppImage
             web/src-tauri/target/release/bundle/portable/*.tar.gz
           retention-days: 30
 
