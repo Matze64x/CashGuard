@@ -20,7 +20,7 @@
 	import { formatDate, formatEuro, plural } from './display';
 	import RecurringEditor from './RecurringEditor.svelte';
 	import { describeSchedule } from './schedule';
-	import { shortcuts } from './shortcuts.svelte';
+	import { displayKeys, shortcuts } from './shortcuts.svelte';
 	import SelectableList from './ui/SelectableList.svelte';
 	import type { Workspace } from './workspace.svelte';
 
@@ -119,7 +119,7 @@
 		shortcuts.add([
 			...[
 				{ keys: ['Enter', 'e'], description: 'Edit the selected recurring transaction', run: () => openEdit(selected) },
-				{ keys: ['Delete', 'Backspace'], description: 'Delete the selected recurring transaction (undo with Mod+Z)', run: () => void remove(selected) },
+				{ keys: ['Delete', 'Backspace'], description: `Delete the selected recurring transaction (undo with ${displayKeys('Mod+z')})`, run: () => void remove(selected) },
 			].map((s) => ({ ...s, group: 'Recurring', focusIn: () => listElement, visible: () => active, when: () => active && !!selected })),
 		]),
 	);

@@ -79,7 +79,9 @@
 		</ul>
 		<div class="buttons">
 			{#if canKeep}<button onclick={onkeep}>Replace it with my data</button>{/if}
-			<button onclick={onclose}>{candidate.mode === 'sync' ? 'Not now' : 'Close'}</button>
+			<!-- the safe choice has the focus: a prompt can appear right after an edit, while typing -->
+			<!-- svelte-ignore a11y_autofocus -->
+			<button onclick={onclose} autofocus>{candidate.mode === 'sync' ? 'Not now' : 'Close'}</button>
 		</div>
 	{:else}
 		{#each warnings as warning (warning)}
@@ -111,7 +113,8 @@
 		<div class="buttons">
 			{#if canKeep}<button onclick={onkeep}>Replace it with my data</button>{/if}
 			<!-- with warnings, cancelling is the suggested action -->
-			<button class:primary={warnings.length > 0} onclick={onclose}>{text.cancel}</button>
+			<!-- svelte-ignore a11y_autofocus -->
+			<button class:primary={warnings.length > 0} onclick={onclose} autofocus>{text.cancel}</button>
 			<button class:primary={warnings.length === 0} class:danger={warnings.length > 0} onclick={onapply}>{text.apply}</button>
 		</div>
 	{/if}

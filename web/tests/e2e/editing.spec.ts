@@ -147,8 +147,14 @@ test('categories and accounts, and the shortcut help', async ({ page }) => {
 
 	await page.getByRole('region', { name: 'Accounts' }).getByRole('button', { name: 'New' }).focus();
 	await page.keyboard.press('Enter');
-	await page.keyboard.type('Wallet');
+	// a problem shows in the dialog, not behind it
+	await page.keyboard.type('   ');
 	await page.getByLabel('Current balance').fill('+20');
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('dialog', { name: 'New account' }).getByRole('alert')).toHaveText('Enter a name for the account.');
+	await page.getByRole('dialog').getByLabel('Name').fill('');
+	await page.getByRole('dialog').getByLabel('Name').focus();
+	await page.keyboard.type('Wallet');
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('option', { name: /Wallet/ })).toContainText('20,00 €');
 	await expect(page.getByText('Difference')).toBeVisible();
@@ -164,6 +170,7 @@ test('categories and accounts, and the shortcut help', async ({ page }) => {
 	const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
 	await expect(help).toContainText('New transaction');
 	await expect(help).toContainText('Undo the last change');
+	await expect(help).not.toContainText('Mod+');
 	await page.keyboard.press('Escape');
 	await expect(help).toBeHidden();
 });

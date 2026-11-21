@@ -44,8 +44,13 @@
 		if (c) editing = { id: c.id, name: c.name, color: c.color };
 	}
 
+	/** Why saving failed: shown in the dialog (a notice would be hidden behind it) */
+	let failure = $state<string | null>(null);
+	const fail = (text: string) => void (failure = text);
+
 	function close() {
 		editing = null;
+		failure = null;
 		list.focus();
 	}
 
@@ -53,9 +58,10 @@
 		const target = editing;
 		if (!target || saving) return;
 		const name = target.name.trim();
-		if (!name) return notify('Enter a name for the category.');
+		failure = null;
+		if (!name) return fail('Enter a name for the category.');
 		saving = true;
-		const saved = await attempt(notify, async () => {
+		const saved = await attempt(fail, async () => {
 			if (target.id === null) {
 				let created: Id | null = null;
 				await workspace.edit(`Add category “${name}”`, (d) => {
@@ -137,6 +143,7 @@
 			<!-- svelte-ignore a11y_autofocus -->
 			<input id="category-name" type="text" autocomplete="off" bind:value={editing.name} autofocus required />
 			<ColorPicker bind:value={editing.color} />
+			{#if failure}<p class="error" role="alert">{failure}</p>{/if}
 			<div class="buttons">
 				<button type="button" onclick={close}>Cancel</button>
 				<button type="submit" class="primary">Save</button>
@@ -146,6 +153,10 @@
 {/if}
 
 <style>
+	.error {
+		color: var(--negative);
+		margin: 0;
+	}
 	.toolbar {
 		display: flex;
 		justify-content: space-between;

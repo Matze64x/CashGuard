@@ -6,7 +6,7 @@
 	import { addAccount, deleteAccount, sumCents, totalAmount, updateAccount, type Account, type Cents, type Id } from '../core';
 	import { attempt } from './attempt';
 	import { formatDay, formatEuro } from './display';
-	import { shortcuts } from './shortcuts.svelte';
+	import { displayKeys, shortcuts } from './shortcuts.svelte';
 	import AmountInput from './ui/AmountInput.svelte';
 	import Modal from './ui/Modal.svelte';
 	import SelectableList from './ui/SelectableList.svelte';
@@ -44,8 +44,13 @@
 		if (row) editing = { original: row.account, name: row.account.name, amount: row.account.amount };
 	}
 
+	/** Why saving failed: shown in the dialog (a notice would be hidden behind it) */
+	let failure = $state<string | null>(null);
+	const fail = (text: string) => void (failure = text);
+
 	function close() {
 		editing = null;
+		failure = null;
 		list.focus();
 	}
 
@@ -53,11 +58,12 @@
 		const target = editing;
 		if (!target || saving) return;
 		const name = target.name.trim();
-		if (!name) return notify('Enter a name for the account.');
-		if (target.amount === null) return notify('Enter the balance.');
+		failure = null;
+		if (!name) return fail('Enter a name for the account.');
+		if (target.amount === null) return fail('Enter the balance.');
 		const amount = target.amount;
 		saving = true;
-		const saved = await attempt(notify, async () => {
+		const saved = await attempt(fail, async () => {
 			const { original } = target;
 			if (original === null) {
 				await workspace.edit(`Add account “${name}”`, (d, now) => addAccount(d, name, amount, now));
@@ -86,7 +92,7 @@
 			// these act on the selection, so only while the list (not a button elsewhere) has the focus
 			...[
 				{ keys: ['Enter', 'e'], description: 'Edit the selected account', run: () => openEdit(selected) },
-				{ keys: ['Delete', 'Backspace'], description: 'Delete the selected account (undo with Mod+Z)', run: () => void remove(selected) },
+				{ keys: ['Delete', 'Backspace'], description: `Delete the selected account (undo with ${displayKeys('Mod+z')})`, run: () => void remove(selected) },
 			].map((s) => ({ ...s, group: 'Accounts', focusIn: () => listElement, visible: () => active, when: () => active && !!selected })),
 		]),
 	);
@@ -147,6 +153,7 @@
 			<label for="account-amount">Current balance</label>
 			<!-- an existing account usually only needs its new balance -->
 			<AmountInput id="account-amount" label="Current balance" bind:value={editing.amount} autofocus={editing.original !== null} />
+			{#if failure}<p class="error" role="alert">{failure}</p>{/if}
 			<div class="buttons">
 				<button type="button" onclick={close}>Cancel</button>
 				<button type="submit" class="primary">Save</button>
@@ -156,6 +163,10 @@
 {/if}
 
 <style>
+	.error {
+		color: var(--negative);
+		margin: 0;
+	}
 	.toolbar {
 		display: flex;
 		justify-content: space-between;

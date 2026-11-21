@@ -219,15 +219,21 @@ export class Workspace {
 		if (linking) await this.#watch(candidate.filePath!);
 	}
 
-	async undoImport(): Promise<void> {
-		if (this.#beforeImport) await this.#commit(this.#beforeImport, null);
+	undoImport(): Promise<void> {
+		return this.#serial(async () => {
+			if (this.#beforeImport) await this.#commit(this.#beforeImport, null);
+		});
 	}
 
 	/** Hands the working copy to the user to save over the synced file. Returns false if cancelled. */
 	async exportFile(): Promise<boolean> {
+		// (saving must start right away, from the click: browsers block it after an await)
 		const { sync, fileName } = this.#current;
-		if (!(await saveFile(serialize(sync.working), fileName ?? DEFAULT_FILE_NAME))) return false;
-		await this.#commit({ ...this.#current, sync: { ...sync, exported: sync.working } }, this.#beforeImport);
+		const handedOut = sync.working;
+		if (!(await saveFile(serialize(handedOut), fileName ?? DEFAULT_FILE_NAME))) return false;
+		// changes made meanwhile (e.g. in another tab, or a save still in progress) are kept: only
+		// what was handed out counts as exported
+		await this.#serial(() => this.#commit({ ...this.#current, sync: { ...this.#current.sync, exported: handedOut } }, this.#beforeImport));
 		return true;
 	}
 

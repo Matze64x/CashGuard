@@ -167,6 +167,24 @@ describe('categories and accounts', () => {
 	});
 });
 
+describe('text the file format rejects', () => {
+	it('becomes valid: a lone surrogate turns into U+FFFD, NUL is dropped', () => {
+		const half = 'Caf\ud83d!\0';
+		let { data } = addTransaction(empty, draft({ description: half, subTransactions: [{ date: '2026-01-01' as CivilDate, description: '\udc00x', categoryId: NO_CATEGORY, amount: cents(-1) }] }), at(1));
+		data = addCategory(data, half, '#112233FF').data;
+		data = addAccount(data, half, cents(0), at(1));
+		data = updateAccount(data, data.accounts[0]!.id, { name: 'ok\ud800' }, at(2));
+		data = updateCategory(data, data.categories[0]!.id, { name: '\udfff' });
+		expect(isValidFile(data)).toBe(true);
+		expect(data.transactions[0]!.description).toBe('Caf\ufffd!');
+		expect(data.transactions[0]!.subTransactions![0]!.description).toBe('\ufffdx');
+		expect(data.accounts[0]!.name).toBe('ok\ufffd');
+		expect(data.categories[0]!.name).toBe('\ufffd');
+		// a whole emoji stays
+		expect(addTransaction(empty, draft({ description: '😀' }), at(1)).data.transactions[0]!.description).toBe('😀');
+	});
+});
+
 describe('invalid groups', () => {
 	it('refuses parts sharing an id', () => {
 		const { data, id } = addTransaction(empty, draft({ subTransactions: [draft(), draft()] }), at(1));

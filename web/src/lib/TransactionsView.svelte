@@ -30,7 +30,7 @@
 	import { formatDate, formatEuro, plural } from './display';
 	import { filter } from './filter.svelte';
 	import FilterBar from './FilterBar.svelte';
-	import { shortcuts } from './shortcuts.svelte';
+	import { displayKeys, shortcuts } from './shortcuts.svelte';
 	import TransactionEditor from './TransactionEditor.svelte';
 	import SelectableList from './ui/SelectableList.svelte';
 	import type { Workspace } from './workspace.svelte';
@@ -106,8 +106,13 @@
 		};
 	}
 
+	/** Why saving failed: shown in the editor (a notice would be hidden behind it) */
+	let failure = $state<string | null>(null);
+	const fail = (text: string) => void (failure = text);
+
 	function close() {
 		editing = null;
+		failure = null;
 		list.focus();
 	}
 
@@ -116,7 +121,8 @@
 		// a second Enter while saving must not add the transaction twice
 		if (!target || saving) return;
 		saving = true;
-		const saved = await attempt(notify, async () => {
+		failure = null;
+		const saved = await attempt(fail, async () => {
 			if (target.id === null) {
 				let created: Id | null = null;
 				let balance: Cents | null = null;
@@ -139,6 +145,7 @@
 		});
 		saving = false;
 		if (!saved) return;
+		failure = null;
 		if (another) openNew(draft.date);
 		else close();
 	}
@@ -149,7 +156,8 @@
 		if (!target || target.id === null || saving) return;
 		const id = target.id;
 		saving = true;
-		const saved = await attempt(notify, () => workspace.edit(`Edit “${edited.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, edited, now)));
+		failure = null;
+		const saved = await attempt(fail, () => workspace.edit(`Edit “${edited.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, edited, now)));
 		saving = false;
 		if (!saved) return;
 		editing = null;
@@ -173,7 +181,7 @@
 			...[
 				{ keys: ['Enter', 'e'], description: 'Edit the selected transaction', run: () => openEdit(selected) },
 				{ keys: ['c'], description: 'New transaction like the selected one (copy)', run: () => openCopy(selected) },
-				{ keys: ['Delete', 'Backspace'], description: 'Delete the selected transaction (undo with Mod+Z)', run: () => void remove(selected) },
+				{ keys: ['Delete', 'Backspace'], description: `Delete the selected transaction (undo with ${displayKeys('Mod+z')})`, run: () => void remove(selected) },
 			].map((s) => ({ ...s, group: 'Transactions', focusIn: () => listElement, visible: () => active, when: () => active && !!selected })),
 		]),
 	);
@@ -244,6 +252,7 @@
 			isNew={editing.id === null}
 			onsave={save}
 			onclose={close}
+			{failure}
 			onmakerecurring={editing.id === null ? undefined : (template, edited) => void makeRecurring(template, edited)}
 		/>
 	{/key}

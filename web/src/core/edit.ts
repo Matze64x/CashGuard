@@ -50,13 +50,22 @@ function checkCategory(data: CashGuardData, categoryId: Id): void {
 	if (categoryId !== NO_CATEGORY && !data.categories.some((c) => c.id === categoryId)) throw new EditError(`Unknown category ${categoryId}`);
 }
 
+/**
+ * Text as the file format accepts it: a lone surrogate (half an emoji, e.g. from cut-off pasted
+ * text) becomes U+FFFD and NUL is dropped. Otherwise the edit would be saved but the stored data
+ * couldn't be read back.
+ */
+export function cleanText(text: string): string {
+	return text.replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '\ufffd').replaceAll('\0', '');
+}
+
 /** Builds the sub-transactions of a group, keeping the stamps of subs that didn't change. */
 function buildSubs(data: CashGuardData, drafts: readonly SubTransactionDraft[], previous: readonly Transaction[], now: UtcSeconds, taken: Set<string>): Transaction[] {
 	const ids = drafts.flatMap((d) => (d.id === undefined ? [] : [d.id]));
 	if (new Set(ids).size !== ids.length) throw new EditError('Two parts have the same id');
 	return drafts.map((draft) => {
 		checkCategory(data, draft.categoryId);
-		const fields = { date: draft.date, description: draft.description, categoryId: draft.categoryId, amount: draft.amount };
+		const fields = { date: draft.date, description: cleanText(draft.description), categoryId: draft.categoryId, amount: draft.amount };
 		const old = draft.id === undefined ? undefined : previous.find((s) => s.id === draft.id);
 		if (old) {
 			const unchanged = deepEqual({ date: old.date, description: old.description, categoryId: old.categoryId, amount: old.amount }, fields);
@@ -78,7 +87,7 @@ function build(data: CashGuardData, draft: TransactionDraft, base: Pick<Transact
 		date: draft.date,
 		categoryId: draft.categoryId,
 		amount: draft.amount,
-		description: draft.description,
+		description: cleanText(draft.description),
 		added: base.added,
 		edited: now,
 		...(subTransactions && { subTransactions }),
@@ -124,7 +133,7 @@ export function toDraft(t: Transaction): TransactionDraft {
 
 export function addCategory(data: CashGuardData, name: string, color: string): { data: CashGuardData; id: Id } {
 	const id = newId(usedIds(data));
-	return { data: { ...data, categories: [...data.categories, { id, name, color: color.toUpperCase() }] }, id };
+	return { data: { ...data, categories: [...data.categories, { id, name: cleanText(name), color: color.toUpperCase() }] }, id };
 }
 
 /** Returns the data unchanged if nothing actually changed. */
@@ -132,7 +141,7 @@ export function updateCategory(data: CashGuardData, id: Id, changes: Partial<Pic
 	const old = data.categories.find((c) => c.id === id);
 	if (!old) throw new EditError(`Unknown category ${id}`);
 	const color = changes.color?.toUpperCase();
-	const updated = { ...old, ...changes, ...(color && { color }) };
+	const updated = { ...old, ...changes, ...(color && { color }), ...(changes.name !== undefined && { name: cleanText(changes.name) }) };
 	if (deepEqual(updated, old)) return data;
 	return { ...data, categories: data.categories.map((c) => (c === old ? updated : c)) };
 }
@@ -177,7 +186,7 @@ function accountWith(data: CashGuardData, id: Id): { account: Account; index: nu
 
 export function addAccount(data: CashGuardData, name: string, amount: Cents, now: UtcSeconds): CashGuardData {
 	const id = newId(new Set(data.accounts.map((a) => a.id)));
-	return { ...data, accounts: [...data.accounts, { id, name, amount, edited: now }] };
+	return { ...data, accounts: [...data.accounts, { id, name: cleanText(name), amount, edited: now }] };
 }
 
 /**
@@ -189,7 +198,7 @@ export function updateAccount(data: CashGuardData, id: Id, changes: Partial<Pick
 	const { account: old, index } = accountWith(data, id);
 	if (expected && !deepEqual(old, expected)) throw new EditError(`The account “${expected.name}” changed meanwhile; please try again.`);
 	const amountChanged = changes.amount !== undefined && changes.amount !== old.amount;
-	const updated: Account = { ...old, ...changes, edited: amountChanged ? now : old.edited };
+	const updated: Account = { ...old, ...changes, ...(changes.name !== undefined && { name: cleanText(changes.name) }), edited: amountChanged ? now : old.edited };
 	if (deepEqual(updated, old)) return data;
 	return { ...data, accounts: data.accounts.map((a, i) => (i === index ? updated : a)) };
 }
@@ -231,7 +240,7 @@ function templateOf(data: CashGuardData, draft: RecurringDraft): RecurringDraft 
 	if (!isValidSchedule(schedule)) throw new EditError('Invalid schedule');
 	if (!isCivilDate(start) || (end !== null && !isCivilDate(end))) throw new EditError('Invalid date');
 	if (end !== null && end < start) throw new EditError('The end is before the start');
-	return { description, categoryId, amount, accountId, schedule: { unit: schedule.unit, every: schedule.every, days: [...schedule.days] }, start, end };
+	return { description: cleanText(description), categoryId, amount, accountId, schedule: { unit: schedule.unit, every: schedule.every, days: [...schedule.days] }, start, end };
 }
 
 export function addRecurring(data: CashGuardData, draft: RecurringDraft, now: UtcSeconds): { data: CashGuardData; id: Id } {

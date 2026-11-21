@@ -146,6 +146,8 @@ test('an emptied file asks first, and "Replace it with my data" restores it', as
 	await onFake(page, EMPTY, PATH, true);
 	const dialog = page.getByRole('dialog', { name: 'Changes in “cashguard.json”' });
 	await expect(dialog.getByRole('alert').first()).toContainText('This file is empty');
+	// the safe choice has the focus: the prompt can come up while typing
+	await expect(dialog.getByRole('button', { name: 'Not now' })).toBeFocused();
 
 	// "Not now" changes nothing; the next change on disk asks again
 	await dialog.getByRole('button', { name: 'Not now' }).click();

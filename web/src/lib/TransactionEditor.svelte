@@ -26,7 +26,7 @@
 	import { clock } from './clock.svelte';
 	import { formatEuro } from './display';
 	import { findAccount, settings } from './settings.svelte';
-	import { shortcuts } from './shortcuts.svelte';
+	import { displayKeys, shortcuts } from './shortcuts.svelte';
 	import AmountInput from './ui/AmountInput.svelte';
 	import DateInput from './ui/DateInput.svelte';
 	import DescriptionInput from './ui/DescriptionInput.svelte';
@@ -40,6 +40,7 @@
 		onsave,
 		onclose,
 		onmakerecurring,
+		failure = null,
 	}: {
 		data: CashGuardData;
 		initial: TransactionDraft;
@@ -54,6 +55,8 @@
 		onclose: () => void;
 		/** Offered for an existing transaction: a recurring transaction like it (`edited`: the transaction as in the form, to save first) */
 		onmakerecurring?: (template: RecurringDraft, edited: TransactionDraft) => void;
+		/** Why saving failed, shown in the form */
+		failure?: string | null;
 	} = $props();
 
 	/**
@@ -131,7 +134,8 @@
 
 	function unsplit() {
 		const [first] = parts ?? [];
-		amount = parts?.length === 1 && first ? first.amount : partsTotal;
+		// (a group without parts, e.g. from the C++ client, keeps its stored amount)
+		amount = parts?.length === 0 ? start.amount : parts?.length === 1 && first ? first.amount : partsTotal;
 		parts = null;
 	}
 
@@ -239,13 +243,13 @@
 			<p class="split"><button type="button" onclick={split}>Split into parts…</button></p>
 		{/if}
 
-		{#if error}<p class="error" role="alert">{error}</p>{/if}
+		{#if error ?? failure}<p class="error" role="alert">{error ?? failure}</p>{/if}
 
 		<div class="buttons">
 			{#if onmakerecurring}<button type="button" class="left" onclick={makeRecurring}>Make recurring…</button>{/if}
 			<button type="button" onclick={onclose}>Cancel</button>
-			<button type="button" onclick={() => save(true)} title="Mod+Shift+Enter">Save and add another</button>
-			<button type="submit" class="primary" title="Enter or Mod+Enter">Save</button>
+			<button type="button" onclick={() => save(true)} title={displayKeys('Mod+Shift+Enter')}>Save and add another</button>
+			<button type="submit" class="primary" title={`Enter or ${displayKeys('Mod+Enter')}`}>Save</button>
 		</div>
 	</form>
 </Modal>
