@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -62,6 +62,8 @@ const DIAL_INTERVAL: Duration = Duration::from_secs(15);
 const HIGHER_ID_DELAY: Duration = Duration::from_secs(3);
 /// Incoming connections that haven't said who they are yet
 const MAX_PENDING: usize = 8;
+/// … of those from one address (so one device can't take them all)
+const MAX_PENDING_PER_ADDRESS: usize = 2;
 /// How long the users have to compare the code
 const PAIRING_TIME: Duration = Duration::from_secs(120);
 /// The least time between two incoming pairing attempts
@@ -331,7 +333,9 @@ struct Shared {
     /// Per PC: don't dial before this time, and how many connections in a row ended early
     backoff: Mutex<HashMap<String, (Instant, u32)>>,
     next_attempt: AtomicU64,
-    pending: AtomicUsize,
+    pending: Mutex<HashMap<IpAddr, usize>>,
+    /// The port this PC listens on (other PCs remember it with the address)
+    port: u16,
     wake_dialer: Notify,
     stop: watch::Receiver<bool>,
 }
@@ -388,19 +392,31 @@ impl Shared {
 }
 
 /// Counts an incoming connection that hasn't said who it is yet, until dropped
-struct Pending(Arc<Shared>);
+struct Pending(Arc<Shared>, IpAddr);
 
 impl Pending {
-    fn new(shared: &Arc<Shared>) -> Option<Pending> {
-        let before = shared.pending.fetch_add(1, Ordering::SeqCst);
-        let pending = Pending(Arc::clone(shared));
-        (before < MAX_PENDING).then_some(pending)
+    /// None if there are too many already (in all, or from this address)
+    fn new(shared: &Arc<Shared>, ip: IpAddr) -> Option<Pending> {
+        let mut pending = shared.pending.lock().unwrap();
+        let total: usize = pending.values().sum();
+        let here = pending.entry(ip).or_insert(0);
+        if total >= MAX_PENDING || *here >= MAX_PENDING_PER_ADDRESS {
+            return None;
+        }
+        *here += 1;
+        Some(Pending(Arc::clone(shared), ip))
     }
 }
 
 impl Drop for Pending {
     fn drop(&mut self) {
-        self.0.pending.fetch_sub(1, Ordering::SeqCst);
+        let mut pending = self.0.pending.lock().unwrap();
+        if let Some(n) = pending.get_mut(&self.1) {
+            *n -= 1;
+            if *n == 0 {
+                pending.remove(&self.1);
+            }
+        }
     }
 }
 
@@ -461,7 +477,8 @@ impl PcNet {
             last_incoming_pairing: Mutex::new(None),
             backoff: Mutex::new(HashMap::new()),
             next_attempt: AtomicU64::new(1),
-            pending: AtomicUsize::new(0),
+            pending: Mutex::new(HashMap::new()),
+            port: local.port(),
             wake_dialer: Notify::new(),
             stop: stop_rx,
         });
@@ -665,8 +682,8 @@ async fn accept_loop(shared: Arc<Shared>, listener: TcpListener) {
         match accepted {
             // local network only
             Ok((tcp, source)) if is_local(source.ip()) => {
-                let Some(pending) = Pending::new(&shared) else { continue };
-                tokio::spawn(incoming(Arc::clone(&shared), tcp, pending));
+                let Some(pending) = Pending::new(&shared, source.ip()) else { continue };
+                tokio::spawn(incoming(Arc::clone(&shared), tcp, source.ip(), pending));
             }
             Ok(_) => {}
             Err(e) => {
@@ -677,7 +694,7 @@ async fn accept_loop(shared: Arc<Shared>, listener: TcpListener) {
     }
 }
 
-async fn incoming(shared: Arc<Shared>, tcp: TcpStream, pending: Pending) {
+async fn incoming(shared: Arc<Shared>, tcp: TcpStream, source: IpAddr, pending: Pending) {
     let _ = tcp.set_nodelay(true);
     let Ok(Ok(mut tls)) = timeout(HANDSHAKE_TIMEOUT, shared.acceptor.accept(tcp)).await else { return };
     let Some(peer_fp) = peer_fingerprint(tls.get_ref().1.peer_certificates()) else { return };
@@ -705,8 +722,18 @@ async fn incoming(shared: Arc<Shared>, tcp: TcpStream, pending: Pending) {
                 let _ = write_json(&mut tls, json!({ "t": "denied", "reason": "duplicate" })).await;
                 return;
             }
-            if known.is_some_and(|(_, old)| old != name) {
-                let _ = shared.update_state(|s| s.pcs.iter_mut().filter(|p| p.id == id).for_each(|p| p.name = name.clone()));
+            // where it can be reached: its address and the port it listens on
+            let address = first.get("port").and_then(Value::as_u64).and_then(|p| u16::try_from(p).ok()).filter(|p| *p != 0).map(|p| SocketAddr::new(source, p).to_string());
+            let (old_name, old_address) = shared.state.lock().unwrap().pc(&id).map(|p| (p.name.clone(), p.last_address.clone())).unwrap_or_default();
+            if old_name != name || (address.is_some() && address != old_address) {
+                let _ = shared.update_state(|s| {
+                    for p in s.pcs.iter_mut().filter(|p| p.id == id) {
+                        p.name = name.clone();
+                        if address.is_some() {
+                            p.last_address = address.clone();
+                        }
+                    }
+                });
             }
             if write_json(&mut tls, json!({ "t": "ok", "id": shared.self_id, "name": shared.name() })).await.is_err() {
                 return;
@@ -798,7 +825,7 @@ async fn dial(shared: Arc<Shared>, pc: PairedPc, dialing: Dialing) {
         if !constant_time_eq(&fp, &pc.fingerprint) {
             continue;
         }
-        if write_json(&mut tls, json!({ "t": "sync", "id": shared.self_id, "name": shared.name() })).await.is_err() {
+        if write_json(&mut tls, json!({ "t": "sync", "id": shared.self_id, "name": shared.name(), "port": shared.port })).await.is_err() {
             continue;
         }
         let Ok(reply) = read_json(&mut tls).await else { continue };
@@ -1166,6 +1193,9 @@ mod tests {
         let (conn_a, peer_a) = a.connected();
         let (conn_b, peer_b) = b.connected();
         assert_eq!((peer_a.as_str(), peer_b.as_str()), (b.id.as_str(), a.id.as_str()));
+        // both know where the other listens (B learned it from A's connection)
+        assert_eq!(a.state.lock().unwrap().pc(&b.id).unwrap().last_address, Some(b.net.local_addr().to_string()));
+        assert_eq!(b.state.lock().unwrap().pc(&a.id).unwrap().last_address, Some(a.net.local_addr().to_string()));
         let big = "Grüße € ".repeat(200_000);
         a.net.send(conn_a, big.clone());
         assert_eq!(b.wait(|e| match e { PcEvent::Message { conn, text } if conn == conn_b => Some(text), _ => None }), big);
@@ -1392,6 +1422,21 @@ mod tests {
         a.net.confirm_pairing(&code);
         b.net.confirm_pairing(&code);
         a.wait(|e| matches!(e, PcEvent::Pairing(PairingEvent::Done { .. })).then_some(()));
+    }
+
+    #[test]
+    fn one_address_cant_take_all_unauthenticated_slots() {
+        let rt = runtime();
+        let a = Pc::start(&rt, "000000000000000a", "Alpha");
+        let ip = |n: u8| IpAddr::from([10, 0, 0, n]);
+        let first = Pending::new(&a.net.shared, ip(1)).unwrap();
+        let _second = Pending::new(&a.net.shared, ip(1)).unwrap();
+        assert!(Pending::new(&a.net.shared, ip(1)).is_none());
+        // others still get in, up to the limit in all
+        let _others: Vec<Pending> = (2..MAX_PENDING as u8).map(|n| Pending::new(&a.net.shared, ip(n)).unwrap()).collect();
+        assert!(Pending::new(&a.net.shared, ip(100)).is_none());
+        drop(first);
+        assert!(Pending::new(&a.net.shared, ip(1)).is_some());
     }
 
     #[test]

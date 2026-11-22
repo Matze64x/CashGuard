@@ -35,7 +35,7 @@ const RECONNECT_MS = 1_000;
 /** After the app was in the background this long, its connection may be dead: reconnect */
 const STALE_AFTER_HIDDEN_MS = 10_000;
 
-export type PhoneSyncStatus = 'starting' | 'unpaired' | 'connecting' | 'connected' | 'unreachable' | 'other-tab';
+export type PhoneSyncStatus = 'starting' | 'off' | 'unpaired' | 'connecting' | 'connected' | 'unreachable' | 'other-tab';
 
 function defaultName(): string {
 	const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
@@ -62,6 +62,8 @@ export class PhoneSync {
 	problem = $state<string | null>(null);
 	/** Whether this tab may change the pairings: only the tab that syncs does (others would overwrite them) */
 	canChange = $state(false);
+	/** Networking is on (off at every start: this device connects to nothing until then) */
+	enabled = $state(false);
 	#link: PcLink | null = null;
 	#running = false;
 	#wake: (() => void) | null = null;
@@ -154,8 +156,23 @@ export class PhoneSync {
 		this.#wake = null;
 	}
 
+	/** Turns connecting to PCs on or off (in the tab that syncs). */
+	setEnabled(enabled: boolean): void {
+		this.#mayChange();
+		this.enabled = enabled;
+		this.#retry = 0;
+		this.#pause = 0;
+		if (!enabled) this.#link?.close();
+		this.#wake?.();
+	}
+
 	async #loop(): Promise<void> {
 		while (this.#running) {
+			if (!this.enabled) {
+				this.status = 'off';
+				await this.#sleep(60_000);
+				continue;
+			}
 			if (this.#link || this.#busy) {
 				await this.#sleep(60_000);
 				continue;
@@ -183,7 +200,7 @@ export class PhoneSync {
 	async #connectAny(): Promise<void> {
 		this.status = 'connecting';
 		for (const pairing of this.pairings) {
-			if (!this.#running || this.#link) return;
+			if (!this.#running || !this.enabled || this.#link) return;
 			let link: PcLink | null = null;
 			try {
 				link = await connectToPc(pairing, { t: 'auth', id: this.device!.id, token: pairing.token, name: this.device!.name });
@@ -202,7 +219,8 @@ export class PhoneSync {
 	}
 
 	#attach(link: PcLink, pcId: string): void {
-		if (!this.#running) return link.close();
+		// (turned off or stopped meanwhile)
+		if (!this.#running || !this.enabled) return link.close();
 		this.#link?.close();
 		this.#link = link;
 		this.status = 'connected';
@@ -243,6 +261,7 @@ export class PhoneSync {
 	/** Pairs with the PC whose code was scanned, and connects to it. Throws with a reason to show. */
 	async pair(code: PairingCode): Promise<string> {
 		this.#mayChange();
+		if (!this.enabled) throw new Error('Turn on syncing first.');
 		if (this.#busy) throw new LinkError('Already pairing.');
 		this.#busy = true;
 		try {
@@ -277,7 +296,7 @@ export class PhoneSync {
 		this.pairings = this.pairings.filter((p) => p.pcId !== pcId);
 		await this.#save();
 		if (this.connectedTo === pcId) this.#link?.close();
-		this.manager.forgetProblem(pcId);
+		this.manager.forgetDevice(pcId);
 		await this.#workspace.forgetPeer(pcId);
 	}
 

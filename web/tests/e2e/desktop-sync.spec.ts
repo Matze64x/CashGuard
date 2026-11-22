@@ -22,6 +22,7 @@ interface Fake {
 	found: { id: string; name: string }[];
 	calls: string[];
 	name: string;
+	enabled: boolean;
 	emit(event: string, payload: unknown): void;
 }
 
@@ -37,9 +38,10 @@ async function installFakeTauri(page: Page) {
 				found: [] as { id: string; name: string }[],
 				calls: [] as string[],
 				name: 'Desk',
+				enabled: false,
 				emit: (event: string, payload: unknown) => listeners.forEach((name, id) => name === event && callbacks[id]?.({ event, id, payload })),
 			};
-			const info = () => ({ deviceId: pcId, name: fake.name, address: '10.0.0.2:47652' });
+			const info = () => ({ deviceId: pcId, name: fake.name, enabled: fake.enabled, address: fake.enabled ? '10.0.0.2:47652' : null });
 			const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
 				'plugin:dialog|open': () => file,
 				read_file: () => content,
@@ -54,6 +56,7 @@ async function installFakeTauri(page: Page) {
 					fake.phones = fake.phones.filter((p) => p.id !== phoneId);
 				},
 				sync_rename: ({ name }) => ((fake.name = name as string), info()),
+				sync_set_enabled: ({ enabled }) => (fake.calls.push(`enabled ${enabled}`), (fake.enabled = enabled as boolean), info()),
 				sync_pcs: () => JSON.parse(JSON.stringify({ paired: fake.pcs, found: fake.found })),
 				sync_pc_pair: ({ peerId }) => void fake.calls.push(`pair ${peerId}`),
 				sync_pc_pair_confirm: ({ code }) => void fake.calls.push(`confirm ${code}`),
@@ -92,6 +95,18 @@ async function installFakeTauri(page: Page) {
 }
 
 const emit = (page: Page, event: string, payload: unknown) => page.evaluate(([event, payload]) => (window as never as { fake: Fake }).fake.emit(event as string, payload), [event, payload] as const);
+/** The header button that opens Devices (its text shows the sync state) */
+const devicesButton = (page: Page) => page.getByTitle('Devices and syncing');
+
+/** Turns networking on (it's off at every start) */
+async function turnOn(page: Page) {
+	await devicesButton(page).click();
+	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	await dialog.getByRole('switch', { name: 'Sync on this network' }).check();
+	await expect.poll(async () => (await fake(page)).calls).toContain('enabled true');
+	await dialog.getByRole('button', { name: 'Done' }).click();
+}
+
 const fake = (page: Page) => page.evaluate(() => JSON.parse(JSON.stringify((window as never as { fake: Fake }).fake)) as Fake);
 
 /** Another device (a phone, or a PC that merges): its side of the sync with an in-memory store */
@@ -135,7 +150,8 @@ async function importFixture(page: Page) {
 }
 
 test('pairing a phone: the code shows until the phone paired, then it is listed', async ({ page }) => {
-	await page.getByRole('button', { name: 'Devices' }).click();
+	await turnOn(page);
+	await devicesButton(page).click();
 	const dialog = page.getByRole('dialog', { name: 'Devices' });
 	await expect(dialog).toContainText('No phones paired.');
 	await dialog.getByRole('button', { name: 'Pair a phone' }).click();
@@ -157,7 +173,7 @@ test('pairing a phone: the code shows until the phone paired, then it is listed'
 });
 
 test('renaming this PC', async ({ page }) => {
-	await page.getByRole('button', { name: 'Devices' }).click();
+	await devicesButton(page).click();
 	const dialog = page.getByRole('dialog', { name: 'Devices' });
 	await expect(dialog.getByLabel('Name')).toHaveValue('Desk');
 	await dialog.getByLabel('Name').fill('Office PC');
@@ -168,6 +184,7 @@ test('renaming this PC', async ({ page }) => {
 
 test('a connected phone syncs with the PC both ways, in order, and the header says so', async ({ page }) => {
 	await importFixture(page);
+	await turnOn(page);
 	const phone = new Phone(page, 7);
 	phone.working = addTransaction(EMPTY_DATA, { date: '2026-11-01' as CivilDate, description: 'Bought on the phone', categoryId: '0' as never, amount: cents(-250) }, 1_900_000_000 as UtcSeconds).data;
 	// messages from the PC go to the phone in the order they were sent
@@ -202,7 +219,8 @@ test('a connected phone syncs with the PC both ways, in order, and the header sa
 
 test('pairing with another PC: both compare the code, then it is listed', async ({ page }) => {
 	await page.evaluate((id) => ((window as never as { fake: Fake }).fake.found = [{ id, name: 'Laptop' }]), LAPTOP_ID);
-	await page.getByRole('button', { name: 'Devices' }).click();
+	await turnOn(page);
+	await devicesButton(page).click();
 	const dialog = page.getByRole('dialog', { name: 'Devices' });
 	const onNetwork = dialog.getByRole('list', { name: 'PCs on this network' });
 	await expect(onNetwork).toContainText('Laptop');
@@ -236,9 +254,10 @@ test('pairing with another PC: both compare the code, then it is listed', async 
 });
 
 test('other PCs can pair only while Devices is open; their code shows there, and cancelling tells them', async ({ page }) => {
-	await page.getByRole('button', { name: 'Devices' }).click();
+	await turnOn(page);
+	await devicesButton(page).click();
 	const dialog = page.getByRole('dialog', { name: 'Devices' });
-	await expect.poll(async () => (await fake(page)).calls).toContain('allowed true');
+	await expect.poll(async () => (await fake(page)).calls.filter((c) => c.startsWith('allowed')).at(-1)).toBe('allowed true');
 	await emit(page, 'sync-pc-pairing', { state: 'code', code: '654 321', peerId: LAPTOP_ID, peerName: 'Laptop', incoming: true });
 	const pairing = dialog.getByRole('group', { name: 'Pairing with Laptop' });
 	await expect(pairing.getByLabel('Code')).toHaveText('654 321');
@@ -255,6 +274,7 @@ test('other PCs can pair only while Devices is open; their code shows there, and
 
 test('another PC syncs with this one both ways (here as the client: the lower id merges)', async ({ page }) => {
 	await importFixture(page);
+	await turnOn(page);
 	const laptop = new Phone(page, 9, { id: LAPTOP_ID, name: 'Laptop', kind: 'pc' });
 	laptop.working = addTransaction(EMPTY_DATA, { date: '2026-11-02' as CivilDate, description: 'Bought on the laptop', categoryId: '0' as never, amount: cents(-300) }, 1_900_000_100 as UtcSeconds).data;
 	await page.exposeBinding('__toPhone', async (_source, conn: number, text: string) => {
@@ -279,7 +299,8 @@ test('another PC syncs with this one both ways (here as the client: the lower id
 
 test('closing Devices stops other PCs from pairing and cancels a pairing under way', async ({ page }) => {
 	await page.evaluate((id) => ((window as never as { fake: Fake }).fake.found = [{ id, name: 'Laptop' }]), LAPTOP_ID);
-	await page.getByRole('button', { name: 'Devices' }).click();
+	await turnOn(page);
+	await devicesButton(page).click();
 	const dialog = page.getByRole('dialog', { name: 'Devices' });
 	await dialog.getByRole('list', { name: 'PCs on this network' }).getByRole('button', { name: 'Pair' }).click();
 	await expect(dialog.getByRole('button', { name: 'Pairing…' })).toBeDisabled();
@@ -287,7 +308,33 @@ test('closing Devices stops other PCs from pairing and cancels a pairing under w
 	await expect.poll(async () => (await fake(page)).calls).toEqual(expect.arrayContaining(['allowed false', 'cancel']));
 	// an attempt nobody saw here isn't reported
 	await emit(page, 'sync-pc-pairing', { state: 'failed', reason: 'The connection to Stranger ended.' });
-	await page.getByRole('button', { name: 'Devices' }).click();
+	await devicesButton(page).click();
 	await expect(dialog.getByRole('alert')).toHaveCount(0);
 	await expect(dialog.getByRole('list', { name: 'PCs on this network' }).getByRole('button', { name: 'Pair' })).toBeEnabled();
+});
+
+test('networking is off at every start; the switch turns it on and off', async ({ page }) => {
+	await expect(devicesButton(page)).toHaveText('Sync off');
+	await devicesButton(page).click();
+	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	const toggle = dialog.getByRole('switch', { name: 'Sync on this network' });
+	await expect(toggle).not.toBeChecked();
+	await expect(dialog.getByRole('button', { name: 'Pair a phone' })).toBeDisabled();
+	await toggle.check();
+	await expect(dialog.getByRole('button', { name: 'Pair a phone' })).toBeEnabled();
+	await toggle.uncheck();
+	await expect.poll(async () => (await fake(page)).calls).toEqual(expect.arrayContaining(['enabled true', 'enabled false']));
+	await expect(dialog.getByRole('button', { name: 'Pair a phone' })).toBeDisabled();
+	await dialog.getByRole('button', { name: 'Done' }).click();
+	await expect(devicesButton(page)).toHaveText('Sync off');
+});
+
+test('a device that synced before shows when', async ({ page }) => {
+	await page.evaluate((id) => (window as never as { fake: Fake }).fake.phones.push({ id, name: 'My iPhone', pairedAt: 0 }), PHONE_ID);
+	await page.evaluate((id) => localStorage.setItem('cashguard-last-synced-v1', JSON.stringify({ [id]: Date.now() - 5 * 60_000 })), PHONE_ID);
+	await page.reload();
+	await page.evaluate((id) => (window as never as { fake: Fake }).fake.phones.push({ id, name: 'My iPhone', pairedAt: 0 }), PHONE_ID);
+	await turnOn(page);
+	await devicesButton(page).click();
+	await expect(page.getByRole('dialog', { name: 'Devices' })).toContainText('synced 5 min ago');
 });

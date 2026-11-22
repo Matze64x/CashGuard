@@ -1,5 +1,6 @@
-//! Syncing with phones and other PCs on the local network: the window starts serving
-//! (`sync_start`) once it's ready for connections, pairs devices, and exchanges the sync messages
+//! Syncing with phones and other PCs on the local network: the window loads the sync state
+//! (`sync_start`) once it's ready for connections; the user turns networking on (`sync_set_enabled`;
+//! off at every start: nothing listens, announces or connects until then), pairs devices, and exchanges the sync messages
 //! with connected devices through commands (`sync_send`) and events (`sync-connected`,
 //! `sync-message`, `sync-closed`, …). Phones connect over WebRTC (`endpoint.rs`), PCs over TLS
 //! (`pcs.rs`); connection numbers are unique across both.
@@ -74,7 +75,9 @@ struct Inner {
     cert: DtlsCert,
     fingerprint: String,
     running: Option<Running>,
-    /// Bumped on each start, so an old address watcher stops
+    /// The user turned networking on (it may still not run: no local network)
+    enabled: bool,
+    /// Bumped on each start and stop, so an old address watcher stops
     generation: u64,
 }
 
@@ -83,7 +86,9 @@ struct Inner {
 pub struct SyncInfo {
     device_id: String,
     name: String,
-    /// "ip:port" phones connect to, or null if this PC isn't on a local network
+    /// Networking is on
+    enabled: bool,
+    /// "ip:port" phones connect to, or null if networking is off or this PC isn't on a local network
     address: Option<String>,
 }
 
@@ -165,7 +170,7 @@ fn load(app: &AppHandle) -> Result<Inner, String> {
     })
     .map_err(|e| format!("Can't load the sync settings: {e}"))?;
     let cert = DtlsCert { certificate: state.certificate_der().unwrap(), private_key: state.private_key_der().unwrap() };
-    Ok(Inner { fingerprint: fingerprint_hex(&cert), state: Arc::new(Mutex::new(state)), path, cert, running: None, generation: 0 })
+    Ok(Inner { fingerprint: fingerprint_hex(&cert), state: Arc::new(Mutex::new(state)), path, cert, running: None, enabled: false, generation: 0 })
 }
 
 /// Binds the endpoint's socket on the LAN address and starts serving.
@@ -240,10 +245,13 @@ fn start_pcs(app: &AppHandle, inner: &Inner, ip: IpAddr) -> Option<PcNet> {
 
 fn info(inner: &Inner) -> SyncInfo {
     let s = inner.state.lock().unwrap();
-    SyncInfo { device_id: s.device_id.clone(), name: s.name.clone(), address: inner.running.as_ref().map(|r| r.address.to_string()) }
+    SyncInfo { device_id: s.device_id.clone(), name: s.name.clone(), enabled: inner.enabled, address: inner.running.as_ref().map(|r| r.address.to_string()) }
 }
 
 fn pcs_of(inner: &Inner) -> Result<&PcNet, String> {
+    if !inner.enabled {
+        return Err("Turn on syncing first.".into());
+    }
     inner.running.as_ref().and_then(|r| r.pcs.as_ref()).ok_or_else(|| "This PC isn't connected to a local network.".into())
 }
 
@@ -253,8 +261,8 @@ fn send(inner: &Inner, command: Command) {
     }
 }
 
-/// Starts (or restarts, e.g. after the window reloaded) serving phones. Connections of a previous
-/// start are closed: the window must be listening for events before this is called.
+/// Loads the sync state. Networking is off at every start (also after the window reloaded): the
+/// window must be listening for events before it's turned on.
 #[tauri::command(async)]
 pub fn sync_start(app: AppHandle, service: State<'_, SyncService>) -> Result<SyncInfo, String> {
     let mut guard = service.inner.lock().unwrap();
@@ -262,11 +270,37 @@ pub fn sync_start(app: AppHandle, service: State<'_, SyncService>) -> Result<Syn
         *guard = Some(load(&app)?);
     }
     let inner = guard.as_mut().unwrap();
-    start_endpoint(&app, inner);
+    stop_serving(inner);
+    Ok(info(inner))
+}
+
+/// Turns networking on (listening for phones and PCs, announcing this PC, dialing paired PCs) or off.
+#[tauri::command(async)]
+pub fn sync_set_enabled(app: AppHandle, service: State<'_, SyncService>, enabled: bool) -> Result<SyncInfo, String> {
+    let mut guard = service.inner.lock().unwrap();
+    let inner = guard.as_mut().ok_or("Syncing hasn't started.")?;
+    if enabled && !inner.enabled {
+        serve(&app, inner);
+    } else if !enabled {
+        stop_serving(inner);
+    }
+    Ok(info(inner))
+}
+
+fn stop_serving(inner: &mut Inner) {
+    if let Some(mut running) = inner.running.take() {
+        running.stop();
+    }
+    inner.enabled = false;
+    inner.generation += 1;
+}
+
+fn serve(app: &AppHandle, inner: &mut Inner) {
+    inner.enabled = true;
+    start_endpoint(app, inner);
     inner.generation += 1;
     let generation = inner.generation;
     let address = inner.running.as_ref().map(|r| r.address);
-    drop(guard);
 
     // a new network address (other Wi-Fi, a new lease): serve there instead
     let watcher = app.clone();
@@ -296,9 +330,6 @@ pub fn sync_start(app: AppHandle, service: State<'_, SyncService>) -> Result<Syn
             }
         }
     });
-
-    let guard = service.inner.lock().unwrap();
-    Ok(info(guard.as_ref().unwrap()))
 }
 
 fn with_inner<T>(service: &State<'_, SyncService>, f: impl FnOnce(&mut Inner) -> Result<T, String>) -> Result<T, String> {
@@ -311,6 +342,9 @@ fn with_inner<T>(service: &State<'_, SyncService>, f: impl FnOnce(&mut Inner) ->
 #[tauri::command(async)]
 pub fn sync_pairing_start(service: State<'_, SyncService>) -> Result<PairingCode, String> {
     with_inner(&service, |inner| {
+        if !inner.enabled {
+            return Err("Turn on syncing first.".into());
+        }
         let address = inner.running.as_ref().map(|r| r.address).ok_or("This PC isn't connected to a local network.")?;
         let secret = random_text(20);
         let (ufrag, pass, id) = {

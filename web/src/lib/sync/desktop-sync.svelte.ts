@@ -11,7 +11,9 @@ import type { Workspace } from '../workspace.svelte';
 export interface DesktopInfo {
 	readonly deviceId: string;
 	readonly name: string;
-	/** "ip:port" phones connect to; null: not on a local network */
+	/** Networking is on (off at every start) */
+	readonly enabled: boolean;
+	/** "ip:port" phones connect to; null: off, or not on a local network */
 	readonly address: string | null;
 }
 
@@ -168,9 +170,23 @@ export class DesktopSync {
 	/** Unpairs a phone: it can't connect any more until it's paired again. */
 	async forget(phoneId: string): Promise<void> {
 		await invoke('sync_forget', { phoneId });
-		this.manager.forgetProblem(phoneId);
+		this.manager.forgetDevice(phoneId);
 		await this.#workspace.forgetPeer(phoneId);
 		await this.refreshPhones();
+	}
+
+	get enabled(): boolean {
+		return this.info?.enabled ?? false;
+	}
+
+	/** Turns networking on (listening, announcing this PC, connecting to paired PCs) or off. */
+	async setEnabled(enabled: boolean): Promise<void> {
+		this.info = await invoke<DesktopInfo>('sync_set_enabled', { enabled });
+		if (!enabled) {
+			this.pcPairing = null;
+			this.pcPairingStarting = null;
+		}
+		await this.refreshPcs();
 	}
 
 	async refreshPcs(): Promise<void> {
@@ -234,7 +250,7 @@ export class DesktopSync {
 	/** Unpairs a PC: neither syncs with the other any more (until paired again). */
 	async forgetPc(peerId: string): Promise<void> {
 		await invoke('sync_forget_pc', { peerId });
-		this.manager.forgetProblem(peerId);
+		this.manager.forgetDevice(peerId);
 		await this.#workspace.forgetPeer(peerId);
 		await this.refreshPcs();
 	}

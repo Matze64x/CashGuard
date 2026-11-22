@@ -73,7 +73,8 @@
 	const syncLabel = $derived.by(() => {
 		const connections = sync.manager.connections.length;
 		const failing = Object.keys(sync.manager.problems).length > 0;
-		if (sync instanceof DesktopSync) return connections > 0 ? `${connections} connected` : failing ? 'Sync problem' : 'Devices';
+		if (sync instanceof DesktopSync) return !sync.enabled ? 'Sync off' : connections > 0 ? `${connections} connected` : failing ? 'Sync problem' : 'Devices';
+		if (sync.status === 'off') return 'Sync off';
 		if (sync.status !== 'connected' && failing) return 'Sync problem';
 		switch (sync.status) {
 			case 'connected':

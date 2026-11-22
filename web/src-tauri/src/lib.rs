@@ -22,6 +22,7 @@ pub fn run() {
             files::file_exists,
             files::data_location,
             sync::sync_start,
+            sync::sync_set_enabled,
             sync::sync_pairing_start,
             sync::sync_pairing_stop,
             sync::sync_phones,

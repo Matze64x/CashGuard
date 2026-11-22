@@ -4,6 +4,8 @@
 -->
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import type { UtcSeconds } from '../../core';
+	import { formatDay } from '../display';
 	import { errorMessage } from '../errors';
 	import Modal from '../ui/Modal.svelte';
 	import { DesktopSync, type PairingQr } from './desktop-sync.svelte';
@@ -16,6 +18,36 @@
 	const desktop = $derived(sync instanceof DesktopSync ? sync : null);
 	const phone = $derived(sync instanceof DesktopSync ? null : sync);
 	const connected = $derived(new Set(sync.manager.connections.map((c) => c.peerId)));
+	const enabled = $derived(desktop ? desktop.enabled : (phone?.enabled ?? false));
+
+	function toggle(input: HTMLInputElement) {
+		const on = input.checked;
+		void act(async () => {
+			try {
+				if (desktop) await desktop.setEnabled(on);
+				else phone!.setEnabled(on);
+			} finally {
+				// (shows the actual state, also if switching failed)
+				input.checked = desktop ? desktop.enabled : phone!.enabled;
+			}
+		});
+	}
+
+	// "synced 5 min ago": refreshed now and then while the dialog is open
+	let now = $state(Date.now());
+	const ticker = setInterval(() => (now = Date.now()), 30_000);
+	onDestroy(() => clearInterval(ticker));
+
+	function stateOf(id: string): string {
+		if (connected.has(id)) return 'connected';
+		const last = sync.manager.lastSynced[id];
+		if (last === undefined) return 'not connected';
+		const minutes = Math.floor((now - last) / 60_000);
+		if (minutes < 1) return 'synced just now';
+		if (minutes < 60) return `synced ${minutes} min ago`;
+		if (minutes < 24 * 60) return `synced ${Math.floor(minutes / 60)} h ago`;
+		return `synced on ${formatDay(Math.floor(last / 1000) as UtcSeconds)}`;
+	}
 
 	const savedName = $derived(desktop ? (desktop.info?.name ?? '') : (phone?.device?.name ?? ''));
 	let name = $state('');
@@ -151,15 +183,20 @@
 		connected: 'Connected.',
 		unreachable: 'No paired PC reachable. Is CashGuard running on one, on the same network?',
 		'other-tab': 'Another tab syncs.',
+		off: '',
 	};
 </script>
 
 <Modal title="Devices" {onclose}>
 	<div class="devices">
+		<label class="switch">
+			<input type="checkbox" role="switch" checked={enabled} disabled={!canChange || (desktop !== null && !desktop.info)} onchange={(e) => toggle(e.currentTarget)} />
+			Sync on this network
+		</label>
 		{#if desktop}
 			{#if desktop.problem}
 				<p class="error" role="alert">Syncing can’t start: {desktop.problem}</p>
-			{:else if desktop.info && !desktop.info.address}
+			{:else if desktop.enabled && desktop.info && !desktop.info.address}
 				<p class="muted">Not on a local network.</p>
 			{/if}
 
@@ -171,7 +208,7 @@
 					{#each desktop.phones as p (p.id)}
 						<li>
 							<span class="name">{p.name}</span>
-							<span class="state" class:on={connected.has(p.id)}>{connected.has(p.id) ? 'connected' : 'not connected'}</span>
+							<span class="state" class:on={connected.has(p.id)}>{stateOf(p.id)}</span>
 							<button type="button" class:danger={confirming === p.id} onclick={() => remove(p.id)}>{confirming === p.id ? 'Remove for good' : 'Remove'}</button>
 							{#if problems[p.id]}<p class="error small problem">{problems[p.id]}</p>{/if}
 						</li>
@@ -200,7 +237,7 @@
 					{#each desktop.pcs as p (p.id)}
 						<li>
 							<span class="name">{p.name}</span>
-							<span class="state" class:on={connected.has(p.id)}>{connected.has(p.id) ? 'connected' : 'not connected'}</span>
+							<span class="state" class:on={connected.has(p.id)}>{stateOf(p.id)}</span>
 							<button type="button" class:danger={confirming === p.id} onclick={() => remove(p.id, (id) => desktop.forgetPc(id))}>{confirming === p.id ? 'Remove for good' : 'Remove'}</button>
 							{#if problems[p.id]}<p class="error small problem">{problems[p.id]}</p>{/if}
 						</li>
@@ -227,14 +264,14 @@
 						</li>
 					{/each}
 				</ul>
-			{:else if desktop.pcs.length === 0}
+			{:else if desktop.pcs.length === 0 && desktop.enabled}
 				<p class="muted">No other PC found. Is CashGuard running there and allowed through its firewall?</p>
 			{/if}
 			{#if desktop.pcPairingResult}
 				<p class={desktop.pcPairingResult.ok ? 'ok' : 'error'} role={desktop.pcPairingResult.ok ? 'status' : 'alert'}>{desktop.pcPairingResult.message}</p>
 			{/if}
 		{:else if phone}
-			<p class="muted" aria-live="polite">{STATUS[phone.status]}</p>
+			{#if STATUS[phone.status]}<p class="muted" aria-live="polite">{STATUS[phone.status]}</p>{/if}
 			{#if phone.status !== 'connected' && phone.status !== 'other-tab' && phone.problem}<p class="muted small">{phone.problem}</p>{/if}
 
 			<h3>PCs</h3>
@@ -245,7 +282,7 @@
 					{#each phone.pairings as p (p.pcId)}
 						<li>
 							<span class="name">{p.name}</span>
-							<span class="state" class:on={connected.has(p.pcId)}>{connected.has(p.pcId) ? 'connected' : 'not connected'}</span>
+							<span class="state" class:on={connected.has(p.pcId)}>{stateOf(p.pcId)}</span>
 							<button type="button" class:danger={confirming === p.pcId} disabled={!canChange} onclick={() => remove(p.pcId)}>{confirming === p.pcId ? 'Remove for good' : 'Remove'}</button>
 							{#if problems[p.pcId]}<p class="error small problem">{problems[p.pcId]}</p>{/if}
 						</li>
@@ -260,7 +297,7 @@
 				<button type="button" onclick={() => (scanning = false)}>Cancel</button>
 			{:else}
 				<p class="muted small">The code is on the PC under Devices → “Pair a phone”.</p>
-				<button type="button" class="primary" disabled={pairing} onclick={() => ((scanning = true), (failure = null), (message = null))}>
+				<button type="button" class="primary" disabled={pairing || !enabled} onclick={() => ((scanning = true), (failure = null), (message = null))}>
 					{pairing ? 'Pairing…' : 'Pair with a PC'}
 				</button>
 				<details>
@@ -273,7 +310,7 @@
 						}}
 					>
 						<input type="text" autocomplete="off" spellcheck="false" aria-label="Pairing code" placeholder="CG1|…" bind:value={typed} />
-						<button type="submit" disabled={pairing || !typed.trim()}>Pair</button>
+						<button type="submit" disabled={pairing || !enabled || !typed.trim()}>Pair</button>
 					</form>
 				</details>
 			{/if}
@@ -385,6 +422,12 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
+	}
+	.switch {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-weight: 600;
 	}
 	.typed,
 	.rename {

@@ -32,6 +32,26 @@ export function isMerger(self: DeviceInfo, peerId: string, peerIsPhone: boolean)
 	return peerIsPhone || self.id < peerId;
 }
 
+const LAST_SYNCED_KEY = 'cashguard-last-synced-v1';
+
+/** When each device last synced with this one (a per-device convenience: kept in localStorage) */
+function loadLastSynced(): Record<string, number> {
+	try {
+		const stored: unknown = JSON.parse(localStorage.getItem(LAST_SYNCED_KEY) ?? '{}');
+		return stored && typeof stored === 'object' ? (stored as Record<string, number>) : {};
+	} catch {
+		return {};
+	}
+}
+
+function saveLastSynced(value: Record<string, number>): void {
+	try {
+		localStorage.setItem(LAST_SYNCED_KEY, JSON.stringify(value));
+	} catch {
+		// (only a convenience)
+	}
+}
+
 interface Attached {
 	readonly connection: SyncConnection;
 	readonly session: PeerSession;
@@ -47,6 +67,8 @@ export class SyncManager {
 	connections = $state.raw<readonly ConnectionState[]>([]);
 	/** Why syncing with a device failed last, by device id (until a round with it succeeds); kept after it disconnected */
 	problems = $state.raw<Readonly<Record<string, string>>>({});
+	/** When a round with each device last finished (ms since 1970), by device id */
+	lastSynced = $state.raw<Readonly<Record<string, number>>>(loadLastSynced());
 	#stopListening: () => void;
 
 	/**
@@ -81,6 +103,8 @@ export class SyncManager {
 				onSynced: (report) => {
 					this.#update(attached, { peer: report.peer, lastSync: Date.now(), error: null });
 					this.#problem(connection.peerId, null);
+					this.lastSynced = { ...this.lastSynced, [connection.peerId]: Date.now() };
+					saveLastSynced(this.lastSynced);
 					hooks.synced?.();
 					if (totalChanges(report.changes) > 0) this.#report(report);
 				},
@@ -133,9 +157,17 @@ export class SyncManager {
 		this.#problem(peerId, message);
 	}
 
-	/** Forgets a device's problem (it was unpaired) */
+	/** Forgets a device's problem (e.g. it was paired anew) */
 	forgetProblem(peerId: string): void {
 		this.#problem(peerId, null);
+	}
+
+	/** Forgets what's known about a device (it was unpaired) */
+	forgetDevice(peerId: string): void {
+		this.#problem(peerId, null);
+		const { [peerId]: _, ...others } = this.lastSynced;
+		this.lastSynced = others;
+		saveLastSynced(others);
 	}
 
 	#publish(): void {
