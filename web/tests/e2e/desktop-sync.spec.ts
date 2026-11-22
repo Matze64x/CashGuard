@@ -102,7 +102,7 @@ const devicesButton = (page: Page) => page.getByTitle('Devices and syncing');
 async function turnOn(page: Page) {
 	await devicesButton(page).click();
 	const dialog = page.getByRole('dialog', { name: 'Devices' });
-	await dialog.getByRole('switch', { name: 'Sync on this network' }).check();
+	await dialog.getByRole('switch', { name: 'Sync with my devices on the local network' }).check();
 	await expect.poll(async () => (await fake(page)).calls).toContain('enabled true');
 	await dialog.getByRole('button', { name: 'Done' }).click();
 }
@@ -318,7 +318,7 @@ test('networking is off at every start; the switch turns it on and off', async (
 	await expect(devicesButton(page)).toHaveText('Sync off');
 	await devicesButton(page).click();
 	const dialog = page.getByRole('dialog', { name: 'Devices' });
-	const toggle = dialog.getByRole('switch', { name: 'Sync on this network' });
+	const toggle = dialog.getByRole('switch', { name: 'Sync with my devices on the local network' });
 	await expect(toggle).not.toBeChecked();
 	await expect(dialog.getByRole('button', { name: 'Pair a phone' })).toBeDisabled();
 	await toggle.check();

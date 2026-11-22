@@ -196,7 +196,7 @@
 	<div class="devices">
 		<label class="switch">
 			<input type="checkbox" role="switch" checked={enabled} disabled={switching || !canChange || (desktop !== null && !desktop.info)} onchange={(e) => toggle(e.currentTarget)} />
-			Sync on this network
+			Sync with my devices on the local network
 		</label>
 		{#if desktop}
 			{#if desktop.problem}
@@ -431,8 +431,9 @@
 	.switch {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.75rem;
 		font-weight: 600;
+		cursor: pointer;
 	}
 	.typed,
 	.rename {
