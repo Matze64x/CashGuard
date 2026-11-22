@@ -56,7 +56,8 @@ async function installFakeTauri(page: Page) {
 				sync_rename: ({ name }) => ((fake.name = name as string), info()),
 				sync_pcs: () => JSON.parse(JSON.stringify({ paired: fake.pcs, found: fake.found })),
 				sync_pc_pair: ({ peerId }) => void fake.calls.push(`pair ${peerId}`),
-				sync_pc_pair_confirm: () => void fake.calls.push('confirm'),
+				sync_pc_pair_confirm: ({ code }) => void fake.calls.push(`confirm ${code}`),
+				sync_pc_pairing_allowed: ({ allowed }) => void fake.calls.push(`allowed ${allowed}`),
 				sync_pc_pair_cancel: () => void fake.calls.push('cancel'),
 				sync_forget_pc: ({ peerId }) => {
 					fake.calls.push(`forget pc ${peerId}`);
@@ -213,7 +214,8 @@ test('pairing with another PC: both compare the code, then it is listed', async 
 	await expect(pairing.getByLabel('Code')).toHaveText('123 456');
 	await pairing.getByRole('button', { name: 'Same code' }).click();
 	await expect(pairing.getByRole('button', { name: 'Waiting for Laptop…' })).toBeDisabled();
-	expect((await fake(page)).calls).toContain('confirm');
+	// (with the code seen: it never confirms another pairing's code)
+	expect((await fake(page)).calls).toContain('confirm 123 456');
 
 	await page.evaluate((id) => (window as never as { fake: Fake }).fake.pcs.push({ id, name: 'Laptop', pairedAt: 0 }), LAPTOP_ID);
 	await emit(page, 'sync-pc-pairing', { state: 'done', peerId: LAPTOP_ID, peerName: 'Laptop' });
@@ -233,11 +235,11 @@ test('pairing with another PC: both compare the code, then it is listed', async 
 	await expect(onNetwork).toContainText('Laptop');
 });
 
-test('a pairing started on another PC opens the code here; cancelling tells the other PC', async ({ page }) => {
-	// (events reach the window once it listens: the Rust side only sends after `sync_start`)
-	await expect.poll(async () => (await fake(page)).calls).toContain('start');
-	await emit(page, 'sync-pc-pairing', { state: 'code', code: '654 321', peerId: LAPTOP_ID, peerName: 'Laptop', incoming: true });
+test('other PCs can pair only while Devices is open; their code shows there, and cancelling tells them', async ({ page }) => {
+	await page.getByRole('button', { name: 'Devices' }).click();
 	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	await expect.poll(async () => (await fake(page)).calls).toContain('allowed true');
+	await emit(page, 'sync-pc-pairing', { state: 'code', code: '654 321', peerId: LAPTOP_ID, peerName: 'Laptop', incoming: true });
 	const pairing = dialog.getByRole('group', { name: 'Pairing with Laptop' });
 	await expect(pairing.getByLabel('Code')).toHaveText('654 321');
 	await pairing.getByRole('button', { name: 'Cancel' }).click();
@@ -273,4 +275,19 @@ test('another PC syncs with this one both ways (here as the client: the lower id
 	await page.keyboard.press('Enter');
 	await expect.poll(() => laptop.working.transactions.some((t) => t.description === 'Bought at the desk')).toBe(true);
 	expect(laptop.errors).toEqual([]);
+});
+
+test('closing Devices stops other PCs from pairing and cancels a pairing under way', async ({ page }) => {
+	await page.evaluate((id) => ((window as never as { fake: Fake }).fake.found = [{ id, name: 'Laptop' }]), LAPTOP_ID);
+	await page.getByRole('button', { name: 'Devices' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	await dialog.getByRole('list', { name: 'PCs on this network' }).getByRole('button', { name: 'Pair' }).click();
+	await expect(dialog.getByRole('button', { name: 'Pairing…' })).toBeDisabled();
+	await dialog.getByRole('button', { name: 'Done' }).click();
+	await expect.poll(async () => (await fake(page)).calls).toEqual(expect.arrayContaining(['allowed false', 'cancel']));
+	// an attempt nobody saw here isn't reported
+	await emit(page, 'sync-pc-pairing', { state: 'failed', reason: 'The connection to Stranger ended.' });
+	await page.getByRole('button', { name: 'Devices' }).click();
+	await expect(dialog.getByRole('alert')).toHaveCount(0);
+	await expect(dialog.getByRole('list', { name: 'PCs on this network' }).getByRole('button', { name: 'Pair' })).toBeEnabled();
 });

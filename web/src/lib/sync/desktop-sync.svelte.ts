@@ -75,11 +75,13 @@ export class DesktopSync {
 	/** PCs on the network (paired ones too) */
 	found = $state.raw<readonly FoundPc[]>([]);
 	pcPairing = $state.raw<PcPairing | null>(null);
+	/** The PC a pairing was started with here, until both show the code */
+	pcPairingStarting = $state<string | null>(null);
 	/** How the last PC pairing ended (null while none ended, or once seen) */
 	pcPairingResult = $state.raw<{ readonly ok: boolean; readonly message: string } | null>(null);
 	/** Why syncing couldn't start */
 	problem = $state<string | null>(null);
-	readonly #connections = new Map<number, { receive: (text: string) => void; closed: () => void }>();
+	readonly #connections = new Map<number, { peerId: string; receive: (text: string) => void; closed: () => void }>();
 	/** Called when a phone was paired (e.g. to close the QR code) */
 	onPaired: ((name: string) => void) | null = null;
 
@@ -131,6 +133,13 @@ export class DesktopSync {
 	}
 
 	#connected(conn: number, peerId: string, isPhone: boolean): void {
+		// (a newer connection to the same device replaces an older one: never two sessions with one base)
+		for (const [other, c] of this.#connections) {
+			if (c.peerId !== peerId) continue;
+			c.closed();
+			this.#connections.delete(other);
+			void invoke('sync_close', { conn: other }).catch(() => undefined);
+		}
 		// one message after the other: separate invokes could overtake each other
 		let chain: Promise<unknown> = Promise.resolve();
 		const handlers = this.manager.attach(
@@ -141,7 +150,7 @@ export class DesktopSync {
 			},
 			isPhone,
 		);
-		this.#connections.set(conn, handlers);
+		this.#connections.set(conn, { peerId, ...handlers });
 	}
 
 	async refreshPhones(): Promise<void> {
@@ -171,36 +180,55 @@ export class DesktopSync {
 	}
 
 	#pairingEvent(event: PairingEvent): void {
+		const started = this.pcPairingStarting !== null;
+		this.pcPairingStarting = null;
 		if (event.state === 'code') {
 			this.pcPairingResult = null;
 			this.pcPairing = { code: event.code, peerId: event.peerId, peerName: event.peerName, incoming: event.incoming, confirmed: false };
 			return;
 		}
+		const shown = this.pcPairing !== null;
 		this.pcPairing = null;
 		if (event.state === 'done') {
 			this.manager.forgetProblem(event.peerId);
 			this.pcPairingResult = { ok: true, message: `Paired with ${event.peerName}.` };
 			void this.refreshPcs();
-		} else {
+		} else if (started || shown) {
+			// (attempts nobody saw here, e.g. a stranger's, aren't reported)
 			this.pcPairingResult = event.reason ? { ok: false, message: event.reason } : null;
 		}
 	}
 
 	/** Starts pairing with a PC on the network: both then show a code (`pcPairing`). */
-	pairPc(peerId: string): Promise<void> {
+	async pairPc(peerId: string): Promise<void> {
 		this.pcPairingResult = null;
-		return invoke('sync_pc_pair', { peerId });
+		this.pcPairingStarting = peerId;
+		try {
+			await invoke('sync_pc_pair', { peerId });
+		} catch (e) {
+			this.pcPairingStarting = null;
+			throw e;
+		}
 	}
 
 	/** The user saw the same code on both PCs */
 	async confirmPcPairing(): Promise<void> {
-		await invoke('sync_pc_pair_confirm');
-		if (this.pcPairing) this.pcPairing = { ...this.pcPairing, confirmed: true };
+		const shown = this.pcPairing;
+		if (!shown) return;
+		// (the code goes along: a confirmation never applies to another pairing's code)
+		await invoke('sync_pc_pair_confirm', { code: shown.code });
+		if (this.pcPairing === shown) this.pcPairing = { ...shown, confirmed: true };
 	}
 
 	cancelPcPairing(): Promise<void> {
 		this.pcPairing = null;
+		this.pcPairingStarting = null;
 		return invoke('sync_pc_pair_cancel');
+	}
+
+	/** Other PCs may start pairing with this one only while the Devices dialog is open */
+	setPairingAllowed(allowed: boolean): void {
+		void invoke('sync_pc_pairing_allowed', { allowed }).catch(() => undefined);
 	}
 
 	/** Unpairs a PC: neither syncs with the other any more (until paired again). */

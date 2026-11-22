@@ -3,7 +3,7 @@
 	devices with whether they're connected, removing one, and this device's name.
 -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { errorMessage } from '../errors';
 	import Modal from '../ui/Modal.svelte';
 	import { DesktopSync, type PairingQr } from './desktop-sync.svelte';
@@ -64,28 +64,20 @@
 
 	// ---- PC: pair with another PC
 	const unpairedPcs = $derived(desktop ? desktop.found.filter((f) => !desktop.pcs.some((p) => p.id === f.id)) : []);
-	/** The PC whose pairing is starting (until both show the code) */
-	let startingWith = $state<string | null>(null);
-	$effect(() => {
-		if (desktop?.pcPairing || desktop?.pcPairingResult) startingWith = null;
-	});
+	const startingWith = $derived(desktop?.pcPairingStarting ?? null);
 
 	function pairPc(id: string) {
-		startingWith = id;
-		void act(async () => {
-			try {
-				await desktop!.pairPc(id);
-			} catch (e) {
-				startingWith = null;
-				throw e;
-			}
-		});
+		void act(() => desktop!.pairPc(id));
 	}
 
+	// other PCs can start pairing with this one while this dialog is open
+	onMount(() => desktop?.setPairingAllowed(true));
 	onDestroy(() => {
+		if (!desktop) return;
+		desktop.setPairingAllowed(false);
 		// (closing the dialog ends a pairing in progress)
-		if (desktop?.pcPairing) void desktop.cancelPcPairing();
-		if (desktop) desktop.pcPairingResult = null;
+		if (desktop.pcPairing || desktop.pcPairingStarting) void desktop.cancelPcPairing();
+		desktop.pcPairingResult = null;
 	});
 
 	// ---- PC: show a pairing code
@@ -226,6 +218,7 @@
 					</div>
 				</div>
 			{:else if unpairedPcs.length > 0}
+				<p class="muted small">To pair, open Devices on the other PC too.</p>
 				<ul aria-label="PCs on this network">
 					{#each unpairedPcs as f (f.id)}
 						<li>
@@ -235,7 +228,7 @@
 					{/each}
 				</ul>
 			{:else if desktop.pcs.length === 0}
-				<p class="muted">No other PC with CashGuard on this network.</p>
+				<p class="muted">No other PC found. Is CashGuard running there and allowed through its firewall?</p>
 			{/if}
 			{#if desktop.pcPairingResult}
 				<p class={desktop.pcPairingResult.ok ? 'ok' : 'error'} role={desktop.pcPairingResult.ok ? 'status' : 'alert'}>{desktop.pcPairingResult.message}</p>

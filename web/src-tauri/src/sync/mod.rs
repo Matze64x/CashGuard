@@ -285,6 +285,14 @@ pub fn sync_start(app: AppHandle, service: State<'_, SyncService>) -> Result<Syn
             if stopped || lan_ip() != current.map(|a| a.ip()) {
                 current = start_endpoint(&watcher, inner);
                 let _ = watcher.emit("sync-address", current.map(|a| a.to_string()));
+            } else if let Some(address) = current
+                && inner.running.as_ref().is_some_and(|r| r.pcs.is_none())
+            {
+                // (serving PCs couldn't start: try again)
+                let pcs = start_pcs(&watcher, inner, address.ip());
+                if let Some(running) = inner.running.as_mut() {
+                    running.pcs = pcs;
+                }
             }
         }
     });
@@ -410,11 +418,22 @@ pub fn sync_pc_pair(service: State<'_, SyncService>, peer_id: String) -> Result<
     with_inner(&service, |inner| pcs_of(inner)?.pair(&peer_id))
 }
 
-/// The user confirmed that both screens show the same code.
+/// The user confirmed that both screens show this code.
 #[tauri::command(async)]
-pub fn sync_pc_pair_confirm(service: State<'_, SyncService>) -> Result<(), String> {
+pub fn sync_pc_pair_confirm(service: State<'_, SyncService>, code: String) -> Result<(), String> {
     with_inner(&service, |inner| {
-        pcs_of(inner)?.confirm_pairing();
+        pcs_of(inner)?.confirm_pairing(&code);
+        Ok(())
+    })
+}
+
+/// Other PCs may start pairing with this one only while this is on (the Devices dialog is open).
+#[tauri::command(async)]
+pub fn sync_pc_pairing_allowed(service: State<'_, SyncService>, allowed: bool) -> Result<(), String> {
+    with_inner(&service, |inner| {
+        if let Ok(pcs) = pcs_of(inner) {
+            pcs.set_pairing_allowed(allowed);
+        }
         Ok(())
     })
 }

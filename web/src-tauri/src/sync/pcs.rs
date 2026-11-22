@@ -4,9 +4,11 @@
 //!
 //! **Pairing** (a PC found on the network, confirmed on both screens): the TLS connection is made
 //! without pinning, then a 6-digit code is derived from both certificates and two random numbers,
-//! and both users check that their screens show the same code. The dialing side commits to its
-//! number (sends its hash) before it learns the other's, so a machine in the middle can't steer
-//! the two codes it would cause to match (it would have to be lucky, 1 in a million).
+//! and both users check that their screens show the same code. The accepting PC commits to its
+//! number (sends its hash) before it learns the dialer's, and reveals it only after the dialer sent
+//! its own; both show the code from then on. So neither side can steer the code, and a machine in
+//! the middle can't try codes unseen: every attempt shows on a screen. A PC accepts pairing only
+//! while its Devices dialog is open, and at most one attempt every few seconds.
 //!
 //! **Connections:** both sides dial paired PCs they aren't connected to (the one with the higher id
 //! a little later); if two connections to one PC come about anyway, both keep the one dialed by
@@ -18,9 +20,9 @@
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -62,6 +64,15 @@ const HIGHER_ID_DELAY: Duration = Duration::from_secs(3);
 const MAX_PENDING: usize = 8;
 /// How long the users have to compare the code
 const PAIRING_TIME: Duration = Duration::from_secs(120);
+/// The least time between two incoming pairing attempts
+const PAIRING_INTERVAL: Duration = Duration::from_secs(2);
+/// Writing one message may take this long (a slow network); then the connection counts as lost
+const WRITE_TIMEOUT: Duration = Duration::from_secs(120);
+/// A connection that ends sooner than this counts as failed: the next dial waits longer each time
+const SHORT_CONNECTION: Duration = Duration::from_secs(30);
+const MAX_BACKOFF: Duration = Duration::from_secs(300);
+/// PCs kept from the network (more are ignored, unless paired)
+const MAX_FOUND: usize = 32;
 
 /// A PC running CashGuard, found on the network
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -201,6 +212,30 @@ async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R, limit: usize) -> io::R
     String::from_utf8(buf).map(Some).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not UTF-8"))
 }
 
+/// Reads one frame, giving up if nothing arrives for `silence` (a long message may take longer
+/// in all, as long as it keeps coming).
+async fn read_frame_patiently<R: AsyncRead + Unpin>(reader: &mut R, limit: usize, silence: Duration) -> io::Result<Option<String>> {
+    let quiet = || io::Error::new(io::ErrorKind::TimedOut, "silent");
+    let len = timeout(silence, reader.read_u32()).await.map_err(|_| quiet())?? as usize;
+    if len > limit {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "message too large"));
+    }
+    if len == 0 {
+        return Ok(None);
+    }
+    let mut buf = vec![0u8; len];
+    let mut filled = 0;
+    while filled < len {
+        let end = (filled + 64 * 1024).min(len);
+        let n = timeout(silence, reader.read(&mut buf[filled..end])).await.map_err(|_| quiet())??;
+        if n == 0 {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+        filled += n;
+    }
+    String::from_utf8(buf).map(Some).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not UTF-8"))
+}
+
 async fn write_frame<W: AsyncWrite + Unpin>(writer: &mut W, text: &str) -> io::Result<()> {
     let len = u32::try_from(text.len()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "message too large"))?;
     writer.write_u32(len).await?;
@@ -268,7 +303,8 @@ struct Conn {
 }
 
 enum PairCommand {
-    Confirm,
+    /// The user saw this code on both screens
+    Confirm(String),
     Cancel,
 }
 
@@ -289,6 +325,11 @@ struct Shared {
     found: Mutex<HashMap<String, FoundPc>>,
     dialing: Mutex<HashSet<String>>,
     pairing: Mutex<Option<ActivePairing>>,
+    /// Incoming pairing is accepted (the Devices dialog is open)
+    pairing_allowed: AtomicBool,
+    last_incoming_pairing: Mutex<Option<Instant>>,
+    /// Per PC: don't dial before this time, and how many connections in a row ended early
+    backoff: Mutex<HashMap<String, (Instant, u32)>>,
     next_attempt: AtomicU64,
     pending: AtomicUsize,
     wake_dialer: Notify,
@@ -316,6 +357,27 @@ impl Shared {
         (self.save)(&next)?;
         *state = next;
         Ok(())
+    }
+
+    /// Notes how long a connection to a PC lasted: after short ones, the next dial waits longer.
+    fn connection_ended(&self, peer_id: &str, lasted: Duration) {
+        let mut backoff = self.backoff.lock().unwrap();
+        if lasted >= SHORT_CONNECTION {
+            backoff.remove(peer_id);
+            return;
+        }
+        let failures = backoff.get(peer_id).map_or(0, |(_, n)| *n) + 1;
+        let wait = (Duration::from_secs(5) * 2u32.saturating_pow(failures.min(10) - 1)).min(MAX_BACKOFF);
+        backoff.insert(peer_id.to_string(), (Instant::now() + wait, failures));
+    }
+
+    fn may_dial(&self, peer_id: &str) -> bool {
+        self.backoff.lock().unwrap().get(peer_id).is_none_or(|(at, _)| Instant::now() >= *at)
+    }
+
+    /// Whether a connection to this PC dialed by the lower id exists (a second one wouldn't be kept)
+    fn has_preferred(&self, peer_id: &str) -> bool {
+        self.conns.lock().unwrap().values().any(|c| c.peer_id == peer_id && c.preferred)
     }
 
     fn found_list(&self) -> Vec<FoundPc> {
@@ -370,8 +432,15 @@ impl PcNet {
             let s = config.state.lock().unwrap();
             (s.device_id.clone(), s.tcp_port)
         };
-        let std_listener = (0..PORT_TRIES)
-            .find_map(|i| std::net::TcpListener::bind(SocketAddr::new(ip, port.wrapping_add(i))).ok())
+        // (the previous instance may still be letting go of the port: retry it briefly first)
+        let preferred = (0..10).find_map(|attempt| {
+            if attempt > 0 {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            std::net::TcpListener::bind(SocketAddr::new(ip, port)).ok()
+        });
+        let std_listener = preferred
+            .or_else(|| (1..PORT_TRIES).find_map(|i| std::net::TcpListener::bind(SocketAddr::new(ip, port.wrapping_add(i))).ok()))
             .ok_or_else(|| io::Error::other("no free port"))?;
         std_listener.set_nonblocking(true)?;
         let local = std_listener.local_addr()?;
@@ -388,6 +457,9 @@ impl PcNet {
             found: Mutex::new(HashMap::new()),
             dialing: Mutex::new(HashSet::new()),
             pairing: Mutex::new(None),
+            pairing_allowed: AtomicBool::new(false),
+            last_incoming_pairing: Mutex::new(None),
+            backoff: Mutex::new(HashMap::new()),
             next_attempt: AtomicU64::new(1),
             pending: AtomicUsize::new(0),
             wake_dialer: Notify::new(),
@@ -407,7 +479,14 @@ impl PcNet {
         runtime.spawn(dial_loop(Arc::clone(&shared)));
 
         let mdns = if config.discovery {
-            match announce(&shared, local).and_then(|daemon| daemon.browse(SERVICE_TYPE).map(|r| (daemon, r))) {
+            let started = announce(&shared, local).and_then(|daemon| match daemon.browse(SERVICE_TYPE) {
+                Ok(receiver) => Ok((daemon, receiver)),
+                Err(e) => {
+                    let _ = daemon.shutdown();
+                    Err(e)
+                }
+            });
+            match started {
                 Ok((daemon, receiver)) => {
                     runtime.spawn(discover(Arc::clone(&shared), receiver));
                     Some(daemon)
@@ -458,10 +537,16 @@ impl PcNet {
         Ok(())
     }
 
-    pub fn confirm_pairing(&self) {
+    /// The user saw `code` on both screens (ignored unless it's the code of the pairing under way)
+    pub fn confirm_pairing(&self, code: &str) {
         if let Some(p) = self.shared.pairing.lock().unwrap().as_ref() {
-            let _ = p.commands.send(PairCommand::Confirm);
+            let _ = p.commands.send(PairCommand::Confirm(code.to_string()));
         }
+    }
+
+    /// Whether other PCs may start pairing with this one (while the user has the Devices dialog open)
+    pub fn set_pairing_allowed(&self, allowed: bool) {
+        self.shared.pairing_allowed.store(allowed, Ordering::SeqCst);
     }
 
     pub fn cancel_pairing(&self) {
@@ -541,7 +626,13 @@ async fn discover(shared: Arc<Shared>, receiver: mdns_sd::Receiver<ServiceEvent>
                     continue;
                 }
                 let pc = FoundPc { id: id.clone(), name: clean_name(service.get_property_val_str("name").unwrap_or_default()), addresses, fullname: service.fullname.clone() };
-                let changed = shared.found.lock().unwrap().insert(id, pc.clone()).is_none_or(|old| old != pc);
+                let paired = shared.state.lock().unwrap().pc(&id).is_some();
+                let mut found = shared.found.lock().unwrap();
+                if !paired && !found.contains_key(&id) && found.len() >= MAX_FOUND {
+                    continue;
+                }
+                let changed = found.insert(id, pc.clone()).is_none_or(|old| old != pc);
+                drop(found);
                 if changed {
                     shared.wake_dialer.notify_one();
                 }
@@ -609,6 +700,11 @@ async fn incoming(shared: Arc<Shared>, tcp: TcpStream, pending: Pending) {
                 let _ = write_json(&mut tls, json!({ "t": "denied", "reason": reason })).await;
                 return;
             }
+            // (both PCs keep the connection dialed by the lower id)
+            if id > shared.self_id && shared.has_preferred(&id) {
+                let _ = write_json(&mut tls, json!({ "t": "denied", "reason": "duplicate" })).await;
+                return;
+            }
             if known.is_some_and(|(_, old)| old != name) {
                 let _ = shared.update_state(|s| s.pcs.iter_mut().filter(|p| p.id == id).for_each(|p| p.name = name.clone()));
             }
@@ -616,15 +712,28 @@ async fn incoming(shared: Arc<Shared>, tcp: TcpStream, pending: Pending) {
                 return;
             }
             drop(pending);
-            run_connection(shared, tls, id, name, false).await;
+            run_connection(shared, tls, id, name, peer_fp, false).await;
         }
         "pair" => {
-            let Some((attempt, commands)) = claim_pairing(&shared) else {
+            if !shared.pairing_allowed.load(Ordering::SeqCst) {
+                let _ = write_json(&mut tls, json!({ "t": "denied", "reason": "closed" })).await;
+                return;
+            }
+            let too_soon = {
+                let mut last = shared.last_incoming_pairing.lock().unwrap();
+                let too_soon = last.is_some_and(|at| at.elapsed() < PAIRING_INTERVAL);
+                if !too_soon {
+                    *last = Some(Instant::now());
+                }
+                too_soon
+            };
+            let claimed = if too_soon { None } else { claim_pairing(&shared) };
+            let Some((attempt, commands)) = claimed else {
                 let _ = write_json(&mut tls, json!({ "t": "denied", "reason": "busy" })).await;
                 return;
             };
             drop(pending);
-            let result = pair_incoming(&shared, tls, &first, id, name, peer_fp, commands).await;
+            let result = pair_incoming(&shared, tls, id, name, peer_fp, commands).await;
             end_pairing(&shared, attempt, result);
         }
         _ => {
@@ -640,7 +749,7 @@ async fn dial_loop(shared: Arc<Shared>) {
     loop {
         let pcs: Vec<PairedPc> = shared.state.lock().unwrap().pcs.clone();
         for pc in pcs {
-            if shared.connected(&pc.id) || !shared.dialing.lock().unwrap().insert(pc.id.clone()) {
+            if shared.connected(&pc.id) || !shared.may_dial(&pc.id) || !shared.dialing.lock().unwrap().insert(pc.id.clone()) {
                 continue;
             }
             let dialing = Dialing(Arc::clone(&shared), pc.id.clone());
@@ -706,10 +815,16 @@ async fn dial(shared: Arc<Shared>, pc: PairedPc, dialing: Dialing) {
                     });
                 }
                 drop(dialing);
-                run_connection(shared, tls, pc.id, name, true).await;
+                run_connection(shared, tls, pc.id, name, fp, true).await;
+                return;
+            }
+            // (it has a connection to this PC already)
+            "denied" if text(&reply, "reason") == "duplicate" => {
+                shared.connection_ended(&pc.id, Duration::ZERO);
                 return;
             }
             "denied" => {
+                shared.connection_ended(&pc.id, Duration::ZERO);
                 let reason = match text(&reply, "reason").as_str() {
                     "unpaired" | "key" => format!("{} removed this PC. Remove it here and pair again.", pc.name),
                     _ => format!("{} refused the connection.", pc.name),
@@ -726,8 +841,12 @@ async fn dial(shared: Arc<Shared>, pc: PairedPc, dialing: Dialing) {
 
 /// Registers a connection to a paired PC. If there is one already, both PCs keep the one dialed by
 /// the lower id (a reconnection replaces the old one); None: this one is dropped.
-fn register(shared: &Shared, peer_id: &str, preferred: bool) -> Option<(u64, mpsc::UnboundedReceiver<Out>)> {
+fn register(shared: &Shared, peer_id: &str, fingerprint: &str, preferred: bool) -> Option<(u64, mpsc::UnboundedReceiver<Out>)> {
     let mut conns = shared.conns.lock().unwrap();
+    // (removed, or paired anew, while this connection was being made)
+    if !shared.state.lock().unwrap().pc(peer_id).is_some_and(|pc| constant_time_eq(&pc.fingerprint, fingerprint)) {
+        return None;
+    }
     let existing: Vec<u64> = conns.iter().filter(|(_, c)| c.peer_id == peer_id).map(|(k, _)| *k).collect();
     if existing.iter().any(|k| conns[k].preferred) && !preferred {
         return None;
@@ -741,20 +860,21 @@ fn register(shared: &Shared, peer_id: &str, preferred: bool) -> Option<(u64, mps
     Some((conn, rx))
 }
 
-async fn run_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(shared: Arc<Shared>, stream: S, peer_id: String, peer_name: String, dialed_here: bool) {
+async fn run_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(shared: Arc<Shared>, stream: S, peer_id: String, peer_name: String, fingerprint: String, dialed_here: bool) {
     let dialed_by_lower = if dialed_here { shared.self_id < peer_id } else { peer_id < shared.self_id };
-    let Some((conn, mut outbox)) = register(&shared, &peer_id, dialed_by_lower) else { return };
-    shared.emit(PcEvent::Connected { conn, peer_id, peer_name });
+    let Some((conn, mut outbox)) = register(&shared, &peer_id, &fingerprint, dialed_by_lower) else { return };
+    let started = Instant::now();
+    shared.emit(PcEvent::Connected { conn, peer_id: peer_id.clone(), peer_name });
     let (mut reader, mut writer) = tokio::io::split(stream);
     let mut stop = shared.stop.clone();
     let send = async {
         loop {
             tokio::select! {
                 out = outbox.recv() => match out {
-                    Some(Out::Text(text)) => write_frame(&mut writer, &text).await?,
+                    Some(Out::Text(text)) => timeout(WRITE_TIMEOUT, write_frame(&mut writer, &text)).await.map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??,
                     Some(Out::Close) | None => break,
                 },
-                _ = sleep(KEEPALIVE) => write_frame(&mut writer, "").await?,
+                _ = sleep(KEEPALIVE) => timeout(WRITE_TIMEOUT, write_frame(&mut writer, "")).await.map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??,
                 _ = stop.changed() => break,
             }
         }
@@ -762,7 +882,7 @@ async fn run_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(shar
         Ok::<(), io::Error>(())
     };
     let receive = async {
-        while let Ok(Ok(frame)) = timeout(SILENCE_LIMIT, read_frame(&mut reader, MESSAGE_LIMIT)).await {
+        while let Ok(frame) = read_frame_patiently(&mut reader, MESSAGE_LIMIT, SILENCE_LIMIT).await {
             if let Some(text) = frame {
                 shared.emit(PcEvent::Message { conn, text });
             }
@@ -773,6 +893,7 @@ async fn run_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(shar
         _ = receive => {}
     }
     shared.conns.lock().unwrap().remove(&conn);
+    shared.connection_ended(&peer_id, started.elapsed());
     shared.emit(PcEvent::Closed { conn });
     shared.wake_dialer.notify_one();
 }
@@ -813,20 +934,27 @@ async fn pair_outgoing(shared: Arc<Shared>, peer: FoundPc, attempt: u64, command
         }
         let (mut tls, server_fp) = connected.ok_or_else(|| format!("{} can't be reached.", peer.name))?;
         let lost = |_: io::Error| format!("The connection to {} ended.", peer.name);
-        let nonce = random_hex(32);
-        write_json(&mut tls, json!({ "t": "pair", "id": shared.self_id, "name": shared.name(), "commit": sha256_hex(&nonce) })).await.map_err(lost)?;
+        write_json(&mut tls, json!({ "t": "pair", "id": shared.self_id, "name": shared.name() })).await.map_err(lost)?;
         let reply = read_json(&mut tls).await.map_err(lost)?;
         match text(&reply, "t").as_str() {
             "pair-ok" => {}
-            "denied" if text(&reply, "reason") == "busy" => return Err(format!("{} is pairing with another device. Try again in a moment.", peer.name)),
+            "denied" if text(&reply, "reason") == "closed" => return Err(format!("Open Devices on {} first, then try again.", peer.name)),
+            "denied" if text(&reply, "reason") == "busy" => return Err(format!("{} is busy pairing. Try again in a moment.", peer.name)),
             _ => return Err(format!("{} refused to pair.", peer.name)),
         }
-        let their_nonce = text(&reply, "nonce");
-        if text(&reply, "id") != peer.id || !is_nonce(&their_nonce) {
+        // its number, committed to before it learns ours
+        let commit = text(&reply, "commit");
+        if text(&reply, "id") != peer.id || !is_nonce(&commit) {
             return Err(format!("{} answered strangely.", peer.name));
         }
         let name = clean_name(&text(&reply, "name"));
-        write_json(&mut tls, json!({ "t": "reveal", "nonce": nonce })).await.map_err(lost)?;
+        let nonce = random_hex(32);
+        write_json(&mut tls, json!({ "t": "nonce", "nonce": nonce })).await.map_err(lost)?;
+        let reveal = read_json(&mut tls).await.map_err(lost)?;
+        let their_nonce = text(&reveal, "nonce");
+        if text(&reveal, "t") != "reveal" || !is_nonce(&their_nonce) || !constant_time_eq(&sha256_hex(&their_nonce), &commit) {
+            return Err(format!("{name} answered strangely."));
+        }
         let code = pairing_code(&shared.fingerprint, &server_fp, &nonce, &their_nonce);
         confirm(&shared, tls, peer.id.clone(), name, server_fp, code, false, commands).await
     }
@@ -837,25 +965,21 @@ async fn pair_outgoing(shared: Arc<Shared>, peer: FoundPc, attempt: u64, command
 async fn pair_incoming<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     shared: &Arc<Shared>,
     mut stream: S,
-    first: &Value,
     peer_id: String,
     peer_name: String,
     peer_fp: String,
     commands: mpsc::UnboundedReceiver<PairCommand>,
 ) -> Result<(), String> {
     let lost = |_: io::Error| format!("The connection to {peer_name} ended.");
-    let commit = text(first, "commit");
-    if !is_nonce(&commit) {
-        return Err(format!("{peer_name} answered strangely."));
-    }
+    // commit to our number first; reveal it only once the other PC sent its own
     let nonce = random_hex(32);
-    write_json(&mut stream, json!({ "t": "pair-ok", "id": shared.self_id, "name": shared.name(), "nonce": nonce })).await.map_err(lost)?;
-    let reveal = read_json(&mut stream).await.map_err(lost)?;
-    let their_nonce = text(&reveal, "nonce");
-    // the other PC's number must be the one it committed to before it saw ours
-    if text(&reveal, "t") != "reveal" || !is_nonce(&their_nonce) || !constant_time_eq(&sha256_hex(&their_nonce), &commit) {
+    write_json(&mut stream, json!({ "t": "pair-ok", "id": shared.self_id, "name": shared.name(), "commit": sha256_hex(&nonce) })).await.map_err(lost)?;
+    let theirs = read_json(&mut stream).await.map_err(lost)?;
+    let their_nonce = text(&theirs, "nonce");
+    if text(&theirs, "t") != "nonce" || !is_nonce(&their_nonce) {
         return Err(format!("{peer_name} answered strangely."));
     }
+    write_json(&mut stream, json!({ "t": "reveal", "nonce": nonce })).await.map_err(lost)?;
     let code = pairing_code(&peer_fp, &shared.fingerprint, &their_nonce, &nonce);
     confirm(shared, stream, peer_id, peer_name, peer_fp, code, true, commands).await
 }
@@ -872,7 +996,7 @@ async fn confirm<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     incoming: bool,
     mut commands: mpsc::UnboundedReceiver<PairCommand>,
 ) -> Result<(), String> {
-    shared.emit(PcEvent::Pairing(PairingEvent::Code { code, peer_id: peer_id.clone(), peer_name: peer_name.clone(), incoming }));
+    shared.emit(PcEvent::Pairing(PairingEvent::Code { code: code.clone(), peer_id: peer_id.clone(), peer_name: peer_name.clone(), incoming }));
     let (mut reader, mut writer) = tokio::io::split(stream);
     // (reading in its own task: a read cut short by another event would lose its bytes)
     let (received_tx, mut received) = mpsc::unbounded_channel();
@@ -903,7 +1027,9 @@ async fn confirm<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         }
         tokio::select! {
             command = commands.recv() => match command {
-                Some(PairCommand::Confirm) => {
+                // (a confirmation of another code: the user saw an earlier pairing's)
+                Some(PairCommand::Confirm(seen)) if seen != code => {}
+                Some(PairCommand::Confirm(_)) => {
                     if !mine {
                         mine = true;
                         if write_json(&mut writer, json!({ "t": "confirm" })).await.is_err() {
@@ -966,6 +1092,8 @@ mod tests {
             let tx = Mutex::new(tx);
             let config = PcNetConfig { certificate: cert.certificate, private_key: cert.private_key, state: Arc::clone(&state), save: Arc::new(|_| Ok(())), discovery: false };
             let net = PcNet::start(runtime.handle(), "127.0.0.1".parse().unwrap(), config, Arc::new(move |e| { let _ = tx.lock().unwrap().send(e); })).unwrap();
+            // (as if the Devices dialog were open)
+            net.set_pairing_allowed(true);
             Pc { net, events, state, id: id.into() }
         }
 
@@ -1023,10 +1151,10 @@ mod tests {
         let (code_a, code_b) = (a.code(), b.code());
         assert_eq!(code_a, code_b);
         // nothing is stored until both confirmed
-        a.net.confirm_pairing();
+        a.net.confirm_pairing(&code_a);
         std::thread::sleep(Duration::from_millis(200));
         assert!(a.state.lock().unwrap().pcs.is_empty());
-        b.net.confirm_pairing();
+        b.net.confirm_pairing(&code_b);
         for pc in [&a, &b] {
             pc.wait(|e| matches!(e, PcEvent::Pairing(PairingEvent::Done { .. })).then_some(()));
         }
@@ -1065,7 +1193,8 @@ mod tests {
         assert_eq!(reason, "Cancelled on Beta.");
         assert_eq!(b.wait(|e| match e { PcEvent::Pairing(PairingEvent::Failed { reason }) => Some(reason), _ => None }), "");
         assert!(a.state.lock().unwrap().pcs.is_empty() && b.state.lock().unwrap().pcs.is_empty());
-        // a new attempt works
+        // a new attempt works (once the least time between attempts passed)
+        std::thread::sleep(PAIRING_INTERVAL);
         a.net.pair(&b.id).unwrap();
         assert_eq!(a.code(), b.code());
     }
@@ -1142,14 +1271,19 @@ mod tests {
         let rt = runtime();
         let a = Pc::start(&rt, "000000000000000a", "Alpha");
         let shared = &a.net.shared;
-        let (_, mut first) = register(shared, "000000000000000b", false).unwrap();
-        let (_, mut preferred) = register(shared, "000000000000000b", true).unwrap();
+        let (b, fp) = ("000000000000000b", "ff".repeat(32));
+        // only a paired PC with that key
+        assert!(register(shared, b, &fp, true).is_none());
+        a.state.lock().unwrap().pair_pc(PairedPc { id: b.into(), name: "Beta".into(), fingerprint: fp.clone(), paired_at: 0, last_address: None });
+        assert!(register(shared, b, &"ee".repeat(32), true).is_none());
+        let (_, mut first) = register(shared, b, &fp, false).unwrap();
+        let (_, mut preferred) = register(shared, b, &fp, true).unwrap();
         assert!(matches!(first.try_recv(), Ok(Out::Close)));
         // one dialed by the higher id doesn't replace it
-        assert!(register(shared, "000000000000000b", false).is_none());
+        assert!(register(shared, b, &fp, false).is_none());
         assert!(preferred.try_recv().is_err());
         // a new one dialed by the lower id (a reconnection) does
-        let (_, _newer) = register(shared, "000000000000000b", true).unwrap();
+        let (_, _newer) = register(shared, b, &fp, true).unwrap();
         assert!(matches!(preferred.try_recv(), Ok(Out::Close)));
     }
 
@@ -1170,6 +1304,7 @@ mod tests {
             let tx = Mutex::new(tx);
             let config = PcNetConfig { certificate: cert.certificate, private_key: cert.private_key, state: Arc::clone(&state), save: Arc::new(|_| Ok(())), discovery: true };
             let net = PcNet::start(rt.handle(), ip, config, Arc::new(move |e| { let _ = tx.lock().unwrap().send(e); })).unwrap();
+            net.set_pairing_allowed(true);
             Pc { net, events, state, id: id.into() }
         };
         let a = start("00000000000000a1", "Alpha");
@@ -1184,26 +1319,99 @@ mod tests {
     }
 
     #[test]
-    fn a_tampered_reveal_ends_the_pairing() {
+    fn a_reveal_that_doesnt_match_the_commitment_ends_the_pairing() {
         let rt = runtime();
-        let b = Pc::start(&rt, "000000000000000b", "Beta");
         let a = Pc::start(&rt, "000000000000000a", "Alpha");
-        let address = b.net.local_addr();
-        let shared = Arc::clone(&a.net.shared);
-        let reply = rt.block_on(async move {
-            let (mut tls, _) = connect(&shared, address).await.unwrap();
-            write_json(&mut tls, json!({ "t": "pair", "id": "000000000000000a", "name": "Alpha", "commit": sha256_hex(&"11".repeat(32)) })).await.unwrap();
-            let reply = read_json(&mut tls).await.unwrap();
-            // a number other than the committed one (as a machine in the middle would need)
+        // a fake "B" that changes its number after seeing A's (as a machine in the middle would need)
+        let fake = Pc::start(&rt, "000000000000000b", "Beta");
+        let acceptor = fake.net.shared.acceptor.clone();
+        let listener = rt.block_on(TcpListener::bind("127.0.0.1:0")).unwrap();
+        let address = listener.local_addr().unwrap();
+        rt.spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut tls = acceptor.accept(tcp).await.unwrap();
+            read_json(&mut tls).await.unwrap();
+            write_json(&mut tls, json!({ "t": "pair-ok", "id": "000000000000000b", "name": "Beta", "commit": sha256_hex(&"11".repeat(32)) })).await.unwrap();
+            read_json(&mut tls).await.unwrap();
             write_json(&mut tls, json!({ "t": "reveal", "nonce": "22".repeat(32) })).await.unwrap();
-            reply
+            sleep(Duration::from_secs(5)).await;
         });
-        assert_eq!(text(&reply, "t"), "pair-ok");
-        let reason = b.wait(|e| match e {
+        a.net.add_found("000000000000000b", "Beta", address);
+        a.net.pair("000000000000000b").unwrap();
+        let reason = a.wait(|e| match e {
             PcEvent::Pairing(PairingEvent::Failed { reason }) => Some(reason),
             PcEvent::Pairing(PairingEvent::Code { .. }) => panic!("a code was shown"),
             _ => None,
         });
-        assert_eq!(reason, "Alpha answered strangely.");
+        assert_eq!(reason, "Beta answered strangely.");
+    }
+
+    #[test]
+    fn every_attempt_that_learns_the_code_shows_it_and_attempts_are_limited() {
+        let rt = runtime();
+        let b = Pc::start(&rt, "000000000000000b", "Beta");
+        let a = Pc::start(&rt, "000000000000000a", "Alpha");
+        let (address, shared) = (b.net.local_addr(), Arc::clone(&a.net.shared));
+        // a dialer that learns B's number (and so the code) and hangs up
+        let attempt = |shared: Arc<Shared>| async move {
+            let (mut tls, _) = connect(&shared, address).await.unwrap();
+            write_json(&mut tls, json!({ "t": "pair", "id": "000000000000000a", "name": "Alpha" })).await.unwrap();
+            let reply = read_json(&mut tls).await.unwrap();
+            if text(&reply, "t") != "pair-ok" {
+                return text(&reply, "reason");
+            }
+            write_json(&mut tls, json!({ "t": "nonce", "nonce": "33".repeat(32) })).await.unwrap();
+            let reveal = read_json(&mut tls).await.unwrap();
+            assert_eq!(text(&reveal, "t"), "reveal");
+            "revealed".into()
+        };
+        assert_eq!(rt.block_on(attempt(Arc::clone(&shared))), "revealed");
+        // B showed that code
+        b.code();
+        // trying again right away is refused
+        assert_eq!(rt.block_on(attempt(Arc::clone(&shared))), "busy");
+        // and nobody can start pairing while B's Devices dialog is closed
+        b.net.set_pairing_allowed(false);
+        std::thread::sleep(PAIRING_INTERVAL);
+        assert_eq!(rt.block_on(attempt(shared)), "closed");
+    }
+
+    #[test]
+    fn confirming_another_code_does_nothing() {
+        let rt = runtime();
+        let a = Pc::start(&rt, "000000000000000a", "Alpha");
+        let b = Pc::start(&rt, "000000000000000b", "Beta");
+        a.net.add_found(&b.id, "Beta", b.net.local_addr());
+        a.net.pair(&b.id).unwrap();
+        let code = a.code();
+        b.code();
+        a.net.confirm_pairing("000 000");
+        b.net.confirm_pairing("000 000");
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(a.state.lock().unwrap().pcs.is_empty() && b.state.lock().unwrap().pcs.is_empty());
+        a.net.confirm_pairing(&code);
+        b.net.confirm_pairing(&code);
+        a.wait(|e| matches!(e, PcEvent::Pairing(PairingEvent::Done { .. })).then_some(()));
+    }
+
+    #[test]
+    fn short_lived_connections_make_the_next_dial_wait_longer() {
+        let rt = runtime();
+        let a = Pc::start(&rt, "000000000000000a", "Alpha");
+        let shared = &a.net.shared;
+        assert!(shared.may_dial("000000000000000b"));
+        shared.connection_ended("000000000000000b", Duration::from_secs(1));
+        assert!(!shared.may_dial("000000000000000b"));
+        let wait = |s: &Shared| s.backoff.lock().unwrap()["000000000000000b"].0.saturating_duration_since(Instant::now());
+        let first = wait(shared);
+        shared.connection_ended("000000000000000b", Duration::from_secs(1));
+        assert!(wait(shared) > first + Duration::from_secs(3));
+        for _ in 0..20 {
+            shared.connection_ended("000000000000000b", Duration::ZERO);
+        }
+        assert!(wait(shared) <= MAX_BACKOFF);
+        // a connection that lasted resets it
+        shared.connection_ended("000000000000000b", SHORT_CONNECTION);
+        assert!(shared.may_dial("000000000000000b"));
     }
 }

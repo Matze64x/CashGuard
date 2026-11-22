@@ -33,6 +33,7 @@ pub fn run() {
             sync::sync_pc_pair,
             sync::sync_pc_pair_confirm,
             sync::sync_pc_pair_cancel,
+            sync::sync_pc_pairing_allowed,
             sync::sync_forget_pc,
         ])
         .setup(|app| {
