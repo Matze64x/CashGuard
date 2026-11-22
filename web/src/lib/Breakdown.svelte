@@ -4,7 +4,7 @@
 	Each row is a button: a category filters by it, a description goes into the search.
 -->
 <script lang="ts">
-	import { ofSide, sumCents, totalsByCategory, totalsByDescription, type Side, type Transaction } from '../core';
+	import { ofSide, sumCents, totalsByCategory, totalsByDescription, type Side, type Transaction, categorySides } from '../core';
 	import { categoryLabel, describePeriod, formatEuro, plural } from './display';
 	import { filter } from './filter.svelte';
 	import { rowTarget } from './rows.svelte';
@@ -22,7 +22,7 @@
 	} = $props();
 
 	const categories = $derived(new Map(workspace.data.categories.map((c) => [c.id, c])));
-	const sided = $derived(ofSide(transactions, side));
+	const sided = $derived(ofSide(transactions, side, categorySides(workspace.data.transactions)));
 	const single = $derived(filter.current.categories.length === 1 ? filter.current.categories[0]! : null);
 	const rows = $derived(
 		(single !== null ? totalsByDescription(sided) : totalsByCategory(sided)).map((s) => ({ ...s, ...rowTarget(s.key, single !== null, categories) })),

@@ -10,6 +10,8 @@ import {
 	monthlyByCategory,
 	categoryTotalsOverTime,
 	monthlyTotals,
+	categorySides,
+	onSide,
 	monthOf,
 	monthsBetween,
 	NO_CATEGORY,
@@ -178,10 +180,34 @@ describe('breakdowns', () => {
 });
 
 describe('sides', () => {
-	it('splits expenses from income; zero amounts are neither', () => {
+	it('without a category, the sign decides; zero amounts are neither', () => {
 		const mixed = build([tx('2026-01-01', 'in', 100), tx('2026-01-02', 'out', -100), tx('2026-01-03', 'zero', 0)]);
-		expect(ofSide(mixed.transactions, 'expense').map((t) => t.description)).toEqual(['out']);
-		expect(ofSide(mixed.transactions, 'income').map((t) => t.description)).toEqual(['in']);
+		const sides = categorySides(mixed.transactions);
+		expect(ofSide(mixed.transactions, 'expense', sides).map((t) => t.description)).toEqual(['out']);
+		expect(ofSide(mixed.transactions, 'income', sides).map((t) => t.description)).toEqual(['in']);
+	});
+
+	it('a refund in an expense category lowers its expenses instead of counting as income, and vice versa', () => {
+		const trip = build([
+			tx('2026-03-01', 'Salary', 300000, RENT),
+			tx('2026-03-02', 'Salary correction', -5000, RENT),
+			tx('2026-03-03', 'Restaurant', -6000, FOOD),
+			tx('2026-03-04', 'Per diem', 2800, FOOD),
+		]);
+		const sides = categorySides(trip.transactions);
+		expect(sides.get(FOOD)).toBe('expense');
+		expect(sides.get(RENT)).toBe('income');
+		const names = (side: 'income' | 'expense') => ofSide(trip.transactions, side, sides).map((t) => t.description).sort();
+		expect(names('expense')).toEqual(['Per diem', 'Restaurant']);
+		expect(names('income')).toEqual(['Salary', 'Salary correction']);
+		expect(monthlyTotals(trip.transactions, trip.transactions, [d('2026-03-01')])).toEqual([{ month: '2026-03-01', income: 295000, expenses: -3200, balance: 291800 }]);
+		// the filter's "income only" / "expenses only" goes by the same rule
+		const only = (kind: 'income' | 'expense') => applyFilter(trip.transactions, categories, filter({ kind })).transactions.map((t) => t.description).sort();
+		expect(only('expense')).toEqual(['Per diem', 'Restaurant']);
+		expect(only('income')).toEqual(['Salary', 'Salary correction']);
+		// (sizes on a side: spending is positive on the expense side)
+		expect(onSide(-6000, 'expense')).toBe(6000);
+		expect(onSide(2800, 'income')).toBe(2800);
 	});
 });
 

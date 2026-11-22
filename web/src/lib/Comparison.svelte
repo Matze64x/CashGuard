@@ -18,6 +18,7 @@
 		type Period,
 		type Side,
 		type Transaction,
+		categorySides,
 	} from '../core';
 	import { clock } from './clock.svelte';
 	import { describePeriod, formatEuro, formatEuroChange } from './display';
@@ -35,7 +36,7 @@
 
 	/** What the filter selects in a period, of the side */
 	const within = (period: Period): Transaction[] =>
-		ofSide(applyFilter(workspace.data.transactions, workspace.data.categories, { ...filter.current, ...period }).transactions, side);
+		ofSide(applyFilter(workspace.data.transactions, workspace.data.categories, { ...filter.current, ...period }).transactions, side, categorySides(workspace.data.transactions));
 
 	const categories = $derived(new Map(workspace.data.categories.map((c) => [c.id, c])));
 	const byDescription = $derived(filter.current.categories.length === 1);

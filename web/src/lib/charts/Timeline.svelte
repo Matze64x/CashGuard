@@ -27,6 +27,9 @@
 		type Id,
 		type Side,
 		type Transaction,
+		categorySides,
+		sideOf,
+		onSide,
 	} from '../../core';
 	import { categoryColor, categoryLabel, describePeriod, formatDate, formatEuro, formatMonth, plural } from '../display';
 	import Segmented from '../ui/Segmented.svelte';
@@ -71,7 +74,7 @@
 	const estimate = $derived.by(() => {
 		const t = current && totals[current.index];
 		if (!current || !t) return null;
-		const project = projection(current.basis, matching, (t) => (t.amount > 0 ? 'income' : 'expense'));
+		const project = projection(current.basis, matching, (t) => sideOf(t, categorySides(all)));
 		const income = project('income', t.income);
 		const expenses = project('expense', t.expenses);
 		// (nothing more expected: nothing to show)
@@ -83,7 +86,7 @@
 	// by category: the side's transactions of the largest categories, as positive amounts
 	const stacks = $derived.by(() => {
 		if (view !== 'categories') return null;
-		const sided = ofSide(matching, side);
+		const sided = ofSide(matching, side, categorySides(workspace.data.transactions));
 		const all = totalsByCategory(sided);
 		const top = all.slice(0, TOP_CATEGORIES).map((s) => s.key);
 		const { byCategory, other } = monthlyByCategory(sided, months, top);
@@ -95,9 +98,10 @@
 				id,
 				name: categoryLabel(id, names.get(id)),
 				color: categoryColor(names.get(id)),
-				values: byCategory.get(id)!.map((v) => Math.abs(v)),
+				// (a month whose refunds outweigh its spending shows as nothing)
+				values: byCategory.get(id)!.map((v) => Math.max(0, onSide(v, side))),
 			})),
-			other: other.map((v) => Math.abs(v)),
+			other: other.map((v) => Math.max(0, onSide(v, side))),
 			/** The side's total of the current month projected to its end */
 			estimate: (() => {
 				if (!estimate) return null;

@@ -17,6 +17,8 @@
 		type CivilDate,
 		type Filter,
 		type Side,
+		categorySides,
+		sideOf,
 	} from '../core';
 	import Breakdown from './Breakdown.svelte';
 	import { clock } from './clock.svelte';
@@ -49,8 +51,9 @@
 	// period changes, which is what clicking a chart does
 	const restOfFilter = $derived(JSON.stringify({ ...filter.current, from: null, to: null } satisfies Filter));
 	const withoutPeriod = $derived(applyFilter(workspace.data.transactions, workspace.data.categories, JSON.parse(restOfFilter) as Filter).transactions);
-	const income = $derived(sumCents(ofSide(result.transactions, 'income').map((t) => t.amount)));
-	const expenses = $derived(sumCents(ofSide(result.transactions, 'expense').map((t) => t.amount)));
+	const sides = $derived(categorySides(workspace.data.transactions));
+	const income = $derived(sumCents(ofSide(result.transactions, 'income', sides).map((t) => t.amount)));
+	const expenses = $derived(sumCents(ofSide(result.transactions, 'expense', sides).map((t) => t.amount)));
 	// the months the totals cover, for the monthly average: the period as far as there is data (so
 	// "This year" in March counts 3 months), else the span of the matching transactions
 	const monthCount = $derived.by(() => {
@@ -68,7 +71,7 @@
 		if (!from || !to) return null;
 		const basis = projectionBasis({ from, to }, clock.today, oldest);
 		if (basis === null) return null;
-		const project = projection(basis, withoutPeriod, (t) => (t.amount > 0 ? 'income' : 'expense'));
+		const project = projection(basis, withoutPeriod, (t) => sideOf(t, sides));
 		const toIncome = project('income', income);
 		const toExpenses = project('expense', expenses);
 		// (nothing more expected: nothing to show)
@@ -88,7 +91,9 @@
 	<!-- what the filter selects, over time and in total -->
 	<div class="group overview">
 		<section class="part timeline" aria-label="Timeline">
-			<Timeline {workspace} matching={withoutPeriod} {side} />
+			<!-- (by category: the expenses, unless the filter asks for income: the Expenses/Income
+			     switch below is the breakdown's) -->
+			<Timeline {workspace} matching={withoutPeriod} side={filter.current.kind === 'income' ? 'income' : 'expense'} />
 		</section>
 
 		<section class="part totals" aria-label="Totals of the filtered transactions">

@@ -4,9 +4,14 @@
  *
  * A group (a transaction split into parts) counts as one transaction with its own date, category,
  * description and total: the parts are details that only show when the transaction is opened.
+ *
+ * Income or expense goes by category, not by sign (the user's rule): a category whose amounts add
+ * up to less than zero is an expense category, so a positive amount in it (a refund, a per diem for
+ * a trip's restaurant bills) lowers its expenses instead of counting as income; likewise a negative
+ * amount in an income category lowers the income. Without a category, the sign decides.
  */
 import { addDays, addMonths, civilDate, dateParts, daysBetween, daysInMonth, type CivilDate } from './dates';
-import type { Id } from './ids';
+import { NO_CATEGORY, type Id } from './ids';
 import { cents, sumCents, type Cents } from './money';
 import type { Category, Transaction } from './model';
 
@@ -40,14 +45,14 @@ export function isFiltered(filter: Filter): boolean {
 	);
 }
 
-function matcher(filter: Filter, categories: readonly Category[]): (t: Transaction) => boolean {
+function matcher(filter: Filter, categories: readonly Category[], sides: Sides): (t: Transaction) => boolean {
 	const names = new Map(categories.map((c) => [c.id, c.name.toLocaleLowerCase()]));
 	const words = filter.text.toLocaleLowerCase().split(/\s+/).filter(Boolean);
 	const wanted = filter.categories.length > 0 ? new Set(filter.categories) : null;
 	return (t) => {
 		if ((filter.from !== null && t.date < filter.from) || (filter.to !== null && t.date > filter.to)) return false;
 		if (wanted && !wanted.has(t.categoryId)) return false;
-		if ((filter.kind === 'income' && t.amount <= 0) || (filter.kind === 'expense' && t.amount >= 0)) return false;
+		if (filter.kind !== 'all' && (t.amount === 0 || sideOf(t, sides) !== filter.kind)) return false;
 		const size = Math.abs(t.amount);
 		if ((filter.minAmount !== null && size < filter.minAmount) || (filter.maxAmount !== null && size > filter.maxAmount)) return false;
 		if (words.length > 0) {
@@ -64,9 +69,46 @@ export interface FilterResult {
 	readonly total: Cents;
 }
 
+/** The transactions that match the filter; `transactions` must be all of them (they decide the categories' sides) */
 export function applyFilter(transactions: readonly Transaction[], categories: readonly Category[], filter: Filter): FilterResult {
-	const matching = isFiltered(filter) ? transactions.filter(matcher(filter, categories)) : transactions;
+	const matching = isFiltered(filter) ? transactions.filter(matcher(filter, categories, categorySides(transactions))) : transactions;
 	return { transactions: matching, total: sumCents(matching.map((t) => t.amount)) };
+}
+
+// ------------------------------------------------------------------------------------- sides
+
+export type Side = 'expense' | 'income';
+
+/** Each category's side (see the header), by what its amounts add up to */
+export type Sides = ReadonlyMap<Id, Side>;
+
+const sidesOf = new WeakMap<readonly Transaction[], Sides>();
+
+/** The categories' sides, from all `transactions` (made once per list: they're never changed). */
+export function categorySides(transactions: readonly Transaction[]): Sides {
+	let sides = sidesOf.get(transactions);
+	if (!sides) {
+		const totals = new Map<Id, number>();
+		for (const t of transactions) totals.set(t.categoryId, (totals.get(t.categoryId) ?? 0) + t.amount);
+		sides = new Map([...totals].map(([id, total]) => [id, total > 0 ? 'income' : 'expense']));
+		sidesOf.set(transactions, sides);
+	}
+	return sides;
+}
+
+/** Whether a transaction counts as income or as an expense */
+export function sideOf(t: Transaction, sides: Sides): Side {
+	return (t.categoryId !== NO_CATEGORY && sides.get(t.categoryId)) || (t.amount > 0 ? 'income' : 'expense');
+}
+
+/** The expenses or the income (see `sideOf`; amounts of 0 are neither) */
+export function ofSide(transactions: readonly Transaction[], side: Side, sides: Sides): Transaction[] {
+	return transactions.filter((t) => t.amount !== 0 && sideOf(t, sides) === side);
+}
+
+/** An amount as the size of an expense or an income: spending is positive on the expense side */
+export function onSide(amount: number, side: Side): number {
+	return side === 'expense' ? -amount : amount;
 }
 
 // ------------------------------------------------------------------------------------- periods
@@ -146,9 +188,9 @@ export function chartPeriod(
 export interface MonthTotals {
 	/** The month's first day */
 	readonly month: CivilDate;
-	/** Sum of the positive amounts */
+	/** Sum of the income (see `sideOf`) */
 	readonly income: Cents;
-	/** Sum of the negative amounts (negative) */
+	/** Sum of the expenses (negative) */
 	readonly expenses: Cents;
 	/** The balance of `all` transactions at the end of the month */
 	readonly balance: Cents;
@@ -158,7 +200,7 @@ export interface MonthTotals {
  * Income and expenses per month of the `matching` transactions, and the running balance of `all`
  * transactions (the real balance, independent of any filter). Both lists are newest first.
  */
-export function monthlyTotals(matching: readonly Transaction[], all: readonly Transaction[], months: readonly CivilDate[]): MonthTotals[] {
+export function monthlyTotals(matching: readonly Transaction[], all: readonly Transaction[], months: readonly CivilDate[], sides: Sides = categorySides(all)): MonthTotals[] {
 	// by "YYYY-MM": cheap, this runs for every transaction
 	const index = new Map(months.map((m, i) => [m.slice(0, 7), i]));
 	const income = months.map(() => 0);
@@ -166,7 +208,7 @@ export function monthlyTotals(matching: readonly Transaction[], all: readonly Tr
 	for (const t of matching) {
 		const i = index.get(t.date.slice(0, 7));
 		if (i === undefined) continue;
-		if (t.amount > 0) income[i]! += t.amount;
+		if (sideOf(t, sides) === 'income') income[i]! += t.amount;
 		else expenses[i]! += t.amount;
 	}
 	// running balance: everything up to each month's end, walking `all` from its oldest end
@@ -180,13 +222,6 @@ export function monthlyTotals(matching: readonly Transaction[], all: readonly Tr
 }
 
 // ------------------------------------------------------------------------------------- breakdowns
-
-export type Side = 'expense' | 'income';
-
-/** The expenses (negative amounts) or the income (positive amounts) */
-export function ofSide(transactions: readonly Transaction[], side: Side): Transaction[] {
-	return transactions.filter((t) => (side === 'expense' ? t.amount < 0 : t.amount > 0));
-}
 
 export interface Share<K> {
 	readonly key: K;

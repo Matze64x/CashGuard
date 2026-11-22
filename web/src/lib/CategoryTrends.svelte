@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
 	import { touchFirst } from './pointer';
-	import { addMonths, categoryTotalsOverTime, chartPeriod, monthOf, monthsBetween, ofSide, projection, projectionBasis, yearOf, type Cents, type CivilDate, type Id, type Side, type Transaction } from '../core';
+	import { addMonths, categoryTotalsOverTime, chartPeriod, monthOf, monthsBetween, ofSide, projection, projectionBasis, yearOf, type Cents, type CivilDate, type Id, type Side, type Transaction, categorySides, onSide } from '../core';
 	import { clock } from './clock.svelte';
 	import { formatEuro, formatMonth } from './display';
 	import { rowTarget } from './rows.svelte';
@@ -74,17 +74,18 @@
 	}
 	const trends = $derived.by((): Trend[] => {
 		const last = buckets.keys.length - 1;
-		const sided = ofSide(matching, side);
+		const sided = ofSide(matching, side, categorySides(workspace.data.transactions));
 		const project = basis && projection(basis, sided, (t) => t.categoryId);
 		return (
 			[...categoryTotalsOverTime(sided, buckets.keys, buckets.of)]
 				.map(([key, totals]) => {
-					const values = totals.map(Math.abs);
+					// (amounts as spent or earned; a bucket whose refunds outweigh it counts as nothing)
+					const values = totals.map((v) => Math.max(0, onSide(v, side)));
 					const first = values.findIndex((v) => v > 0);
 					const whole = values.map((value, i) => ({ value, i })).filter(({ i }) => i >= first && !buckets.partial[i]);
 					const projected = project?.(key, totals[last]!) ?? null;
-					// nothing so far and nothing expected: no estimate to draw
-					const estimate = projected === null || (projected === 0 && values[last] === 0) ? null : Math.abs(projected);
+					// (also when it's heading to 0: then the line goes down to 0)
+					const estimate = projected === null ? null : Math.max(0, onSide(projected, side));
 					return { key, values, whole, isNew: first === last, estimate, sum: values.reduce((a, b) => a + b, 0) };
 				})
 				// only categories used in the buckets shown, the largest (in them) first
