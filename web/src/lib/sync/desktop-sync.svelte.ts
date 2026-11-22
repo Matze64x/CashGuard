@@ -1,7 +1,8 @@
 /**
- * Syncing in the desktop app: phones connect to the Rust endpoint (`src-tauri/src/sync`), which
- * hands this window authenticated connections; the sync itself runs here (`SyncManager`). Also
- * pairing (QR codes), the paired phones and this PC's name.
+ * Syncing in the desktop app: phones and other PCs connect to the Rust side (`src-tauri/src/sync`),
+ * which hands this window authenticated connections; the sync itself runs here (`SyncManager`).
+ * Also pairing (QR codes for phones, a code to compare for PCs), the paired devices and this PC's
+ * name.
  */
 import type { SyncReport } from '../../core';
 import { SyncManager } from './manager.svelte';
@@ -20,6 +21,35 @@ export interface PairedPhone {
 	/** Unix seconds */
 	readonly pairedAt: number;
 }
+
+export interface PairedPc {
+	readonly id: string;
+	readonly name: string;
+	/** Unix seconds */
+	readonly pairedAt: number;
+}
+
+/** A PC running CashGuard on the network */
+export interface FoundPc {
+	readonly id: string;
+	readonly name: string;
+}
+
+/** Pairing with another PC: both screens show the code until both users confirmed it */
+export interface PcPairing {
+	readonly code: string;
+	readonly peerId: string;
+	readonly peerName: string;
+	/** Started on the other PC */
+	readonly incoming: boolean;
+	/** Confirmed here; waiting for the other PC */
+	readonly confirmed: boolean;
+}
+
+type PairingEvent =
+	| { state: 'code'; code: string; peerId: string; peerName: string; incoming: boolean }
+	| { state: 'done'; peerId: string; peerName: string }
+	| { state: 'failed'; reason: string };
 
 export interface PairingQr {
 	readonly payload: string;
@@ -41,6 +71,12 @@ export class DesktopSync {
 	readonly manager: SyncManager;
 	info = $state.raw<DesktopInfo | null>(null);
 	phones = $state.raw<readonly PairedPhone[]>([]);
+	pcs = $state.raw<readonly PairedPc[]>([]);
+	/** PCs on the network (paired ones too) */
+	found = $state.raw<readonly FoundPc[]>([]);
+	pcPairing = $state.raw<PcPairing | null>(null);
+	/** How the last PC pairing ended (null while none ended, or once seen) */
+	pcPairingResult = $state.raw<{ readonly ok: boolean; readonly message: string } | null>(null);
 	/** Why syncing couldn't start */
 	problem = $state<string | null>(null);
 	readonly #connections = new Map<number, { receive: (text: string) => void; closed: () => void }>();
@@ -60,7 +96,7 @@ export class DesktopSync {
 		let waiting: (() => void)[] | null = [];
 		const inOrder = (handle: () => void) => (waiting ? waiting.push(handle) : handle());
 		const stops = await Promise.all([
-			listen<{ conn: number; phoneId: string; phoneName: string }>('sync-connected', ({ payload }) => inOrder(() => this.#connected(payload.conn, payload.phoneId))),
+			listen<{ conn: number; peerId: string; peerName: string; kind: 'phone' | 'pc' }>('sync-connected', ({ payload }) => inOrder(() => this.#connected(payload.conn, payload.peerId, payload.kind === 'phone'))),
 			listen<{ conn: number; text: string }>('sync-message', ({ payload }) => inOrder(() => this.#connections.get(payload.conn)?.receive(payload.text))),
 			listen<number>('sync-closed', ({ payload }) =>
 				inOrder(() => {
@@ -74,13 +110,17 @@ export class DesktopSync {
 			}),
 			listen<string | null>('sync-address', ({ payload }) => {
 				if (this.info) this.info = { ...this.info, address: payload };
+				void this.refreshPcs();
 			}),
+			listen<FoundPc[]>('sync-pcs-found', ({ payload }) => (this.found = payload)),
+			listen<PairingEvent>('sync-pc-pairing', ({ payload }) => this.#pairingEvent(payload)),
+			listen<{ peerId: string; reason: string }>('sync-pc-refused', ({ payload }) => this.manager.setProblem(payload.peerId, payload.reason)),
 		]);
 		try {
 			this.info = await invoke<DesktopInfo>('sync_start');
 			for (const handle of waiting.splice(0)) handle();
 			waiting = null;
-			await this.refreshPhones();
+			await Promise.all([this.refreshPhones(), this.refreshPcs()]);
 		} catch (e) {
 			this.problem = e instanceof Error ? e.message : String(e);
 		}
@@ -90,16 +130,16 @@ export class DesktopSync {
 		};
 	}
 
-	#connected(conn: number, phoneId: string): void {
+	#connected(conn: number, peerId: string, isPhone: boolean): void {
 		// one message after the other: separate invokes could overtake each other
 		let chain: Promise<unknown> = Promise.resolve();
 		const handlers = this.manager.attach(
 			{
-				peerId: phoneId,
+				peerId,
 				send: (text) => void (chain = chain.then(() => invoke('sync_send', { conn, text })).catch(() => undefined)),
 				close: () => void (chain = chain.then(() => invoke('sync_close', { conn })).catch(() => undefined)),
 			},
-			true,
+			isPhone,
 		);
 		this.#connections.set(conn, handlers);
 	}
@@ -122,6 +162,53 @@ export class DesktopSync {
 		this.manager.forgetProblem(phoneId);
 		await this.#workspace.forgetPeer(phoneId);
 		await this.refreshPhones();
+	}
+
+	async refreshPcs(): Promise<void> {
+		const { paired, found } = await invoke<{ paired: PairedPc[]; found: FoundPc[] }>('sync_pcs');
+		this.pcs = paired;
+		this.found = found;
+	}
+
+	#pairingEvent(event: PairingEvent): void {
+		if (event.state === 'code') {
+			this.pcPairingResult = null;
+			this.pcPairing = { code: event.code, peerId: event.peerId, peerName: event.peerName, incoming: event.incoming, confirmed: false };
+			return;
+		}
+		this.pcPairing = null;
+		if (event.state === 'done') {
+			this.manager.forgetProblem(event.peerId);
+			this.pcPairingResult = { ok: true, message: `Paired with ${event.peerName}.` };
+			void this.refreshPcs();
+		} else {
+			this.pcPairingResult = event.reason ? { ok: false, message: event.reason } : null;
+		}
+	}
+
+	/** Starts pairing with a PC on the network: both then show a code (`pcPairing`). */
+	pairPc(peerId: string): Promise<void> {
+		this.pcPairingResult = null;
+		return invoke('sync_pc_pair', { peerId });
+	}
+
+	/** The user saw the same code on both PCs */
+	async confirmPcPairing(): Promise<void> {
+		await invoke('sync_pc_pair_confirm');
+		if (this.pcPairing) this.pcPairing = { ...this.pcPairing, confirmed: true };
+	}
+
+	cancelPcPairing(): Promise<void> {
+		this.pcPairing = null;
+		return invoke('sync_pc_pair_cancel');
+	}
+
+	/** Unpairs a PC: neither syncs with the other any more (until paired again). */
+	async forgetPc(peerId: string): Promise<void> {
+		await invoke('sync_forget_pc', { peerId });
+		this.manager.forgetProblem(peerId);
+		await this.#workspace.forgetPeer(peerId);
+		await this.refreshPcs();
 	}
 
 	async rename(name: string): Promise<void> {

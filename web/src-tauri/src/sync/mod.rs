@@ -1,10 +1,12 @@
-//! Syncing with phones on the local network: the window starts the endpoint (`sync_start`) once
-//! it's ready for connections, shows pairing QR codes, and exchanges the sync messages with
-//! connected phones through commands (`sync_send`) and events (`sync-connected`, `sync-message`,
-//! `sync-closed`, `sync-paired`). See `endpoint.rs` for how phones connect and authenticate.
+//! Syncing with phones and other PCs on the local network: the window starts serving
+//! (`sync_start`) once it's ready for connections, pairs devices, and exchanges the sync messages
+//! with connected devices through commands (`sync_send`) and events (`sync-connected`,
+//! `sync-message`, `sync-closed`, …). Phones connect over WebRTC (`endpoint.rs`), PCs over TLS
+//! (`pcs.rs`); connection numbers are unique across both.
 
 pub mod endpoint;
 pub mod framing;
+pub mod pcs;
 pub mod state;
 
 use std::net::{IpAddr, SocketAddr, UdpSocket};
@@ -23,6 +25,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::data_dir::DataDir;
 use endpoint::{Command, Endpoint, EndpointConfig, EndpointEvent};
+use pcs::{PcEvent, PcNet, PcNetConfig};
 use state::{random_text, state_path, SyncState};
 
 /// How long a pairing QR code works
@@ -44,10 +47,15 @@ struct Running {
     commands: Sender<Command>,
     thread: Option<JoinHandle<()>>,
     address: SocketAddr,
+    /// Connections to other PCs (None if it couldn't start)
+    pcs: Option<PcNet>,
 }
 
 impl Running {
     fn stop(&mut self) {
+        if let Some(pcs) = &self.pcs {
+            pcs.stop();
+        }
         let _ = self.commands.send(Command::Stop);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -98,10 +106,35 @@ pub struct PairingCode {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct PcInfo {
+    id: String,
+    name: String,
+    paired_at: u64,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PcsInfo {
+    paired: Vec<PcInfo>,
+    /// PCs on the network (paired ones too)
+    found: Vec<pcs::FoundPc>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct ConnectedPayload {
     conn: u64,
-    phone_id: String,
-    phone_name: String,
+    peer_id: String,
+    peer_name: String,
+    /// "phone" or "pc"
+    kind: &'static str,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RefusedPayload {
+    peer_id: String,
+    reason: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -168,7 +201,7 @@ fn start_endpoint(app: &AppHandle, inner: &mut Inner) -> Option<SocketAddr> {
     let events_app = app.clone();
     let events = Box::new(move |event: EndpointEvent| {
         let _ = match event {
-            EndpointEvent::Connected { conn, phone_id, phone_name } => events_app.emit("sync-connected", ConnectedPayload { conn, phone_id, phone_name }),
+            EndpointEvent::Connected { conn, phone_id, phone_name } => events_app.emit("sync-connected", ConnectedPayload { conn, peer_id: phone_id, peer_name: phone_name, kind: "phone" }),
             EndpointEvent::Message { conn, text } => events_app.emit("sync-message", MessagePayload { conn, text }),
             EndpointEvent::Closed { conn } => events_app.emit("sync-closed", conn),
             EndpointEvent::Paired { phone_id, phone_name } => events_app.emit("sync-paired", PairedPayload { phone_id, phone_name }),
@@ -177,13 +210,41 @@ fn start_endpoint(app: &AppHandle, inner: &mut Inner) -> Option<SocketAddr> {
     let endpoint = Endpoint::new(socket, config, events).ok()?;
     let (commands, receiver) = mpsc::channel();
     let thread = std::thread::Builder::new().name("cashguard-sync".into()).spawn(move || endpoint.run(receiver)).ok()?;
-    inner.running = Some(Running { commands, thread: Some(thread), address });
+    let pcs = start_pcs(app, inner, ip);
+    inner.running = Some(Running { commands, thread: Some(thread), address, pcs });
     Some(address)
+}
+
+fn start_pcs(app: &AppHandle, inner: &Inner, ip: IpAddr) -> Option<PcNet> {
+    let app = app.clone();
+    let events: pcs::Events = Arc::new(move |event: PcEvent| {
+        let _ = match event {
+            PcEvent::Connected { conn, peer_id, peer_name } => app.emit("sync-connected", ConnectedPayload { conn, peer_id, peer_name, kind: "pc" }),
+            PcEvent::Message { conn, text } => app.emit("sync-message", MessagePayload { conn, text }),
+            PcEvent::Closed { conn } => app.emit("sync-closed", conn),
+            PcEvent::Found(found) => app.emit("sync-pcs-found", found),
+            PcEvent::Pairing(pairing) => app.emit("sync-pc-pairing", pairing),
+            PcEvent::Refused { peer_id, reason } => app.emit("sync-pc-refused", RefusedPayload { peer_id, reason }),
+        };
+    });
+    let path = inner.path.clone();
+    let config = PcNetConfig {
+        certificate: inner.cert.certificate.clone(),
+        private_key: inner.cert.private_key.clone(),
+        state: Arc::clone(&inner.state),
+        save: Arc::new(move |s: &SyncState| s.save(&path)),
+        discovery: true,
+    };
+    PcNet::start(tauri::async_runtime::handle().inner(), ip, config, events).map_err(|e| log::warn!("can't serve other PCs: {e}")).ok()
 }
 
 fn info(inner: &Inner) -> SyncInfo {
     let s = inner.state.lock().unwrap();
     SyncInfo { device_id: s.device_id.clone(), name: s.name.clone(), address: inner.running.as_ref().map(|r| r.address.to_string()) }
+}
+
+fn pcs_of(inner: &Inner) -> Result<&PcNet, String> {
+    inner.running.as_ref().and_then(|r| r.pcs.as_ref()).ok_or_else(|| "This PC isn't connected to a local network.".into())
 }
 
 fn send(inner: &Inner, command: Command) {
@@ -303,6 +364,9 @@ pub fn sync_rename(service: State<'_, SyncService>, name: String) -> Result<Sync
             next.save(&inner.path).map_err(|e| format!("Can't save: {e}"))?;
             *s = next;
         }
+        if let Ok(pcs) = pcs_of(inner) {
+            pcs.renamed();
+        }
         Ok(info(inner))
     })
 }
@@ -310,6 +374,10 @@ pub fn sync_rename(service: State<'_, SyncService>, name: String) -> Result<Sync
 #[tauri::command(async)]
 pub fn sync_send(service: State<'_, SyncService>, conn: u64, text: String) -> Result<(), String> {
     with_inner(&service, |inner| {
+        // (the connection is a phone's or a PC's; each side ignores numbers it doesn't know)
+        if let Ok(pcs) = pcs_of(inner) {
+            pcs.send(conn, text.clone());
+        }
         send(inner, Command::Send { conn, text });
         Ok(())
     })
@@ -318,7 +386,63 @@ pub fn sync_send(service: State<'_, SyncService>, conn: u64, text: String) -> Re
 #[tauri::command(async)]
 pub fn sync_close(service: State<'_, SyncService>, conn: u64) -> Result<(), String> {
     with_inner(&service, |inner| {
+        if let Ok(pcs) = pcs_of(inner) {
+            pcs.close(conn);
+        }
         send(inner, Command::Close { conn });
         Ok(())
+    })
+}
+
+/// The paired PCs, and the PCs on the network.
+#[tauri::command(async)]
+pub fn sync_pcs(service: State<'_, SyncService>) -> Result<PcsInfo, String> {
+    with_inner(&service, |inner| {
+        let paired = inner.state.lock().unwrap().pcs.iter().map(|p| PcInfo { id: p.id.clone(), name: p.name.clone(), paired_at: p.paired_at }).collect();
+        let found = pcs_of(inner).map(PcNet::found).unwrap_or_default();
+        Ok(PcsInfo { paired, found })
+    })
+}
+
+/// Starts pairing with a PC on the network; both screens then show a code (`sync-pc-pairing`).
+#[tauri::command(async)]
+pub fn sync_pc_pair(service: State<'_, SyncService>, peer_id: String) -> Result<(), String> {
+    with_inner(&service, |inner| pcs_of(inner)?.pair(&peer_id))
+}
+
+/// The user confirmed that both screens show the same code.
+#[tauri::command(async)]
+pub fn sync_pc_pair_confirm(service: State<'_, SyncService>) -> Result<(), String> {
+    with_inner(&service, |inner| {
+        pcs_of(inner)?.confirm_pairing();
+        Ok(())
+    })
+}
+
+#[tauri::command(async)]
+pub fn sync_pc_pair_cancel(service: State<'_, SyncService>) -> Result<(), String> {
+    with_inner(&service, |inner| {
+        if let Ok(pcs) = pcs_of(inner) {
+            pcs.cancel_pairing();
+        }
+        Ok(())
+    })
+}
+
+/// Unpairs a PC: it can't connect any more (until paired again).
+#[tauri::command(async)]
+pub fn sync_forget_pc(service: State<'_, SyncService>, peer_id: String) -> Result<(), String> {
+    with_inner(&service, |inner| match pcs_of(inner) {
+        Ok(pcs) => pcs.forget(&peer_id).map_err(|e| format!("Can't save: {e}")),
+        // (not serving right now: just remove it)
+        Err(_) => {
+            let mut s = inner.state.lock().unwrap();
+            let mut next = s.clone();
+            if next.forget_pc(&peer_id) {
+                next.save(&inner.path).map_err(|e| format!("Can't save: {e}"))?;
+                *s = next;
+            }
+            Ok(())
+        }
     })
 }

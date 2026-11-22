@@ -43,6 +43,11 @@ const ENDED_UFRAG_TIME: Duration = Duration::from_secs(120);
 /// Connection numbers, unique for the whole run of the app (the endpoint restarts when the address
 /// changes, and the window may still send to an old connection's number)
 static NEXT_CONN: AtomicU64 = AtomicU64::new(1);
+
+/// A new connection number (phones and PCs share them)
+pub(crate) fn next_conn() -> u64 {
+    NEXT_CONN.fetch_add(1, Ordering::Relaxed)
+}
 /// A phone must prove who it is within this time
 const AUTH_TIMEOUT: Duration = Duration::from_secs(15);
 /// The first message (the proof) is small
@@ -308,7 +313,7 @@ impl Endpoint {
         api.start_dtls(false).expect("DTLS starts once");
         api.start_sctp(false);
         let cid = api.create_data_channel(ChannelConfig { label: "cashguard".into(), negotiated: Some(0), ..Default::default() });
-        let conn = NEXT_CONN.fetch_add(1, Ordering::Relaxed);
+        let conn = next_conn();
         self.sessions.push(Session {
             conn,
             rtc,

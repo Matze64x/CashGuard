@@ -7,15 +7,19 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { addTransaction, cents, EMPTY_DATA, PeerSession, type CashGuardData, type CivilDate, type StoredBase, type SyncMessage, type UtcSeconds } from '../../src/core';
+import { addTransaction, cents, EMPTY_DATA, PeerSession, type CashGuardData, type CivilDate, type DeviceInfo, type StoredBase, type SyncMessage, type UtcSeconds } from '../../src/core';
 
 const FIXTURE_PATH = fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta.url));
 const FIXTURE = readFileSync(FIXTURE_PATH, 'utf8');
 const PC_ID = '00000000000000aa';
 const PHONE_ID = '0123456789abcdef';
+/** Another PC, with a lower id than this one: it merges, this PC is its client */
+const LAPTOP_ID = '0000000000000011';
 
 interface Fake {
 	phones: { id: string; name: string; pairedAt: number }[];
+	pcs: { id: string; name: string; pairedAt: number }[];
+	found: { id: string; name: string }[];
 	calls: string[];
 	name: string;
 	emit(event: string, payload: unknown): void;
@@ -29,6 +33,8 @@ async function installFakeTauri(page: Page) {
 			let nextId = 1;
 			const fake = {
 				phones: [] as { id: string; name: string; pairedAt: number }[],
+				pcs: [] as { id: string; name: string; pairedAt: number }[],
+				found: [] as { id: string; name: string }[],
 				calls: [] as string[],
 				name: 'Desk',
 				emit: (event: string, payload: unknown) => listeners.forEach((name, id) => name === event && callbacks[id]?.({ event, id, payload })),
@@ -38,7 +44,7 @@ async function installFakeTauri(page: Page) {
 				'plugin:dialog|open': () => file,
 				read_file: () => content,
 				data_location: () => ['/home/me/.local/share/matze64x.cashguard', false],
-				sync_start: () => info(),
+				sync_start: () => (fake.calls.push('start'), info()),
 				// (the real bridge hands over a fresh copy each time)
 				sync_phones: () => JSON.parse(JSON.stringify(fake.phones)),
 				sync_pairing_start: () => ({ payload: `CG1|10.0.0.2|47652|u|p|${'ab'.repeat(32)}|secret|${pcId}`, svg: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>', seconds: 300 }),
@@ -48,6 +54,14 @@ async function installFakeTauri(page: Page) {
 					fake.phones = fake.phones.filter((p) => p.id !== phoneId);
 				},
 				sync_rename: ({ name }) => ((fake.name = name as string), info()),
+				sync_pcs: () => JSON.parse(JSON.stringify({ paired: fake.pcs, found: fake.found })),
+				sync_pc_pair: ({ peerId }) => void fake.calls.push(`pair ${peerId}`),
+				sync_pc_pair_confirm: () => void fake.calls.push('confirm'),
+				sync_pc_pair_cancel: () => void fake.calls.push('cancel'),
+				sync_forget_pc: ({ peerId }) => {
+					fake.calls.push(`forget pc ${peerId}`);
+					fake.pcs = fake.pcs.filter((p) => p.id !== peerId);
+				},
 				// the phone's side runs in the test
 				sync_send: ({ conn, text }) => (window as never as { __toPhone: (conn: number, text: string) => Promise<void> }).__toPhone(conn as number, text as string),
 				sync_close: ({ conn }) => void fake.calls.push(`close ${conn}`),
@@ -79,7 +93,7 @@ async function installFakeTauri(page: Page) {
 const emit = (page: Page, event: string, payload: unknown) => page.evaluate(([event, payload]) => (window as never as { fake: Fake }).fake.emit(event as string, payload), [event, payload] as const);
 const fake = (page: Page) => page.evaluate(() => JSON.parse(JSON.stringify((window as never as { fake: Fake }).fake)) as Fake);
 
-/** A phone: the sync's client side with an in-memory store */
+/** Another device (a phone, or a PC that merges): its side of the sync with an in-memory store */
 class Phone {
 	working: CashGuardData = EMPTY_DATA;
 	bases = new Map<string, StoredBase>();
@@ -88,10 +102,10 @@ class Phone {
 	/** Messages to the PC go one after the other (separate page calls could overtake each other) */
 	#chain: Promise<unknown> = Promise.resolve();
 
-	constructor(page: Page, conn: number) {
+	constructor(page: Page, conn: number, self: DeviceInfo = { id: PHONE_ID, name: 'My iPhone', kind: 'phone' }) {
 		this.session = new PeerSession({
-			self: { id: PHONE_ID, name: 'My iPhone', kind: 'phone' },
-			merger: false,
+			self,
+			merger: self.kind === 'pc',
 			peerId: PC_ID,
 			store: {
 				current: () => this.working,
@@ -163,7 +177,7 @@ test('a connected phone syncs with the PC both ways, in order, and the header sa
 		received.push(message);
 		phone.session.receive(message);
 	});
-	await emit(page, 'sync-connected', { conn: 7, phoneId: PHONE_ID, phoneName: 'My iPhone' });
+	await emit(page, 'sync-connected', { conn: 7, peerId: PHONE_ID, peerName: 'My iPhone', kind: 'phone' });
 	phone.session.start();
 
 	await expect(page.getByText('47 transactions')).toBeVisible();
@@ -183,4 +197,80 @@ test('a connected phone syncs with the PC both ways, in order, and the header sa
 	await emit(page, 'sync-closed', 7);
 	await expect(page.getByRole('button', { name: 'Devices' })).toBeVisible();
 	expect(phone.errors).toEqual([]);
+});
+
+test('pairing with another PC: both compare the code, then it is listed', async ({ page }) => {
+	await page.evaluate((id) => ((window as never as { fake: Fake }).fake.found = [{ id, name: 'Laptop' }]), LAPTOP_ID);
+	await page.getByRole('button', { name: 'Devices' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	const onNetwork = dialog.getByRole('list', { name: 'PCs on this network' });
+	await expect(onNetwork).toContainText('Laptop');
+	await onNetwork.getByRole('button', { name: 'Pair' }).click();
+	await expect.poll(async () => (await fake(page)).calls).toContain(`pair ${LAPTOP_ID}`);
+
+	await emit(page, 'sync-pc-pairing', { state: 'code', code: '123 456', peerId: LAPTOP_ID, peerName: 'Laptop', incoming: false });
+	const pairing = dialog.getByRole('group', { name: 'Pairing with Laptop' });
+	await expect(pairing.getByLabel('Code')).toHaveText('123 456');
+	await pairing.getByRole('button', { name: 'Same code' }).click();
+	await expect(pairing.getByRole('button', { name: 'Waiting for Laptop…' })).toBeDisabled();
+	expect((await fake(page)).calls).toContain('confirm');
+
+	await page.evaluate((id) => (window as never as { fake: Fake }).fake.pcs.push({ id, name: 'Laptop', pairedAt: 0 }), LAPTOP_ID);
+	await emit(page, 'sync-pc-pairing', { state: 'done', peerId: LAPTOP_ID, peerName: 'Laptop' });
+	await expect(dialog.getByRole('status')).toContainText('Paired with Laptop.');
+	await expect(pairing).toBeHidden();
+	// listed as paired, no longer as one to pair with
+	await expect(dialog.getByText('not connected')).toBeVisible();
+	await expect(onNetwork).toBeHidden();
+
+	// a PC that removed this one says so
+	await emit(page, 'sync-pc-refused', { peerId: LAPTOP_ID, reason: 'Laptop removed this PC. Remove it here and pair again.' });
+	await expect(dialog).toContainText('Laptop removed this PC.');
+	await dialog.getByRole('button', { name: 'Remove' }).click();
+	await dialog.getByRole('button', { name: 'Remove for good' }).click();
+	await expect.poll(async () => (await fake(page)).calls).toContain(`forget pc ${LAPTOP_ID}`);
+	// on the network still, so it can be paired again
+	await expect(onNetwork).toContainText('Laptop');
+});
+
+test('a pairing started on another PC opens the code here; cancelling tells the other PC', async ({ page }) => {
+	// (events reach the window once it listens: the Rust side only sends after `sync_start`)
+	await expect.poll(async () => (await fake(page)).calls).toContain('start');
+	await emit(page, 'sync-pc-pairing', { state: 'code', code: '654 321', peerId: LAPTOP_ID, peerName: 'Laptop', incoming: true });
+	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	const pairing = dialog.getByRole('group', { name: 'Pairing with Laptop' });
+	await expect(pairing.getByLabel('Code')).toHaveText('654 321');
+	await pairing.getByRole('button', { name: 'Cancel' }).click();
+	await expect(pairing).toBeHidden();
+	await expect.poll(async () => (await fake(page)).calls).toContain('cancel');
+
+	// the other side cancelling shows why
+	await emit(page, 'sync-pc-pairing', { state: 'code', code: '111 222', peerId: LAPTOP_ID, peerName: 'Laptop', incoming: true });
+	await expect(pairing).toBeVisible();
+	await emit(page, 'sync-pc-pairing', { state: 'failed', reason: 'Cancelled on Laptop.' });
+	await expect(dialog.getByRole('alert')).toHaveText('Cancelled on Laptop.');
+});
+
+test('another PC syncs with this one both ways (here as the client: the lower id merges)', async ({ page }) => {
+	await importFixture(page);
+	const laptop = new Phone(page, 9, { id: LAPTOP_ID, name: 'Laptop', kind: 'pc' });
+	laptop.working = addTransaction(EMPTY_DATA, { date: '2026-11-02' as CivilDate, description: 'Bought on the laptop', categoryId: '0' as never, amount: cents(-300) }, 1_900_000_100 as UtcSeconds).data;
+	await page.exposeBinding('__toPhone', async (_source, conn: number, text: string) => {
+		expect(conn).toBe(9);
+		laptop.session.receive(JSON.parse(text) as SyncMessage);
+	});
+	await emit(page, 'sync-connected', { conn: 9, peerId: LAPTOP_ID, peerName: 'Laptop', kind: 'pc' });
+	laptop.session.start();
+
+	await expect(page.getByText('47 transactions')).toBeVisible();
+	await expect.poll(() => laptop.working.transactions.length).toBe(47);
+	await expect(page.getByRole('status')).toContainText('Synced with Laptop. Transactions: 1 added.');
+
+	// an edit here reaches the laptop
+	await page.keyboard.press('n');
+	await page.keyboard.type('Bought at the desk');
+	await page.getByRole('dialog').getByLabel('Amount', { exact: true }).fill('1');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => laptop.working.transactions.some((t) => t.description === 'Bought at the desk')).toBe(true);
+	expect(laptop.errors).toEqual([]);
 });

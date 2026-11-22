@@ -44,6 +44,10 @@
 	}
 	const sync = workspace.isDesktop ? new DesktopSync(workspace, reportSync) : new PhoneSync(workspace, reportSync);
 	let devicesOpen = $state(false);
+	// another PC started pairing with this one: show the code to compare
+	$effect(() => {
+		if (sync instanceof DesktopSync && sync.pcPairing?.incoming) devicesOpen = true;
+	});
 
 	// end-to-end tests drive the sync through this (dev builds only; removed from production builds)
 	if (import.meta.env.DEV) Object.assign(window, { __cashguardTest: { workspace, SyncManager, notices, sync } });

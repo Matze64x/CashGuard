@@ -53,14 +53,40 @@
 		});
 	}
 
-	function remove(id: string) {
+	function remove(id: string, forget: (id: string) => Promise<void> = (id) => sync.forget(id)) {
 		if (confirming !== id) return void (confirming = id);
 		confirming = null;
 		void act(async () => {
-			await sync.forget(id);
+			await forget(id);
 			return null;
 		});
 	}
+
+	// ---- PC: pair with another PC
+	const unpairedPcs = $derived(desktop ? desktop.found.filter((f) => !desktop.pcs.some((p) => p.id === f.id)) : []);
+	/** The PC whose pairing is starting (until both show the code) */
+	let startingWith = $state<string | null>(null);
+	$effect(() => {
+		if (desktop?.pcPairing || desktop?.pcPairingResult) startingWith = null;
+	});
+
+	function pairPc(id: string) {
+		startingWith = id;
+		void act(async () => {
+			try {
+				await desktop!.pairPc(id);
+			} catch (e) {
+				startingWith = null;
+				throw e;
+			}
+		});
+	}
+
+	onDestroy(() => {
+		// (closing the dialog ends a pairing in progress)
+		if (desktop?.pcPairing) void desktop.cancelPcPairing();
+		if (desktop) desktop.pcPairingResult = null;
+	});
 
 	// ---- PC: show a pairing code
 	let qr = $state.raw<PairingQr | null>(null);
@@ -142,7 +168,7 @@
 			{#if desktop.problem}
 				<p class="error" role="alert">Syncing can’t start: {desktop.problem}</p>
 			{:else if desktop.info && !desktop.info.address}
-				<p class="muted">Not on a local network: phones can’t connect.</p>
+				<p class="muted">Not on a local network.</p>
 			{/if}
 
 			<h3>Phones</h3>
@@ -174,6 +200,45 @@
 				</div>
 			{:else}
 				<button type="button" class="primary" disabled={!desktop.info?.address} onclick={showCode}>Pair a phone</button>
+			{/if}
+
+			<h3>PCs</h3>
+			{#if desktop.pcs.length > 0}
+				<ul>
+					{#each desktop.pcs as p (p.id)}
+						<li>
+							<span class="name">{p.name}</span>
+							<span class="state" class:on={connected.has(p.id)}>{connected.has(p.id) ? 'connected' : 'not connected'}</span>
+							<button type="button" class:danger={confirming === p.id} onclick={() => remove(p.id, (id) => desktop.forgetPc(id))}>{confirming === p.id ? 'Remove for good' : 'Remove'}</button>
+							{#if problems[p.id]}<p class="error small problem">{problems[p.id]}</p>{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			{#if desktop.pcPairing}
+				{@const pairing = desktop.pcPairing}
+				<div class="pairing" role="group" aria-label="Pairing with {pairing.peerName}">
+					<p>Does {pairing.peerName} show the same code?</p>
+					<p class="digits" aria-label="Code">{pairing.code}</p>
+					<div class="row">
+						<button type="button" class="primary" disabled={pairing.confirmed} onclick={() => void act(() => desktop.confirmPcPairing())}>{pairing.confirmed ? `Waiting for ${pairing.peerName}…` : 'Same code'}</button>
+						<button type="button" onclick={() => void act(() => desktop.cancelPcPairing())}>Cancel</button>
+					</div>
+				</div>
+			{:else if unpairedPcs.length > 0}
+				<ul aria-label="PCs on this network">
+					{#each unpairedPcs as f (f.id)}
+						<li>
+							<span class="name">{f.name}</span>
+							<button type="button" disabled={startingWith !== null} onclick={() => pairPc(f.id)}>{startingWith === f.id ? 'Pairing…' : 'Pair'}</button>
+						</li>
+					{/each}
+				</ul>
+			{:else if desktop.pcs.length === 0}
+				<p class="muted">No other PC with CashGuard on this network.</p>
+			{/if}
+			{#if desktop.pcPairingResult}
+				<p class={desktop.pcPairingResult.ok ? 'ok' : 'error'} role={desktop.pcPairingResult.ok ? 'status' : 'alert'}>{desktop.pcPairingResult.message}</p>
 			{/if}
 		{:else if phone}
 			<p class="muted" aria-live="polite">{STATUS[phone.status]}</p>
@@ -309,6 +374,24 @@
 		display: block;
 		overflow-wrap: anywhere;
 		user-select: all;
+	}
+	.pairing {
+		display: grid;
+		gap: 0.5rem;
+		justify-items: start;
+	}
+	.pairing p {
+		margin: 0;
+	}
+	.digits {
+		font-size: 2rem;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.1em;
+	}
+	.row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 	.typed,
 	.rename {

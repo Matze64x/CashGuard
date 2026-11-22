@@ -128,6 +128,11 @@ export class SyncManager {
 		this.problems = message === null ? others : { ...others, [peerId]: message };
 	}
 
+	/** A problem the transport found (e.g. the other device refused this one) */
+	setProblem(peerId: string, message: string): void {
+		this.#problem(peerId, message);
+	}
+
 	/** Forgets a device's problem (it was unpaired) */
 	forgetProblem(peerId: string): void {
 		this.#problem(peerId, null);

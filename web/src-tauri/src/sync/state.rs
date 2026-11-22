@@ -1,6 +1,7 @@
 //! What the desktop app keeps for syncing, in `sync.json` in its data folder: its identity (device
 //! id, name, the key phones pin, fixed ICE credentials and port, so a phone's stored pairing stays
-//! valid across restarts) and the paired phones (their tokens only as SHA-256 hashes).
+//! valid across restarts), the paired phones (their tokens only as SHA-256 hashes) and the paired
+//! PCs (their certificates' fingerprints).
 
 use std::path::{Path, PathBuf};
 
@@ -22,6 +23,24 @@ pub struct Phone {
     pub paired_at: u64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairedPc {
+    pub id: String,
+    pub name: String,
+    /// SHA-256 of its certificate (DER), hex: only that certificate is accepted from it
+    pub fingerprint: String,
+    /// Unix seconds
+    pub paired_at: u64,
+    /// "ip:port" it was reached at last (besides finding it on the network)
+    #[serde(default)]
+    pub last_address: Option<String>,
+}
+
+fn default_port() -> u16 {
+    DEFAULT_PORT
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncState {
@@ -32,9 +51,15 @@ pub struct SyncState {
     pub private_key: String,
     pub ice_ufrag: String,
     pub ice_pass: String,
+    /// UDP port for phones
     pub port: u16,
+    /// TCP port for other PCs
+    #[serde(default = "default_port")]
+    pub tcp_port: u16,
     #[serde(default)]
     pub phones: Vec<Phone>,
+    #[serde(default)]
+    pub pcs: Vec<PairedPc>,
 }
 
 pub fn random_text(len: usize) -> String {
@@ -66,6 +91,11 @@ pub fn sha256_hex(text: &str) -> String {
     hex(&Sha256::digest(text.as_bytes()))
 }
 
+/// A certificate's fingerprint: SHA-256 of its DER, hex (as phones and other PCs pin it)
+pub fn fingerprint(der: &[u8]) -> String {
+    hex(&Sha256::digest(der))
+}
+
 /// Compares without stopping at the first difference (no timing hint about how much matched).
 pub fn constant_time_eq(a: &str, b: &str) -> bool {
     a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
@@ -86,7 +116,9 @@ impl SyncState {
             ice_ufrag: random_text(8),
             ice_pass: random_text(24),
             port: DEFAULT_PORT,
+            tcp_port: DEFAULT_PORT,
             phones: Vec::new(),
+            pcs: Vec::new(),
         }
     }
 
@@ -141,6 +173,22 @@ impl SyncState {
         let before = self.phones.len();
         self.phones.retain(|p| p.id != id);
         self.phones.len() != before
+    }
+
+    pub fn pc(&self, id: &str) -> Option<&PairedPc> {
+        self.pcs.iter().find(|p| p.id == id)
+    }
+
+    /// Adds or replaces a paired PC.
+    pub fn pair_pc(&mut self, pc: PairedPc) {
+        self.pcs.retain(|p| p.id != pc.id);
+        self.pcs.push(pc);
+    }
+
+    pub fn forget_pc(&mut self, id: &str) -> bool {
+        let before = self.pcs.len();
+        self.pcs.retain(|p| p.id != id);
+        self.pcs.len() != before
     }
 }
 

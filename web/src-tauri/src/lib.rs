@@ -29,6 +29,11 @@ pub fn run() {
             sync::sync_rename,
             sync::sync_send,
             sync::sync_close,
+            sync::sync_pcs,
+            sync::sync_pc_pair,
+            sync::sync_pc_pair_confirm,
+            sync::sync_pc_pair_cancel,
+            sync::sync_forget_pc,
         ])
         .setup(|app| {
             str0m::crypto::from_feature_flags().install_process_default();
