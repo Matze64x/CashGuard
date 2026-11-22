@@ -24,7 +24,7 @@ test('the installed app works offline, with its data', async ({ page, context })
 test('everything is served below the base path and the app can be installed', async ({ page, request }) => {
 	await page.goto(PUBLISHED);
 	const touchIcon = await page.locator('link[rel="apple-touch-icon"]').getAttribute('href');
-	expect(touchIcon).toBe('/CashGuard/placeholder-apple-touch-icon.png');
+	expect(touchIcon).toBe('/CashGuard/apple-touch-icon.png');
 	expect((await request.get(new URL(touchIcon!, PUBLISHED).href)).ok()).toBe(true);
 
 	const manifestUrl = new URL((await page.locator('link[rel="manifest"]').getAttribute('href'))!, PUBLISHED).href;

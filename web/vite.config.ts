@@ -22,20 +22,22 @@ export default defineConfig({
 			// app; it never reloads a running app, so open dialogs or unsaved input can't be lost
 			registerType: 'prompt',
 			injectRegister: false,
-			// PLACEHOLDER icons (made from Tauri's default icon) until the app icon is decided
+			// icons made from src-tauri/icons/app-icon.svg (see src-tauri/icons/README.md)
 			manifest: {
 				id: '.',
 				name: 'CashGuard',
 				short_name: 'CashGuard',
-				description: 'Personal finances, synced as one file',
+				description: 'Personal finances',
 				start_url: '.',
 				scope: '.',
 				display: 'standalone',
 				background_color: '#f6f7f8',
 				theme_color: '#ffffff',
 				icons: [
-					{ src: 'placeholder-icon-192.png', sizes: '192x192', type: 'image/png' },
-					{ src: 'placeholder-icon-512.png', sizes: '512x512', type: 'image/png' },
+					{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+					{ src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
+					// (on a full square: Android cuts its own shape out of it)
+					{ src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
 				],
 			},
 			// the app's data lives in IndexedDB, not in this cache
