@@ -66,8 +66,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 	return Promise.race([promise, new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new LinkError(message)), ms)))]).finally(() => clearTimeout(timer));
 }
 
-/** Connects to a PC and sends the first message. Throws `LinkError` if it can't be reached or refuses. */
-export async function connectToPc(pc: PcAddress, first: FirstMessage): Promise<PcLink> {
+/**
+ * Connects to a PC and sends the first message. Throws `LinkError` if it can't be reached or
+ * refuses, or `abort` fired (then the attempt stops right away).
+ */
+export async function connectToPc(pc: PcAddress, first: FirstMessage, abort?: AbortSignal): Promise<PcLink> {
+	if (abort?.aborted) throw new LinkError('Stopped.');
 	if (typeof RTCPeerConnection === 'undefined') throw new LinkError('This browser doesn’t support WebRTC.');
 	// no STUN/TURN servers: only the local network
 	const peer = new RTCPeerConnection({ iceServers: [] });
@@ -128,6 +132,7 @@ export async function connectToPc(pc: PcAddress, first: FirstMessage): Promise<P
 		if (authenticated) closeHandler?.();
 	}
 
+	abort?.addEventListener('abort', shutdown, { once: true });
 	channel.onbufferedamountlow = pump;
 	channel.onclose = shutdown;
 	peer.onconnectionstatechange = () => {
@@ -162,6 +167,7 @@ export async function connectToPc(pc: PcAddress, first: FirstMessage): Promise<P
 		const opened = new Promise<void>((resolve, reject) => {
 			channel.onopen = () => resolve();
 			channel.onerror = () => reject(new LinkError('The connection failed.'));
+			abort?.addEventListener('abort', () => reject(new LinkError('Stopped.')), { once: true });
 		});
 		const offer = await peer.createOffer();
 		await peer.setLocalDescription(offer);

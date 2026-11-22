@@ -71,6 +71,8 @@ export class PhoneSync {
 	/** The pause before the next connection attempt (set when a connection ended) */
 	#pause = 0;
 	#busy = false;
+	/** Ends connection attempts under way when networking is turned off */
+	#attempts = new AbortController();
 
 	constructor(workspace: Workspace, report: (report: SyncReport) => void) {
 		this.#workspace = workspace;
@@ -162,7 +164,12 @@ export class PhoneSync {
 		this.enabled = enabled;
 		this.#retry = 0;
 		this.#pause = 0;
-		if (!enabled) this.#link?.close();
+		if (!enabled) {
+			this.status = 'off';
+			this.#attempts.abort();
+			this.#attempts = new AbortController();
+			this.#link?.close();
+		}
 		this.#wake?.();
 	}
 
@@ -193,7 +200,7 @@ export class PhoneSync {
 				continue;
 			}
 			await this.#connectAny();
-			if (!this.#link && this.#running) await this.#sleep(this.#backoff());
+			if (!this.#link && this.#running && this.enabled) await this.#sleep(this.#backoff());
 		}
 	}
 
@@ -203,7 +210,7 @@ export class PhoneSync {
 			if (!this.#running || !this.enabled || this.#link) return;
 			let link: PcLink | null = null;
 			try {
-				link = await connectToPc(pairing, { t: 'auth', id: this.device!.id, token: pairing.token, name: this.device!.name });
+				link = await connectToPc(pairing, { t: 'auth', id: this.device!.id, token: pairing.token, name: this.device!.name }, this.#attempts.signal);
 				if (link.reply.id !== pairing.pcId) throw new LinkError('A different PC answered.');
 				// (stopped, or paired meanwhile)
 				if (!this.#running || this.#link) return link.close();
@@ -212,10 +219,11 @@ export class PhoneSync {
 				return;
 			} catch (e) {
 				link?.close();
+				if (!this.enabled) return;
 				this.problem = errorMessage(e);
 			}
 		}
-		this.status = 'unreachable';
+		if (this.enabled) this.status = 'unreachable';
 	}
 
 	#attach(link: PcLink, pcId: string): void {
@@ -239,7 +247,7 @@ export class PhoneSync {
 			if (this.#link === link) {
 				this.#link = null;
 				this.connectedTo = null;
-				this.status = 'connecting';
+				this.status = this.enabled ? 'connecting' : 'off';
 				const failure = this.manager.problems[pcId];
 				if (failure) this.problem = failure;
 				// a connection that never synced (e.g. the versions differ) is retried with growing pauses, not right away

@@ -139,6 +139,15 @@ test('a phone pairs with a PC by its code, syncs both ways, and reconnects by it
 		pc.edit((d) => addTransaction(d, { date: '2026-11-21' as CivilDate, description: 'Added while the phone restarted', categoryId: '0' as never, amount: cents(-700) }, 2_000_000_001 as UtcSeconds).data);
 		await expect(page.getByText('49 transactions')).toBeVisible();
 		expect(pc.paired).toHaveLength(1);
+
+		// turned off: the connection ends, and the phone stays off
+		await page.getByRole('button', { name: 'Synced' }).click();
+		await dialog.getByRole('switch', { name: 'Sync on this network' }).uncheck();
+		await expect.poll(() => pc.sessions.size).toBe(0);
+		await dialog.getByRole('button', { name: 'Done' }).click();
+		await expect(page.getByRole('button', { name: 'Sync off' })).toBeVisible();
+		await page.waitForTimeout(1500);
+		expect(pc.sessions.size).toBe(0);
 		expect(pc.errors).toEqual([]);
 	} finally {
 		pc.stop();

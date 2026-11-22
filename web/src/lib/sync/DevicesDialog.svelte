@@ -20,8 +20,12 @@
 	const connected = $derived(new Set(sync.manager.connections.map((c) => c.peerId)));
 	const enabled = $derived(desktop ? desktop.enabled : (phone?.enabled ?? false));
 
+	/** Switching is under way (the switch waits for it) */
+	let switching = $state(false);
+
 	function toggle(input: HTMLInputElement) {
 		const on = input.checked;
+		switching = true;
 		void act(async () => {
 			try {
 				if (desktop) await desktop.setEnabled(on);
@@ -29,6 +33,7 @@
 			} finally {
 				// (shows the actual state, also if switching failed)
 				input.checked = desktop ? desktop.enabled : phone!.enabled;
+				switching = false;
 			}
 		});
 	}
@@ -190,7 +195,7 @@
 <Modal title="Devices" {onclose}>
 	<div class="devices">
 		<label class="switch">
-			<input type="checkbox" role="switch" checked={enabled} disabled={!canChange || (desktop !== null && !desktop.info)} onchange={(e) => toggle(e.currentTarget)} />
+			<input type="checkbox" role="switch" checked={enabled} disabled={switching || !canChange || (desktop !== null && !desktop.info)} onchange={(e) => toggle(e.currentTarget)} />
 			Sync on this network
 		</label>
 		{#if desktop}

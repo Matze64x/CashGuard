@@ -77,6 +77,8 @@ struct Inner {
     running: Option<Running>,
     /// The user turned networking on (it may still not run: no local network)
     enabled: bool,
+    /// Other PCs may start pairing (the Devices dialog is open); kept here, so it survives restarts of serving
+    pairing_allowed: bool,
     /// Bumped on each start and stop, so an old address watcher stops
     generation: u64,
 }
@@ -170,7 +172,7 @@ fn load(app: &AppHandle) -> Result<Inner, String> {
     })
     .map_err(|e| format!("Can't load the sync settings: {e}"))?;
     let cert = DtlsCert { certificate: state.certificate_der().unwrap(), private_key: state.private_key_der().unwrap() };
-    Ok(Inner { fingerprint: fingerprint_hex(&cert), state: Arc::new(Mutex::new(state)), path, cert, running: None, enabled: false, generation: 0 })
+    Ok(Inner { fingerprint: fingerprint_hex(&cert), state: Arc::new(Mutex::new(state)), path, cert, running: None, enabled: false, pairing_allowed: false, generation: 0 })
 }
 
 /// Binds the endpoint's socket on the LAN address and starts serving.
@@ -240,7 +242,9 @@ fn start_pcs(app: &AppHandle, inner: &Inner, ip: IpAddr) -> Option<PcNet> {
         save: Arc::new(move |s: &SyncState| s.save(&path)),
         discovery: true,
     };
-    PcNet::start(tauri::async_runtime::handle().inner(), ip, config, events).map_err(|e| log::warn!("can't serve other PCs: {e}")).ok()
+    let pcs = PcNet::start(tauri::async_runtime::handle().inner(), ip, config, events).map_err(|e| log::warn!("can't serve other PCs: {e}")).ok()?;
+    pcs.set_pairing_allowed(inner.pairing_allowed);
+    Some(pcs)
 }
 
 fn info(inner: &Inner) -> SyncInfo {
@@ -271,6 +275,8 @@ pub fn sync_start(app: AppHandle, service: State<'_, SyncService>) -> Result<Syn
     }
     let inner = guard.as_mut().unwrap();
     stop_serving(inner);
+    // (a reloaded window has no dialog open)
+    inner.pairing_allowed = false;
     Ok(info(inner))
 }
 
@@ -465,6 +471,7 @@ pub fn sync_pc_pair_confirm(service: State<'_, SyncService>, code: String) -> Re
 #[tauri::command(async)]
 pub fn sync_pc_pairing_allowed(service: State<'_, SyncService>, allowed: bool) -> Result<(), String> {
     with_inner(&service, |inner| {
+        inner.pairing_allowed = allowed;
         if let Ok(pcs) = pcs_of(inner) {
             pcs.set_pairing_allowed(allowed);
         }

@@ -84,6 +84,8 @@ export class DesktopSync {
 	/** Why syncing couldn't start */
 	problem = $state<string | null>(null);
 	readonly #connections = new Map<number, { peerId: string; receive: (text: string) => void; closed: () => void }>();
+	/** Switching networking and the pairing gate: one after the other (separate invokes can overtake each other) */
+	#settings: Promise<unknown> = Promise.resolve();
 	/** Called when a phone was paired (e.g. to close the QR code) */
 	onPaired: ((name: string) => void) | null = null;
 
@@ -112,12 +114,18 @@ export class DesktopSync {
 				void this.refreshPhones();
 				this.onPaired?.(payload.phoneName);
 			}),
+			// (late events of a stopped instance don't count once networking is off)
 			listen<string | null>('sync-address', ({ payload }) => {
-				if (this.info) this.info = { ...this.info, address: payload };
+				if (!this.enabled) return;
+				this.info = { ...this.info!, address: payload };
 				void this.refreshPcs();
 			}),
-			listen<FoundPc[]>('sync-pcs-found', ({ payload }) => (this.found = payload)),
-			listen<PairingEvent>('sync-pc-pairing', ({ payload }) => this.#pairingEvent(payload)),
+			listen<FoundPc[]>('sync-pcs-found', ({ payload }) => {
+				if (this.enabled) this.found = payload;
+			}),
+			listen<PairingEvent>('sync-pc-pairing', ({ payload }) => {
+				if (this.enabled) this.#pairingEvent(payload);
+			}),
 			listen<{ peerId: string; reason: string }>('sync-pc-refused', ({ payload }) => this.manager.setProblem(payload.peerId, payload.reason)),
 		]);
 		try {
@@ -181,7 +189,9 @@ export class DesktopSync {
 
 	/** Turns networking on (listening, announcing this PC, connecting to paired PCs) or off. */
 	async setEnabled(enabled: boolean): Promise<void> {
-		this.info = await invoke<DesktopInfo>('sync_set_enabled', { enabled });
+		const switched = this.#settings.then(() => invoke<DesktopInfo>('sync_set_enabled', { enabled }));
+		this.#settings = switched.catch(() => undefined);
+		this.info = await switched;
 		if (!enabled) {
 			this.pcPairing = null;
 			this.pcPairingStarting = null;
@@ -244,7 +254,7 @@ export class DesktopSync {
 
 	/** Other PCs may start pairing with this one only while the Devices dialog is open */
 	setPairingAllowed(allowed: boolean): void {
-		void invoke('sync_pc_pairing_allowed', { allowed }).catch(() => undefined);
+		this.#settings = this.#settings.then(() => invoke('sync_pc_pairing_allowed', { allowed })).catch(() => undefined);
 	}
 
 	/** Unpairs a PC: neither syncs with the other any more (until paired again). */

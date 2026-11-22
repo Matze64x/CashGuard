@@ -132,7 +132,8 @@ class Phone {
 					return r.value;
 				},
 			},
-			send: (message) => void (this.#chain = this.#chain.then(() => emit(page, 'sync-message', { conn, text: JSON.stringify(message) }))),
+			// (a message still on its way when the test ends goes nowhere)
+			send: (message) => void (this.#chain = this.#chain.then(() => emit(page, 'sync-message', { conn, text: JSON.stringify(message) })).catch(() => undefined)),
 			onFailed: (e) => this.errors.push(e.message),
 		});
 	}
@@ -330,10 +331,12 @@ test('networking is off at every start; the switch turns it on and off', async (
 });
 
 test('a device that synced before shows when', async ({ page }) => {
-	await page.evaluate((id) => (window as never as { fake: Fake }).fake.phones.push({ id, name: 'My iPhone', pairedAt: 0 }), PHONE_ID);
 	await page.evaluate((id) => localStorage.setItem('cashguard-last-synced-v1', JSON.stringify({ [id]: Date.now() - 5 * 60_000 })), PHONE_ID);
 	await page.reload();
+	// (paired after the app loaded its list: it reloads it on this event)
+	await expect.poll(async () => (await fake(page)).calls).toContain('start');
 	await page.evaluate((id) => (window as never as { fake: Fake }).fake.phones.push({ id, name: 'My iPhone', pairedAt: 0 }), PHONE_ID);
+	await emit(page, 'sync-paired', { phoneId: PHONE_ID, phoneName: 'My iPhone' });
 	await turnOn(page);
 	await devicesButton(page).click();
 	await expect(page.getByRole('dialog', { name: 'Devices' })).toContainText('synced 5 min ago');
