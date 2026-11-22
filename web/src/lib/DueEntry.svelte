@@ -9,6 +9,7 @@
 	import { formatEuro } from './display';
 	import AmountInput from './ui/AmountInput.svelte';
 	import DateInput from './ui/DateInput.svelte';
+	import CategoryPicker from './ui/CategoryPicker.svelte';
 	import DescriptionInput from './ui/DescriptionInput.svelte';
 
 	let {
@@ -82,10 +83,7 @@
 		<DescriptionInput id="due-description" bind:value={description} {data} />
 
 		<label for="due-category">Category</label>
-		<select id="due-category" bind:value={categoryId}>
-			<option value={NO_CATEGORY}>No category</option>
-			{#each categories as c (c.id)}<option value={c.id}>{c.name || '(unnamed)'}</option>{/each}
-		</select>
+		<CategoryPicker id="due-category" bind:value={categoryId} {categories} />
 
 		{#if data.accounts.length > 0}
 			<label for="due-account">Account</label>

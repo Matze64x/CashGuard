@@ -29,6 +29,7 @@
 	import { displayKeys, shortcuts } from './shortcuts.svelte';
 	import AmountInput from './ui/AmountInput.svelte';
 	import DateInput from './ui/DateInput.svelte';
+	import CategoryPicker from './ui/CategoryPicker.svelte';
 	import DescriptionInput from './ui/DescriptionInput.svelte';
 	import Modal from './ui/Modal.svelte';
 
@@ -197,10 +198,7 @@
 			<DateInput id="tx-date" bind:value={date} />
 
 			<label for="tx-category">Category</label>
-			<select id="tx-category" bind:value={categoryId}>
-				<option value={NO_CATEGORY}>No category</option>
-				{#each categories as c (c.id)}<option value={c.id}>{c.name || '(unnamed)'}</option>{/each}
-			</select>
+			<CategoryPicker id="tx-category" bind:value={categoryId} {categories} />
 
 			{#if !parts}
 				<label for="tx-amount">Amount</label>
@@ -232,10 +230,7 @@
 						<div class="p-description">
 							<DescriptionInput id={`part-${part.key}-description`} label={`Part ${i + 1} description`} bind:value={part.description} {data} />
 						</div>
-						<select class="p-category" aria-label={`Part ${i + 1} category`} bind:value={part.categoryId}>
-							<option value={NO_CATEGORY}>No category</option>
-							{#each categories as c (c.id)}<option value={c.id}>{c.name || '(unnamed)'}</option>{/each}
-						</select>
+						<div class="p-category"><CategoryPicker label={`Part ${i + 1} category`} bind:value={part.categoryId} {categories} /></div>
 						<div class="p-amount"><AmountInput id={`part-${part.key}-amount`} label={`Part ${i + 1} amount`} bind:value={part.amount} /></div>
 						<button class="p-remove" type="button" aria-label={`Remove part ${i + 1}`} onclick={() => (parts = parts!.filter((p) => p !== part))}>✕</button>
 					</div>

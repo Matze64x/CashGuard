@@ -25,6 +25,7 @@
 	import { describeSchedule, parseMonthDays, WEEKDAYS } from './schedule';
 	import AmountInput from './ui/AmountInput.svelte';
 	import DateInput from './ui/DateInput.svelte';
+	import CategoryPicker from './ui/CategoryPicker.svelte';
 	import DescriptionInput from './ui/DescriptionInput.svelte';
 	import Modal from './ui/Modal.svelte';
 
@@ -142,10 +143,7 @@
 			<DescriptionInput id="rec-description" bind:value={description} {data} autofocus onpick={prefill} />
 
 			<label for="rec-category">Category</label>
-			<select id="rec-category" bind:value={categoryId}>
-				<option value={NO_CATEGORY}>No category</option>
-				{#each categories as c (c.id)}<option value={c.id}>{c.name || '(unnamed)'}</option>{/each}
-			</select>
+			<CategoryPicker id="rec-category" bind:value={categoryId} {categories} />
 
 			<span class="label">Amount</span>
 			<div class="amount">

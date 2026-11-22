@@ -68,7 +68,7 @@ test('a known description fills in category and amount', async ({ page }) => {
 	await page.keyboard.press('Enter');
 	const editor = page.getByRole('dialog', { name: 'New transaction' });
 	await expect(editor.getByLabel('Description')).toHaveValue('Sushi bar');
-	await expect(editor.getByLabel('Category')).toHaveValue(/\d+/);
+	await expect(editor.getByLabel('Category')).not.toHaveValue('No category');
 	await expect(editor.getByLabel('Amount', { exact: true })).toHaveValue('22,36');
 	await page.keyboard.press(`${MOD}+Enter`);
 	await expect(page.getByText('47 transactions')).toBeVisible();
@@ -163,8 +163,12 @@ test('categories and accounts, and the shortcut help', async ({ page }) => {
 	await page.keyboard.press('g');
 	await page.keyboard.press('t');
 	await page.keyboard.press('n');
-	await expect(page.getByRole('dialog').getByLabel('Category').locator('option', { hasText: 'Coffee shops' })).toHaveCount(1);
+	await page.getByRole('dialog').getByLabel('Category').click();
+	await expect(page.getByRole('dialog').getByRole('listbox', { name: 'Categories' }).getByRole('option', { name: 'Coffee shops' })).toHaveCount(1);
+	// (the first Escape closes the list, the second the dialog)
 	await page.keyboard.press('Escape');
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('dialog')).toBeHidden();
 
 	await page.keyboard.press('?');
 	const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
@@ -290,14 +294,15 @@ test.describe('editor safeguards', () => {
 		await page.keyboard.type('Sushi bar');
 		await page.keyboard.press('Tab'); // prefills category and amount (new transaction)
 		const editor = page.getByRole('dialog');
-		await editor.getByLabel('Category').selectOption({ label: 'No category' });
+		await editor.getByLabel('Category').click();
+		await editor.getByRole('option', { name: 'No category' }).click();
 		await page.keyboard.press(`${MOD}+Enter`);
 		await expect(page.getByText('47 transactions')).toBeVisible();
 
 		await page.keyboard.press('Enter'); // edit the new one
 		await expect(editor.getByLabel('Description')).toBeFocused();
 		await page.keyboard.press('Tab');
-		await expect(editor.getByLabel('Category')).toHaveValue('0');
+		await expect(editor.getByLabel('Category')).toHaveValue('No category');
 	});
 
 	test('a split transaction without parts is not saved', async ({ page }) => {
@@ -379,4 +384,28 @@ test('the editor can also delete or copy the transaction (for the mouse and touc
 	await expect(page.getByText('45 transactions')).toBeVisible();
 	await page.keyboard.press(`${MOD}+z`);
 	await expect(page.getByText('46 transactions')).toBeVisible();
+});
+
+test('the category picker shows colors and finds a category by typing', async ({ page }) => {
+	await importFixture(page);
+	await page.keyboard.press('n');
+	await page.keyboard.type('Lunch');
+	await tabTo(page, 'Category');
+	await page.keyboard.type('rest');
+	const list = page.getByRole('dialog').getByRole('listbox', { name: 'Categories' });
+	await expect(list.getByRole('option').first()).toHaveText('Restaurants & Cafés');
+	// each with its color
+	await expect(list.getByRole('option').first().locator('.dot')).toHaveCSS('background-color', /rgb/);
+	// Tab takes the highlighted one and moves on
+	await page.keyboard.press('Tab');
+	await expect(page.getByRole('dialog').getByLabel('Category')).toHaveValue('Restaurants & Cafés');
+	await expect(list).toBeHidden();
+	// Escape closes the list without closing the dialog, and keeps the choice
+	await page.getByRole('dialog').getByLabel('Category').focus();
+	await page.keyboard.press('ArrowDown');
+	await expect(list).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(list).toBeHidden();
+	await expect(page.getByRole('dialog')).toBeVisible();
+	await expect(page.getByRole('dialog').getByLabel('Category')).toHaveValue('Restaurants & Cafés');
 });

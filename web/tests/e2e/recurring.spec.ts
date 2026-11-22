@@ -65,7 +65,11 @@ test('a template is made with the keyboard and shows when it comes', async ({ pa
 	await page.keyboard.press('Enter');
 	const editor = page.getByRole('dialog', { name: 'New recurring transaction' });
 	await page.keyboard.type('Gym');
-	await editor.getByLabel('Category').selectOption({ label: 'Health' });
+	// the category: typing filters the list, Enter takes the highlighted one
+	await editor.getByLabel('Category').click();
+	await page.keyboard.type('heal');
+	await page.keyboard.press('Enter');
+	await expect(editor.getByLabel('Category')).toHaveValue('Health');
 	await editor.getByLabel('Ask each time').uncheck();
 	await editor.getByLabel('Amount', { exact: true }).fill('29,90');
 	await editor.getByLabel('On days').fill('1, 15');
@@ -152,7 +156,7 @@ test('editing a template keeps its category, even with a description used elsewh
 	const editor = page.getByRole('dialog', { name: 'Edit recurring transaction' });
 	await editor.getByLabel('Description').fill('Supermarket');
 	await page.keyboard.press('Tab');
-	await expect(editor.getByLabel('Category')).toHaveValue('0');
+	await expect(editor.getByLabel('Category')).toHaveValue('No category');
 });
 
 // Phase 6's goal: one month of the savings plan in four quick confirmations, only the amount typed
