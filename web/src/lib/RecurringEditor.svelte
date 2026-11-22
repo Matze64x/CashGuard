@@ -248,6 +248,8 @@
 	.amount,
 	.days {
 		display: grid;
+		/* (else the column grows to its content and the fields stick out of the dialog) */
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.35rem;
 	}
 	.every {

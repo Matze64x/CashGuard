@@ -22,6 +22,8 @@
 		invalid?: boolean;
 	} = $props();
 
+	const uid = $props.id();
+	const describedBy = `date-invalid-${uid}`;
 	const show = (v: CivilDate | null) => (v === null ? '' : formatDateAs(v, settings.dateStyle));
 	let text = $state(show(value));
 	// what this field last set, to tell outside changes (and setting changes) from typing
@@ -97,6 +99,7 @@
 		placeholder={settings.dateStyle}
 		aria-label={label}
 		aria-invalid={textInvalid}
+		aria-describedby={textInvalid ? describedBy : undefined}
 		title="↑/↓: day, PageUp/PageDown: month, Alt+↓: calendar"
 		value={text}
 		{oninput}
@@ -127,8 +130,9 @@
 			}}
 		/>
 	</span>
+	<!-- (an invalid date only turns the border red: a message here would shift the form's layout) -->
+	<span id={describedBy} class="hidden">{textInvalid ? `Not a date: enter one like ${formatDateAs('2026-03-05' as CivilDate, settings.dateStyle)}` : ''}</span>
 </div>
-{#if textInvalid}<p class="error" role="alert">Enter a date like {formatDateAs('2026-03-05' as CivilDate, settings.dateStyle)}</p>{/if}
 
 <style>
 	.date {
@@ -176,9 +180,13 @@
 		border: none;
 		cursor: pointer;
 	}
-	.error {
-		color: var(--negative);
-		font-size: 0.85rem;
-		margin: 0.25rem 0 0;
+	/* for screen readers only */
+	.hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 </style>

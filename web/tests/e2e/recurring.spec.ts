@@ -178,3 +178,21 @@ test('a month of the savings plan: four times the amount and Enter', async ({ pa
 	await page.getByRole('button', { name: 'Manage' }).click();
 	await expect(page.getByRole('listbox', { name: 'Accounts' }).getByRole('option', { name: /Checking account/ })).toContainText('16.021,96 €');
 });
+
+test('an invalid date only turns its field red: no text appears that moves the form', async ({ page }) => {
+	await page.getByRole('button', { name: /^Manage/ }).click();
+	await page.getByRole('region', { name: /Recurring/ }).getByRole('button', { name: 'New' }).click();
+	const editor = page.getByRole('dialog', { name: 'New recurring transaction' });
+	const ends = editor.getByLabel('Ends');
+	// (what follows the field stays where it was)
+	const below = editor.getByText('Leave it empty for no end.');
+	// (relative to the dialog: it's centered, so it moves when the preview at its end changes)
+	const offset = async () => (await below.boundingBox())!.y - (await editor.boundingBox())!.y;
+	const before = await offset();
+	await ends.fill('abc');
+	await expect(ends).toHaveAttribute('aria-invalid', 'true');
+	await expect(editor.getByRole('alert')).toHaveCount(0);
+	expect(await offset()).toBeCloseTo(before, 0);
+	// it still tells screen readers what's wrong
+	await expect(ends).toHaveAccessibleDescription(/Not a date/);
+});
