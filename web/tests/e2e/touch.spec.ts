@@ -75,11 +75,13 @@ test('filtering, the due inbox, settings and devices are reachable by touch', as
 	await page.getByRole('dialog').getByRole('button', { name: 'Close' }).tap();
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 	await page.getByRole('button', { name: 'Settings' }).tap();
-	await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+	await expect(page.getByRole('dialog', { name: 'Settings' }).getByRole('heading', { name: 'Devices' })).toBeVisible();
 	await page.getByRole('dialog').getByRole('button', { name: 'Done' }).tap();
-	await page.getByTitle('Devices and syncing').tap();
-	await expect(page.getByRole('dialog', { name: 'Devices' }).getByRole('switch')).toBeVisible();
+	// the sync switch: tapping its text turns it on and off
+	await page.locator('header .sync').getByText('Sync off').tap();
+	await expect(page.getByRole('switch', { name: 'Sync' })).toBeChecked();
+	await page.locator('header .sync').tap();
+	await expect(page.getByRole('switch', { name: 'Sync' })).not.toBeChecked();
 	// keyboard help isn't offered on a touch screen
-	await page.getByRole('dialog').getByRole('button', { name: 'Done' }).tap();
 	await expect(page.getByRole('button', { name: 'Keyboard shortcuts' })).toHaveCount(0);
 });

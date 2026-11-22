@@ -101,11 +101,17 @@ test('a phone pairs with a PC by its code, syncs both ways, and reconnects by it
 		await page.goto('/');
 		await expect(page.getByText('No transactions yet')).toBeVisible();
 		// networking is off at every start
-		await page.getByRole('button', { name: 'Sync off' }).click();
-		const dialog = page.getByRole('dialog', { name: 'Devices' });
+		const syncSwitch = page.getByRole('switch', { name: 'Sync' });
+		const syncState = page.locator('header .sync');
+		const dialog = page.getByRole('dialog', { name: 'Settings' });
+		await expect(syncState).toHaveText('Sync off');
+		await page.getByRole('button', { name: 'Settings' }).click();
 		await expect(dialog.getByRole('button', { name: 'Pair with a PC' })).toBeDisabled();
-		await dialog.getByRole('switch', { name: 'Sync with my devices on the local network' }).check();
-		await expect(dialog).toContainText('Not paired with a PC yet.');
+		await dialog.getByRole('button', { name: 'Done' }).click();
+		await syncSwitch.check();
+		await expect(syncState).toHaveText('Not paired');
+		await page.getByRole('button', { name: 'Settings' }).click();
+		await expect(dialog).toContainText('No PCs paired.');
 		await dialog.getByText('Enter the code instead').click();
 		await dialog.getByLabel('Pairing code').fill(code);
 		await dialog.getByRole('button', { name: 'Pair', exact: true }).click();
@@ -115,7 +121,7 @@ test('a phone pairs with a PC by its code, syncs both ways, and reconnects by it
 
 		// the PC's data arrives
 		await expect(page.getByText('46 transactions')).toBeVisible();
-		await expect(page.getByRole('button', { name: 'Synced' })).toBeVisible();
+		await expect(syncState).toHaveText('1 connected');
 		expect(pc.paired).toHaveLength(1);
 
 		// a new transaction on the phone reaches the PC
@@ -131,21 +137,17 @@ test('a phone pairs with a PC by its code, syncs both ways, and reconnects by it
 
 		// after a restart syncing is off; turned on, the phone reconnects with its token, and syncs
 		await page.reload();
-		await page.getByRole('button', { name: 'Sync off' }).click();
-		await dialog.getByRole('switch', { name: 'Sync with my devices on the local network' }).check();
-		await expect(dialog.getByText('connected', { exact: true })).toBeVisible({ timeout: 15_000 });
-		await dialog.getByRole('button', { name: 'Done' }).click();
-		await expect(page.getByRole('button', { name: 'Synced' })).toBeVisible({ timeout: 15_000 });
+		await expect(syncState).toHaveText('Sync off');
+		await syncSwitch.check();
+		await expect(syncState).toHaveText('1 connected', { timeout: 15_000 });
 		pc.edit((d) => addTransaction(d, { date: '2026-11-21' as CivilDate, description: 'Added while the phone restarted', categoryId: '0' as never, amount: cents(-700) }, 2_000_000_001 as UtcSeconds).data);
 		await expect(page.getByText('49 transactions')).toBeVisible();
 		expect(pc.paired).toHaveLength(1);
 
 		// turned off: the connection ends, and the phone stays off
-		await page.getByRole('button', { name: 'Synced' }).click();
-		await dialog.getByRole('switch', { name: 'Sync with my devices on the local network' }).uncheck();
+		await syncSwitch.uncheck();
 		await expect.poll(() => pc.sessions.size).toBe(0);
-		await dialog.getByRole('button', { name: 'Done' }).click();
-		await expect(page.getByRole('button', { name: 'Sync off' })).toBeVisible();
+		await expect(syncState).toHaveText('Sync off');
 		await page.waitForTimeout(1500);
 		expect(pc.sessions.size).toBe(0);
 		expect(pc.errors).toEqual([]);

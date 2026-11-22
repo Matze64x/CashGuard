@@ -95,16 +95,20 @@ async function installFakeTauri(page: Page) {
 }
 
 const emit = (page: Page, event: string, payload: unknown) => page.evaluate(([event, payload]) => (window as never as { fake: Fake }).fake.emit(event as string, payload), [event, payload] as const);
-/** The header button that opens Devices (its text shows the sync state) */
-const devicesButton = (page: Page) => page.getByTitle('Devices and syncing');
+/** The header's sync switch, and its text (the sync state) */
+const syncSwitch = (page: Page) => page.getByRole('switch', { name: 'Sync' });
+const syncState = (page: Page) => page.locator('header .sync');
 
 /** Turns networking on (it's off at every start) */
 async function turnOn(page: Page) {
-	await devicesButton(page).click();
-	const dialog = page.getByRole('dialog', { name: 'Devices' });
-	await dialog.getByRole('switch', { name: 'Sync with my devices on the local network' }).check();
+	await syncSwitch(page).check();
 	await expect.poll(async () => (await fake(page)).calls).toContain('enabled true');
-	await dialog.getByRole('button', { name: 'Done' }).click();
+}
+
+/** Opens Settings, which has the Devices section */
+async function openDevices(page: Page) {
+	await page.getByRole('button', { name: 'Settings' }).click();
+	return page.getByRole('dialog', { name: 'Settings' });
 }
 
 const fake = (page: Page) => page.evaluate(() => JSON.parse(JSON.stringify((window as never as { fake: Fake }).fake)) as Fake);
@@ -152,8 +156,7 @@ async function importFixture(page: Page) {
 
 test('pairing a phone: the code shows until the phone paired, then it is listed', async ({ page }) => {
 	await turnOn(page);
-	await devicesButton(page).click();
-	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	const dialog = await openDevices(page);
 	await expect(dialog).toContainText('No phones paired.');
 	await dialog.getByRole('button', { name: 'Pair a phone' }).click();
 	await expect(dialog.getByLabel('Pairing code')).toBeVisible();
@@ -174,8 +177,7 @@ test('pairing a phone: the code shows until the phone paired, then it is listed'
 });
 
 test('renaming this PC', async ({ page }) => {
-	await devicesButton(page).click();
-	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	const dialog = await openDevices(page);
 	await expect(dialog.getByLabel('Name')).toHaveValue('Desk');
 	await dialog.getByLabel('Name').fill('Office PC');
 	await dialog.getByRole('button', { name: 'Save' }).click();
@@ -201,7 +203,7 @@ test('a connected phone syncs with the PC both ways, in order, and the header sa
 
 	await expect(page.getByText('47 transactions')).toBeVisible();
 	await expect.poll(() => phone.working.transactions.length).toBe(47);
-	await expect(page.getByRole('button', { name: '1 connected' })).toBeVisible();
+	await expect(syncState(page)).toHaveText('1 connected');
 	await expect(page.getByRole('status')).toContainText('Synced with My iPhone. Transactions: 1 added.');
 	expect(received[0]!.type).toBe('hello');
 
@@ -214,15 +216,14 @@ test('a connected phone syncs with the PC both ways, in order, and the header sa
 
 	// the phone goes away
 	await emit(page, 'sync-closed', 7);
-	await expect(page.getByRole('button', { name: 'Devices' })).toBeVisible();
+	await expect(syncState(page)).toHaveText('Sync on');
 	expect(phone.errors).toEqual([]);
 });
 
 test('pairing with another PC: both compare the code, then it is listed', async ({ page }) => {
 	await page.evaluate((id) => ((window as never as { fake: Fake }).fake.found = [{ id, name: 'Laptop' }]), LAPTOP_ID);
 	await turnOn(page);
-	await devicesButton(page).click();
-	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	const dialog = await openDevices(page);
 	const onNetwork = dialog.getByRole('list', { name: 'PCs on this network' });
 	await expect(onNetwork).toContainText('Laptop');
 	await onNetwork.getByRole('button', { name: 'Pair' }).click();
@@ -254,10 +255,9 @@ test('pairing with another PC: both compare the code, then it is listed', async 
 	await expect(onNetwork).toContainText('Laptop');
 });
 
-test('other PCs can pair only while Devices is open; their code shows there, and cancelling tells them', async ({ page }) => {
+test('other PCs can pair only while Settings is open; their code shows there, and cancelling tells them', async ({ page }) => {
 	await turnOn(page);
-	await devicesButton(page).click();
-	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	const dialog = await openDevices(page);
 	await expect.poll(async () => (await fake(page)).calls.filter((c) => c.startsWith('allowed')).at(-1)).toBe('allowed true');
 	await emit(page, 'sync-pc-pairing', { state: 'code', code: '654 321', peerId: LAPTOP_ID, peerName: 'Laptop', incoming: true });
 	const pairing = dialog.getByRole('group', { name: 'Pairing with Laptop' });
@@ -298,36 +298,50 @@ test('another PC syncs with this one both ways (here as the client: the lower id
 	expect(laptop.errors).toEqual([]);
 });
 
-test('closing Devices stops other PCs from pairing and cancels a pairing under way', async ({ page }) => {
+test('closing Settings stops other PCs from pairing and cancels a pairing under way', async ({ page }) => {
 	await page.evaluate((id) => ((window as never as { fake: Fake }).fake.found = [{ id, name: 'Laptop' }]), LAPTOP_ID);
 	await turnOn(page);
-	await devicesButton(page).click();
-	const dialog = page.getByRole('dialog', { name: 'Devices' });
+	const dialog = await openDevices(page);
 	await dialog.getByRole('list', { name: 'PCs on this network' }).getByRole('button', { name: 'Pair' }).click();
 	await expect(dialog.getByRole('button', { name: 'Pairing…' })).toBeDisabled();
 	await dialog.getByRole('button', { name: 'Done' }).click();
 	await expect.poll(async () => (await fake(page)).calls).toEqual(expect.arrayContaining(['allowed false', 'cancel']));
 	// an attempt nobody saw here isn't reported
 	await emit(page, 'sync-pc-pairing', { state: 'failed', reason: 'The connection to Stranger ended.' });
-	await devicesButton(page).click();
+	await openDevices(page);
 	await expect(dialog.getByRole('alert')).toHaveCount(0);
 	await expect(dialog.getByRole('list', { name: 'PCs on this network' }).getByRole('button', { name: 'Pair' })).toBeEnabled();
 });
 
-test('networking is off at every start; the switch turns it on and off', async ({ page }) => {
-	await expect(devicesButton(page)).toHaveText('Sync off');
-	await devicesButton(page).click();
-	const dialog = page.getByRole('dialog', { name: 'Devices' });
-	const toggle = dialog.getByRole('switch', { name: 'Sync with my devices on the local network' });
-	await expect(toggle).not.toBeChecked();
-	await expect(dialog.getByRole('button', { name: 'Pair a phone' })).toBeDisabled();
-	await toggle.check();
-	await expect(dialog.getByRole('button', { name: 'Pair a phone' })).toBeEnabled();
-	await toggle.uncheck();
-	await expect.poll(async () => (await fake(page)).calls).toEqual(expect.arrayContaining(['enabled true', 'enabled false']));
+test('networking is off at every start; the header switch turns it on and off', async ({ page }) => {
+	await expect(syncSwitch(page)).not.toBeChecked();
+	await expect(syncState(page)).toHaveText('Sync off');
+	let dialog = await openDevices(page);
+	await expect(dialog).toContainText('Turn on sync at the top to pair.');
 	await expect(dialog.getByRole('button', { name: 'Pair a phone' })).toBeDisabled();
 	await dialog.getByRole('button', { name: 'Done' }).click();
-	await expect(devicesButton(page)).toHaveText('Sync off');
+
+	await syncSwitch(page).check();
+	await expect(syncState(page)).toHaveText('Sync on');
+	dialog = await openDevices(page);
+	await expect(dialog.getByRole('button', { name: 'Pair a phone' })).toBeEnabled();
+	await dialog.getByRole('button', { name: 'Done' }).click();
+
+	await syncSwitch(page).uncheck();
+	await expect.poll(async () => (await fake(page)).calls).toEqual(expect.arrayContaining(['enabled true', 'enabled false']));
+	await expect(syncState(page)).toHaveText('Sync off');
+});
+
+test('a failing device shows as a problem in the header, with the reason in Settings', async ({ page }) => {
+	await turnOn(page);
+	// (paired now: the app reloads its list on this event)
+	await page.evaluate((id) => (window as never as { fake: Fake }).fake.pcs.push({ id, name: 'Laptop', pairedAt: 0 }), LAPTOP_ID);
+	await emit(page, 'sync-pc-pairing', { state: 'done', peerId: LAPTOP_ID, peerName: 'Laptop' });
+	await expect(syncState(page)).toHaveText('Sync on');
+	await emit(page, 'sync-pc-refused', { peerId: LAPTOP_ID, reason: 'Laptop removed this PC. Remove it here and pair again.' });
+	await expect(syncState(page)).toHaveText('Sync problem');
+	await expect(syncState(page)).toHaveAttribute('title', 'Laptop removed this PC. Remove it here and pair again.');
+	await expect(await openDevices(page)).toContainText('Laptop removed this PC.');
 });
 
 test('a device that synced before shows when', async ({ page }) => {
@@ -338,6 +352,5 @@ test('a device that synced before shows when', async ({ page }) => {
 	await page.evaluate((id) => (window as never as { fake: Fake }).fake.phones.push({ id, name: 'My iPhone', pairedAt: 0 }), PHONE_ID);
 	await emit(page, 'sync-paired', { phoneId: PHONE_ID, phoneName: 'My iPhone' });
 	await turnOn(page);
-	await devicesButton(page).click();
-	await expect(page.getByRole('dialog', { name: 'Devices' })).toContainText('synced 5 min ago');
+	await expect(await openDevices(page)).toContainText('synced 5 min ago');
 });

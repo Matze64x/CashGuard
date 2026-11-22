@@ -77,7 +77,7 @@ struct Inner {
     running: Option<Running>,
     /// The user turned networking on (it may still not run: no local network)
     enabled: bool,
-    /// Other PCs may start pairing (the Devices dialog is open); kept here, so it survives restarts of serving
+    /// Other PCs may start pairing (the Settings dialog is open); kept here, so it survives restarts of serving
     pairing_allowed: bool,
     /// Bumped on each start and stop, so an old address watcher stops
     generation: u64,
@@ -467,7 +467,7 @@ pub fn sync_pc_pair_confirm(service: State<'_, SyncService>, code: String) -> Re
     })
 }
 
-/// Other PCs may start pairing with this one only while this is on (the Devices dialog is open).
+/// Other PCs may start pairing with this one only while this is on (the Settings dialog is open).
 #[tauri::command(async)]
 pub fn sync_pc_pairing_allowed(service: State<'_, SyncService>, allowed: bool) -> Result<(), String> {
     with_inner(&service, |inner| {

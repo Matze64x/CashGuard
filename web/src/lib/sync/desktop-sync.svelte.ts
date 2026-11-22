@@ -252,7 +252,7 @@ export class DesktopSync {
 		return invoke('sync_pc_pair_cancel');
 	}
 
-	/** Other PCs may start pairing with this one only while the Devices dialog is open */
+	/** Other PCs may start pairing with this one only while the Settings dialog is open */
 	setPairingAllowed(allowed: boolean): void {
 		this.#settings = this.#settings.then(() => invoke('sync_pc_pairing_allowed', { allowed })).catch(() => undefined);
 	}

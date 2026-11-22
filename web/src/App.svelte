@@ -10,7 +10,7 @@
 	import ImportDialog from './lib/ImportDialog.svelte';
 	import { notices } from './lib/notices.svelte';
 	import { DesktopSync } from './lib/sync/desktop-sync.svelte';
-	import DevicesDialog from './lib/sync/DevicesDialog.svelte';
+	import SyncSwitch from './lib/sync/SyncSwitch.svelte';
 	import { SyncManager } from './lib/sync/manager.svelte';
 	import { PhoneSync } from './lib/sync/phone-sync.svelte';
 	import SettingsDialog from './lib/SettingsDialog.svelte';
@@ -44,7 +44,6 @@
 		notices.info(`Synced with ${report.peer.name}. ${lines.join(' ')}`);
 	}
 	const sync = workspace.isDesktop ? new DesktopSync(workspace, reportSync) : new PhoneSync(workspace, reportSync);
-	let devicesOpen = $state(false);
 
 	// end-to-end tests drive the sync through this (dev builds only; removed from production builds)
 	if (import.meta.env.DEV) Object.assign(window, { __cashguardTest: { workspace, SyncManager, notices, sync } });
@@ -68,26 +67,6 @@
 				return () => {};
 			});
 		return () => void stop.then((f) => f());
-	});
-
-	/** The header's sync status: short, and only what matters */
-	const syncLabel = $derived.by(() => {
-		const connections = sync.manager.connections.length;
-		const failing = Object.keys(sync.manager.problems).length > 0;
-		if (sync instanceof DesktopSync) return !sync.enabled ? 'Sync off' : connections > 0 ? `${connections} connected` : failing ? 'Sync problem' : 'Devices';
-		if (sync.status === 'off') return 'Sync off';
-		if (sync.status !== 'connected' && failing) return 'Sync problem';
-		switch (sync.status) {
-			case 'connected':
-				// (connected, but the first round may still be under way)
-				return sync.manager.connections.some((c) => c.lastSync !== null) ? 'Synced' : 'Connecting…';
-			case 'connecting':
-				return 'Connecting…';
-			case 'unreachable':
-				return 'Offline';
-			default:
-				return 'Devices';
-		}
 	});
 
 	// raw: a proxy would break the identity check of `candidate.from` in the workspace
@@ -254,7 +233,7 @@
 		{/each}
 	</nav>
 	<div class="tools">
-		<button class="tab sync" title="Devices and syncing" onclick={() => (devicesOpen = true)}>{syncLabel}</button>
+		<SyncSwitch {sync} />
 		{#if !touchFirst}<button class="tab icon help" aria-label="Keyboard shortcuts" title="?" onclick={() => (shortcuts.helpOpen = true)}>?</button>{/if}
 		<button class="tab icon" aria-label="Settings" title={displayKeys('Mod+,')} onclick={() => (settingsOpen = true)}>
 			<svg viewBox="0 0 24 24" aria-hidden="true"
@@ -312,10 +291,6 @@
 	{/each}
 </div>
 
-{#if devicesOpen}
-	<DevicesDialog {sync} onclose={() => (devicesOpen = false)} />
-{/if}
-
 {#if shortcuts.helpOpen}
 	<ShortcutHelp onclose={() => (shortcuts.helpOpen = false)} />
 {/if}
@@ -325,7 +300,7 @@
 {/if}
 
 {#if settingsOpen}
-	<SettingsDialog {workspace} onclose={() => (settingsOpen = false)} />
+	<SettingsDialog {workspace} {sync} onclose={() => (settingsOpen = false)} />
 {/if}
 
 {#if candidate}
@@ -366,6 +341,7 @@
 	}
 	.actions {
 		grid-area: actions;
+		justify-self: end;
 		display: flex;
 		gap: 0.5rem;
 	}
@@ -373,7 +349,8 @@
 		grid-area: tools;
 		justify-self: end;
 		display: flex;
-		gap: 0.25rem;
+		gap: 0.4rem;
+		align-items: center;
 	}
 	/* lists read best narrow; Explore's charts and side-by-side panels use a laptop's width */
 	main {
@@ -403,6 +380,9 @@
 		header {
 			grid-template-areas: 'title tools' 'actions actions' 'nav nav';
 		}
+		.actions {
+			justify-self: start;
+		}
 		.tab {
 			padding: 0.45rem 0.45rem;
 			font-size: 0.9rem;
@@ -429,6 +409,15 @@
 		min-width: 2.25rem;
 		display: grid;
 		place-items: center;
+	}
+	/* (framed, so it's clear they can be clicked or tapped) */
+	.tools .tab.icon {
+		border: 1px solid var(--control-border);
+		padding: 0;
+	}
+	.tools .tab.icon:hover {
+		border-color: var(--accent);
+		color: var(--text);
 	}
 	.tab svg {
 		width: 1.15rem;

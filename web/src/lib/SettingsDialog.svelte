@@ -1,13 +1,19 @@
-<!-- Preferences of this device (stored in the browser, not in the data file). Changes apply at once. -->
+<!--
+	Preferences of this device (stored in the browser, not in the data file) and the devices it syncs
+	with. Changes apply at once.
+-->
 <script lang="ts">
 	import { DATE_STYLES, formatDateAs, today, type DateStyle } from '../core';
 	import { attempt } from './attempt';
 	import { chooseFileToSave, dataLocation, isDesktop } from './desktop';
 	import { settings } from './settings.svelte';
+	import type { DesktopSync } from './sync/desktop-sync.svelte';
+	import Devices from './sync/Devices.svelte';
+	import type { PhoneSync } from './sync/phone-sync.svelte';
 	import Modal from './ui/Modal.svelte';
 	import type { Workspace } from './workspace.svelte';
 
-	let { workspace, onclose }: { workspace: Workspace; onclose: () => void } = $props();
+	let { workspace, sync, onclose }: { workspace: Workspace; sync: DesktopSync | PhoneSync; onclose: () => void } = $props();
 	const sample = today();
 	const location = isDesktop ? dataLocation().catch(() => null) : null;
 	/** Why choosing the backup file failed (shown here: a notice would be behind the dialog) */
@@ -63,6 +69,8 @@
 				{/if}
 			{/await}
 		{/if}
+		<hr />
+		<Devices {sync} />
 		<div class="buttons"><button type="button" class="primary" onclick={onclose}>Done</button></div>
 	</div>
 </Modal>
@@ -103,8 +111,15 @@
 	.where code {
 		overflow-wrap: anywhere;
 	}
+	hr {
+		width: 100%;
+		margin: 0.75rem 0 0.25rem;
+		border: none;
+		border-top: 1px solid var(--border);
+	}
 	.buttons {
 		display: flex;
 		justify-content: flex-end;
+		margin-top: 0.5rem;
 	}
 </style>

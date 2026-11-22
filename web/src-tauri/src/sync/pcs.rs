@@ -9,7 +9,7 @@
 //! its own; both show the code from then on. So neither side can steer the code, and a machine in
 //! the middle can't try codes against the accepting PC unseen: every attempt shows its code there
 //! (against the dialing PC, each attempt takes a click). A PC accepts pairing only while its
-//! Devices dialog is open, and at most one attempt every few seconds. The code also covers both
+//! Settings dialog is open, and at most one attempt every few seconds. The code also covers both
 //! device ids, and a PC already paired under that id with another key is refused.
 //!
 //! **Connections:** both sides dial paired PCs they aren't connected to (the one with the higher id
@@ -330,7 +330,7 @@ struct Shared {
     found: Mutex<HashMap<String, FoundPc>>,
     dialing: Mutex<HashSet<String>>,
     pairing: Mutex<Option<ActivePairing>>,
-    /// Incoming pairing is accepted (the Devices dialog is open)
+    /// Incoming pairing is accepted (the Settings dialog is open)
     pairing_allowed: AtomicBool,
     last_incoming_pairing: Mutex<Option<Instant>>,
     /// Per PC: don't dial before this time, and how many connections in a row ended early
@@ -568,7 +568,7 @@ impl PcNet {
         }
     }
 
-    /// Whether other PCs may start pairing with this one (while the user has the Devices dialog open)
+    /// Whether other PCs may start pairing with this one (while the user has the Settings dialog open)
     pub fn set_pairing_allowed(&self, allowed: bool) {
         self.shared.pairing_allowed.store(allowed, Ordering::SeqCst);
     }
@@ -1154,7 +1154,7 @@ mod tests {
             let tx = Mutex::new(tx);
             let config = PcNetConfig { certificate: cert.certificate, private_key: cert.private_key, state: Arc::clone(&state), save: Arc::new(|_| Ok(())), discovery: false };
             let net = PcNet::start(runtime.handle(), "127.0.0.1".parse().unwrap(), config, Arc::new(move |e| { let _ = tx.lock().unwrap().send(e); })).unwrap();
-            // (as if the Devices dialog were open)
+            // (as if the Settings dialog were open)
             net.set_pairing_allowed(true);
             Pc { net, events, state, id: id.into() }
         }
@@ -1443,7 +1443,7 @@ mod tests {
         b.code();
         // trying again right away is refused
         assert_eq!(rt.block_on(attempt(Arc::clone(&shared))), "busy");
-        // and nobody can start pairing while B's Devices dialog is closed
+        // and nobody can start pairing while B's Settings dialog is closed
         b.net.set_pairing_allowed(false);
         std::thread::sleep(PAIRING_INTERVAL);
         assert_eq!(rt.block_on(attempt(shared)), "closed");
