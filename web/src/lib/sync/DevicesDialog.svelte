@@ -167,10 +167,9 @@
 				<div class="qr">
 					<!-- (an SVG made by this app's own desktop side) -->
 					<div class="code" aria-label="Pairing code">{@html qr.svg}</div>
-					<p>In CashGuard on the phone: Devices → “Pair with a PC”, then point the camera at this code. It works once, for {minutes(left)} more.</p>
+					<p>Scan it on the phone under Devices → “Pair with a PC”. Valid for {minutes(left)}.</p>
 					<details>
 						<summary>Can’t scan it?</summary>
-						<p class="muted">Enter this code on the other device instead:</p>
 						<code class="payload">{qr.payload}</code>
 					</details>
 					<button type="button" onclick={hideCode}>Stop pairing</button>

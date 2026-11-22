@@ -125,7 +125,7 @@ test('pairing a phone: the code shows until the phone paired, then it is listed'
 	await expect(dialog).toContainText('No phone is paired yet.');
 	await dialog.getByRole('button', { name: 'Pair a phone' }).click();
 	await expect(dialog.getByLabel('Pairing code')).toBeVisible();
-	await expect(dialog).toContainText('It works once');
+	await expect(dialog).toContainText('Valid for');
 
 	await page.evaluate(() => (window as never as { fake: Fake }).fake.phones.push({ id: '0123456789abcdef', name: 'My iPhone', pairedAt: 0 }));
 	await emit(page, 'sync-paired', { phoneId: PHONE_ID, phoneName: 'My iPhone' });
