@@ -100,7 +100,7 @@ export class SyncManager {
 				try {
 					message = JSON.parse(text);
 				} catch (e) {
-					const message = `The other device sent an unreadable message (${errorMessage(e)}).`;
+					const message = `Unreadable message from the other device (${errorMessage(e)}).`;
 					this.#update(attached, { error: message });
 					this.#problem(connection.peerId, message);
 					attached.session.close();

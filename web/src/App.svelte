@@ -268,7 +268,7 @@
 <main class:wide={section === 'explore'}>
 
 	{#if loadError}
-		<p class="notice error" role="alert">Your data can't be loaded, so nothing can be changed right now. {loadError}</p>
+		<p class="notice error" role="alert">Your data can't be loaded: {loadError}</p>
 	{:else if workspace.ready}
 		<!-- each view stays mounted (keeps its selection and search); only the shown one is active -->
 		<div hidden={section !== 'transactions'}>
@@ -281,7 +281,7 @@
 				{dueLabel}
 				onreviewdue={() => (inboxOpen = true)}
 				onmakerecurring={makeRecurring}
-				emptyHint="Import your CashGuard file to get started, or press n to add one."
+				emptyHint="Import a file, or press n to add a transaction."
 			/>
 		</div>
 		<div hidden={section !== 'explore'}>

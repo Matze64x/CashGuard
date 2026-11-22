@@ -207,10 +207,10 @@ test('an unfinished period is compared like for like', async ({ page }) => {
 test('trends: a row per category, by month or year; a row filters by its category', async ({ page }) => {
 	const trends = page.getByRole('region', { name: 'Trends' });
 	await expect(trends.getByRole('heading')).toHaveText('Over time');
-	await expect(trends).toContainText('shows whole months');
+	await expect(trends).toContainText('Ø per month');
 	// years: the fixture's data (2026) stays in the last 10 years for long
 	await trends.getByRole('radio', { name: 'Years' }).check();
-	await expect(trends).toContainText('shows whole years');
+	await expect(trends).toContainText('Ø per year');
 	const rows = trends.getByRole('listitem');
 	const groceries = trends.getByRole('button', { name: /^Groceries: (on average .* per year|new this year|no whole year with it yet)/ });
 	await expect(groceries).toBeVisible();
@@ -227,8 +227,8 @@ test('an unfinished month shows where it is heading', async ({ page }) => {
 	await page.reload();
 	await page.keyboard.press('g');
 	await page.keyboard.press('e');
-	await expect(page.getByRole('region', { name: 'Timeline' })).toContainText('Dashed: where this month is heading, by what usually comes in the rest of a month');
-	await expect(page.getByRole('region', { name: 'Trends' })).toContainText('then dashed where this month is heading');
+	await expect(page.getByRole('region', { name: 'Timeline' })).toContainText('Dashed: where this month is heading.');
+	await expect(page.getByRole('region', { name: 'Trends' })).toContainText('dashed: where this month is heading');
 
 	await page.keyboard.press('f');
 	await page.getByRole('dialog').getByRole('combobox', { name: 'Period' }).selectOption('This month');

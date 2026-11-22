@@ -57,7 +57,7 @@
 </script>
 
 <div bind:this={element} class="chart" style:height>
-	{#if failed}<p class="failed">The chart couldn't be loaded. Reload the page to try again.</p>{/if}
+	{#if failed}<p class="failed">The chart couldn't be loaded. Reload to try again.</p>{/if}
 </div>
 
 <style>

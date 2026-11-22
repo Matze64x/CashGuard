@@ -49,7 +49,7 @@
 				scan();
 			} catch (e) {
 				const name = e instanceof Error ? e.name : '';
-				problem = name === 'NotAllowedError' ? 'The camera isn’t allowed. Allow it for CashGuard in the settings, or enter the code instead.' : `The camera can’t be used: ${e instanceof Error ? e.message : String(e)}`;
+				problem = name === 'NotAllowedError' ? 'Camera access is blocked. Allow it in the settings, or enter the code.' : `The camera can’t be used: ${e instanceof Error ? e.message : String(e)}`;
 			}
 		})();
 		return () => {
@@ -65,7 +65,7 @@
 {:else}
 	<!-- svelte-ignore a11y_media_has_caption (a live camera picture) -->
 	<video bind:this={video} playsinline muted></video>
-	<p class="hint">{ignored ? 'That’s not a CashGuard code. Point the camera at the code the PC shows.' : 'Point the camera at the code the PC shows.'}</p>
+	<p class="hint">{ignored ? 'That’s not a CashGuard code.' : 'Point the camera at the code the PC shows.'}</p>
 {/if}
 
 <style>

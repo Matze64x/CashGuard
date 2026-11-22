@@ -122,7 +122,7 @@ async function importFixture(page: Page) {
 test('pairing a phone: the code shows until the phone paired, then it is listed', async ({ page }) => {
 	await page.getByRole('button', { name: 'Devices' }).click();
 	const dialog = page.getByRole('dialog', { name: 'Devices' });
-	await expect(dialog).toContainText('No phone is paired yet.');
+	await expect(dialog).toContainText('No phones paired.');
 	await dialog.getByRole('button', { name: 'Pair a phone' }).click();
 	await expect(dialog.getByLabel('Pairing code')).toBeVisible();
 	await expect(dialog).toContainText('Valid for');
@@ -137,7 +137,7 @@ test('pairing a phone: the code shows until the phone paired, then it is listed'
 	// removing needs a second click
 	await dialog.getByRole('button', { name: 'Remove' }).click();
 	await dialog.getByRole('button', { name: 'Remove for good' }).click();
-	await expect(dialog).toContainText('No phone is paired yet.');
+	await expect(dialog).toContainText('No phones paired.');
 	expect((await fake(page)).calls).toContain(`forget ${PHONE_ID}`);
 });
 

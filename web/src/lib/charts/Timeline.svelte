@@ -378,9 +378,7 @@
 	<Chart {option} {onready} />
 </div>
 <p class="hint">
-	Click a month to show it, Shift+click for several months. Zoom with the wheel or the slider.{current && (stacks ? stacks.estimate : estimate)
-		? ` Dashed: where this month is heading, ${current.basis.kind === 'usual' ? 'by what usually comes in the rest of a month' : 'at its pace so far'}.`
-		: ''}
+	Click a month to show it, Shift+click for several. Zoom with the wheel or the slider.{current && (stacks ? stacks.estimate : estimate) ? ' Dashed: where this month is heading.' : ''}
 </p>
 {#if range.outside.length > 0}
 	<p class="outside" role="note">

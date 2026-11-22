@@ -103,7 +103,7 @@ function parseData(text: string): CashGuardData {
 	const result = parseCashGuard(text);
 	if (!result.ok) {
 		const [first] = result.errors;
-		throw new SyncError(`The other device sent data that isn't valid (${first?.path || 'data'}: ${first?.message}).`);
+		throw new SyncError(`The other device sent invalid data (${first?.path || 'data'}: ${first?.message}).`);
 	}
 	return result.data;
 }
@@ -238,8 +238,8 @@ export class PeerSession {
 	async #hello(message: SyncMessage & { type: 'hello' }): Promise<void> {
 		if (this.#peer) throw new SyncError('The other device introduced itself twice.');
 		if (message.device.id !== this.#options.peerId) throw new SyncError("The other device's identity doesn't match its key.");
-		if (message.protocol !== SYNC_PROTOCOL) throw new SyncError(`The other device (${message.device.name}) uses another version of CashGuard. Update both to the latest version.`);
-		if (message.format !== FORMAT_VERSION) throw new SyncError(`The other device (${message.device.name}) uses another data format (${message.format}). Update both to the latest version.`);
+		if (message.protocol !== SYNC_PROTOCOL) throw new SyncError(`${message.device.name} runs another version of CashGuard. Update both.`);
+		if (message.format !== FORMAT_VERSION) throw new SyncError(`${message.device.name} uses another data format (${message.format}). Update both.`);
 		this.#peer = message.device;
 		// the client starts with a round, so both sides catch up right after connecting
 		if (!this.#options.merger) await this.#startRound();

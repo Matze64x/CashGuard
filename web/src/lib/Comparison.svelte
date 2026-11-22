@@ -73,7 +73,7 @@
 
 <h2>Compared with the period before</h2>
 {#if !comparison}
-	<p class="note">Choose a period with a start and an end to compare it.</p>
+	<p class="note">Choose a period with a start and an end to compare.</p>
 {:else}
 	<p class="note">
 		<b>{describePeriod(comparison.current.from, comparison.current.to)}</b>{filter.current.from ? '' : ' (the last 12 complete months)'} compared with

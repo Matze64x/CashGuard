@@ -259,7 +259,7 @@ describe('editing recurring transactions: careful with what comes in', () => {
 		// unknown ones
 		for (const change of [() => skipOccurrence(data, '9' as Id, d('2026-01-01')), () => deleteRecurring(data, '9' as Id)]) expect(change).toThrow(EditError);
 		const entry = { date: d('2026-01-01'), description: 'Rent', categoryId: NO_CATEGORY, amount: cents(-90000) };
-		expect(() => confirmOccurrence(data, id, d('2026-01-01'), entry, '9' as Id, at(2))).toThrow('The account no longer exists');
+		expect(() => confirmOccurrence(data, id, d('2026-01-01'), entry, '9' as Id, at(2))).toThrow('This account no longer exists');
 	});
 });
 

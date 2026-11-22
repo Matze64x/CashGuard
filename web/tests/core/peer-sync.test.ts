@@ -380,8 +380,8 @@ describe('refusals', () => {
 		link.toA[0] = { type: 'hello', protocol: 1, format: 'cgt_9.9.9', device: phone.info };
 		await run(link);
 		expect(link.errors.map((e) => e.message)).toEqual([
-			'The other device (phone) uses another data format (cgt_9.9.9). Update both to the latest version.',
-			`The other device stopped syncing: The other device (phone) uses another data format (cgt_9.9.9). Update both to the latest version.`,
+			'phone uses another data format (cgt_9.9.9). Update both.',
+			`The other device stopped syncing: phone uses another data format (cgt_9.9.9). Update both.`,
 		]);
 		expect(FORMAT_VERSION).not.toBe('cgt_9.9.9');
 	});
@@ -407,7 +407,7 @@ describe('refusals', () => {
 		link.toA.length = 0;
 		link.sessionA.receive({ type: 'state', base: null, data: '{"Version": "cgt_0.6.0", "Transactions": [{"ID": "x"}]}' });
 		await settle();
-		expect(link.errors[0]?.message).toMatch(/isn't valid/);
+		expect(link.errors[0]?.message).toMatch(/invalid data/);
 		expect(pc.descriptions()).toEqual(['a']);
 	});
 

@@ -29,7 +29,7 @@
 			</section>
 		{/each}
 	</div>
-	<p class="hint">Tab and Shift+Tab move between fields and buttons everywhere. Press <kbd>Esc</kbd> to close.</p>
+	<p class="hint">Tab and Shift+Tab move between fields. <kbd>Esc</kbd> closes.</p>
 	<div class="buttons"><button class="primary" onclick={onclose}>Close</button></div>
 </Modal>
 

@@ -68,7 +68,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 
 /** Connects to a PC and sends the first message. Throws `LinkError` if it can't be reached or refuses. */
 export async function connectToPc(pc: PcAddress, first: FirstMessage): Promise<PcLink> {
-	if (typeof RTCPeerConnection === 'undefined') throw new LinkError('This browser can’t make direct connections (WebRTC is missing).');
+	if (typeof RTCPeerConnection === 'undefined') throw new LinkError('This browser doesn’t support WebRTC.');
 	// no STUN/TURN servers: only the local network
 	const peer = new RTCPeerConnection({ iceServers: [] });
 	const channel = peer.createDataChannel('cashguard', { negotiated: true, id: 0 });
@@ -166,7 +166,7 @@ export async function connectToPc(pc: PcAddress, first: FirstMessage): Promise<P
 		const offer = await peer.createOffer();
 		await peer.setLocalDescription(offer);
 		await peer.setRemoteDescription({ type: 'answer', sdp: answerFor(pc, offer.sdp ?? '') });
-		await withTimeout(opened, CONNECT_TIMEOUT_MS, 'The PC can’t be reached. Is CashGuard running there, and are both on the same network?');
+		await withTimeout(opened, CONNECT_TIMEOUT_MS, 'The PC can’t be reached. Is CashGuard running there, on the same network?');
 
 		const reply = await withTimeout(
 			new Promise<Reply>((resolve, reject) => {

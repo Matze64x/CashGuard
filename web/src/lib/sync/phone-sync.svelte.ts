@@ -237,7 +237,7 @@ export class PhoneSync {
 	}
 
 	#mayChange(): void {
-		if (!this.canChange) throw new Error('Another tab of CashGuard syncs: change the devices there.');
+		if (!this.canChange) throw new Error('Another tab syncs: change devices there.');
 	}
 
 	/** Pairs with the PC whose code was scanned, and connects to it. Throws with a reason to show. */

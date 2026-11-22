@@ -169,7 +169,7 @@
 	{/snippet}
 	{#snippet empty()}
 		<p class="empty">
-			No recurring transactions yet. Add rent, a savings plan, … with “New”, or use “Make recurring…” on a transaction.
+			No recurring transactions yet. Add one with “New”, or “Make recurring…” on a transaction.
 		</p>
 	{/snippet}
 </SelectableList>

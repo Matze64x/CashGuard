@@ -125,7 +125,7 @@
 		</div>
 	{/snippet}
 	{#snippet empty()}
-		<p class="empty">No accounts yet. Add your bank account, cash, … with “New”.</p>
+		<p class="empty">No accounts yet. Add one with “New”.</p>
 	{/snippet}
 </SelectableList>
 

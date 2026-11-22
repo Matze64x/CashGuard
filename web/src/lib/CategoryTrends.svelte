@@ -152,11 +152,7 @@
 	<Segmented bind:value={unit} options={UNITS} label="Months or years" />
 </div>
 <p class="hint">
-	Each line runs from zero up to its highest amount (the top line) and shows whole {unit}s{basis
-		? `, then dashed where this ${unit} is heading ${basis.kind === 'usual' ? `by what usually comes in the rest of a ${unit}` : 'at its pace so far'}`
-		: ''}; the dotted line is the average.{unit === 'year'
-		? ' Years suit irregular categories like vacations.'
-		: ''} Click a category to show only it.
+	Each line is scaled to its own highest amount; dotted: average{basis ? `, dashed: where this ${unit} is heading` : ''}. Click a category to show only it.
 </p>
 
 {#if trends.length === 0}

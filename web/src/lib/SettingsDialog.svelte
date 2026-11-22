@@ -34,7 +34,7 @@
 				<option value={style}>{style} ({formatDateAs(sample, style)})</option>
 			{/each}
 		</select>
-		<p class="muted">Settings apply to this device only; your CashGuard file is not changed.</p>
+		<p class="muted">These settings apply to this device only.</p>
 		{#if isDesktop}
 			<span class="label">Backup file</span>
 			<div class="backup">
@@ -49,8 +49,7 @@
 				{/if}
 				{#if failure ?? workspace.backupError}<p class="error" role="alert">{failure ?? workspace.backupError}</p>{/if}
 				<p class="muted">
-					Your data is kept in the app. The backup file gets a copy a few seconds after each change and when the app closes; it's replaced each time.
-					To restore it, import it.
+					Updated a few seconds after each change. To restore it, import it.
 				</p>
 			</div>
 		{/if}
@@ -58,7 +57,7 @@
 			{#await location then where}
 				{#if where}
 					<p class="muted where">
-						{where.portable ? 'Portable: the app keeps its data (working copy, settings) next to itself, in' : 'The app keeps its data (working copy, settings) in'}
+						{where.portable ? 'Data folder (portable):' : 'Data folder:'}
 						<code>{where.path}</code>
 					</p>
 				{/if}

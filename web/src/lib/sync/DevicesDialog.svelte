@@ -49,7 +49,7 @@
 		event.preventDefault();
 		void act(async () => {
 			await sync.rename(name);
-			return 'Name saved. Other devices see it the next time they connect.';
+			return 'Name saved.';
 		});
 	}
 
@@ -72,7 +72,7 @@
 		const address = desktop?.info?.address ?? null;
 		if (qr && address !== qrAddress) {
 			hideCode();
-			message = address ? 'This PC’s network address changed: show a new code.' : null;
+			message = address ? 'The network changed: show a new code.' : null;
 		}
 	});
 	let timer: ReturnType<typeof setInterval> | undefined;
@@ -118,7 +118,7 @@
 			try {
 				const pcName = await phone!.pair(code);
 				typed = '';
-				return `Paired with ${pcName}. Syncing now.`;
+				return `Paired with ${pcName}.`;
 			} finally {
 				pairing = false;
 			}
@@ -131,8 +131,8 @@
 		unpaired: 'Not paired with a PC yet.',
 		connecting: 'Connecting…',
 		connected: 'Connected.',
-		unreachable: 'No paired PC can be reached right now. It syncs once CashGuard runs on one of them and both are on the same network.',
-		'other-tab': 'Another tab of CashGuard syncs; this one waits.',
+		unreachable: 'No paired PC reachable. Is CashGuard running on one, on the same network?',
+		'other-tab': 'Another tab syncs.',
 	};
 </script>
 
@@ -141,15 +141,13 @@
 		{#if desktop}
 			{#if desktop.problem}
 				<p class="error" role="alert">Syncing can’t start: {desktop.problem}</p>
-			{:else}
-				<p class="muted">
-					{desktop.info?.address ? 'Phones on the same network connect to this PC while CashGuard runs here.' : 'This PC isn’t on a local network right now, so phones can’t connect.'}
-				</p>
+			{:else if desktop.info && !desktop.info.address}
+				<p class="muted">Not on a local network: phones can’t connect.</p>
 			{/if}
 
 			<h3>Phones</h3>
 			{#if desktop.phones.length === 0}
-				<p class="muted">No phone is paired yet.</p>
+				<p class="muted">No phones paired.</p>
 			{:else}
 				<ul>
 					{#each desktop.phones as p (p.id)}
@@ -183,7 +181,7 @@
 
 			<h3>PCs</h3>
 			{#if phone.pairings.length === 0}
-				<p class="muted">No PC is paired yet.</p>
+				<p class="muted">No PCs paired.</p>
 			{:else}
 				<ul>
 					{#each phone.pairings as p (p.pcId)}
@@ -198,12 +196,12 @@
 			{/if}
 
 			{#if !canChange}
-				<p class="muted small">Pairing and renaming work in the tab that syncs.</p>
+				<p class="muted small">Change devices in the tab that syncs.</p>
 			{:else if scanning}
 				<QrScanner accept={(text) => parsePairingCode(text) !== null} onfound={pairWith} />
 				<button type="button" onclick={() => (scanning = false)}>Cancel</button>
 			{:else}
-				<p class="muted small">On the PC: CashGuard → Devices → “Pair a phone” shows the code.</p>
+				<p class="muted small">The code is on the PC under Devices → “Pair a phone”.</p>
 				<button type="button" class="primary" disabled={pairing} onclick={() => ((scanning = true), (failure = null), (message = null))}>
 					{pairing ? 'Pairing…' : 'Pair with a PC'}
 				</button>

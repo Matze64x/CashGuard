@@ -109,13 +109,13 @@ export function addTransaction(data: CashGuardData, draft: TransactionDraft, now
  * changed it meanwhile: saving would silently undo that change.
  */
 function checkExpected<T>(current: T, expected: T | undefined, name: string): void {
-	if (expected !== undefined && !deepEqual(current, expected)) throw new EditError(`${name} was changed elsewhere meanwhile. Cancel and edit it again to see the change.`);
+	if (expected !== undefined && !deepEqual(current, expected)) throw new EditError(`${name} was changed elsewhere meanwhile. Reopen it to see the change.`);
 }
 
 /** `expected`: the transaction as it was when the user started editing; if it changed since, this throws instead of overwriting that. */
 export function updateTransaction(data: CashGuardData, id: Id, draft: TransactionDraft, now: UtcSeconds, expected?: Transaction): CashGuardData {
 	const old = data.transactions.find((t) => t.id === id);
-	if (!old) throw new EditError('The transaction no longer exists; it may have been deleted elsewhere.');
+	if (!old) throw new EditError('This transaction no longer exists.');
 	checkExpected(old, expected, `“${old.description || 'The transaction'}”`);
 	const updated = build(data, draft, old, old.subTransactions ?? [], now, usedIds(data));
 	if (deepEqual({ ...updated, edited: old.edited }, old)) return data;
@@ -150,7 +150,7 @@ export function addCategory(data: CashGuardData, name: string, color: string): {
 /** `expected`: the category as it was when the user started editing (see `updateTransaction`). */
 export function updateCategory(data: CashGuardData, id: Id, changes: Partial<Pick<Category, 'name' | 'color'>>, expected?: Category): CashGuardData {
 	const old = data.categories.find((c) => c.id === id);
-	if (!old) throw new EditError('The category no longer exists; it may have been deleted elsewhere.');
+	if (!old) throw new EditError('This category no longer exists.');
 	checkExpected(old, expected, `The category “${old.name}”`);
 	const color = changes.color?.toUpperCase();
 	const updated = { ...old, ...changes, ...(color && { color }), ...(changes.name !== undefined && { name: cleanText(changes.name) }) };
@@ -192,7 +192,7 @@ export function deleteCategory(data: CashGuardData, id: Id): CashGuardData {
 
 function accountWith(data: CashGuardData, id: Id): { account: Account; index: number } {
 	const index = data.accounts.findIndex((a) => a.id === id);
-	if (index < 0) throw new EditError('The account no longer exists; it may have been deleted on another device.');
+	if (index < 0) throw new EditError('This account no longer exists.');
 	return { account: data.accounts[index]!, index };
 }
 
@@ -208,7 +208,7 @@ export function addAccount(data: CashGuardData, name: string, amount: Cents, now
  */
 export function updateAccount(data: CashGuardData, id: Id, changes: Partial<Pick<Account, 'name' | 'amount'>>, now: UtcSeconds, expected?: Account): CashGuardData {
 	const { account: old, index } = accountWith(data, id);
-	if (expected && !deepEqual(old, expected)) throw new EditError(`The account “${expected.name}” changed meanwhile; please try again.`);
+	if (expected && !deepEqual(old, expected)) throw new EditError(`“${expected.name}” was changed meanwhile. Try again.`);
 	const amountChanged = changes.amount !== undefined && changes.amount !== old.amount;
 	const updated: Account = { ...old, ...changes, ...(changes.name !== undefined && { name: cleanText(changes.name) }), edited: amountChanged ? now : old.edited };
 	if (deepEqual(updated, old)) return data;
@@ -238,7 +238,7 @@ export type RecurringDraft = Pick<Recurring, 'description' | 'categoryId' | 'amo
 
 function recurringWith(data: CashGuardData, id: Id): Recurring {
 	const r = data.recurring.find((x) => x.id === id);
-	if (!r) throw new EditError('The recurring transaction no longer exists; it may have been deleted on another device.');
+	if (!r) throw new EditError('This recurring transaction no longer exists.');
 	return r;
 }
 

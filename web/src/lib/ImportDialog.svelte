@@ -7,14 +7,14 @@
 	let { candidate, onapply, onclose }: { candidate: ImportCandidate; onapply: () => void; onclose: () => void } = $props();
 
 	const REASONS: Record<ConflictReason, string> = {
-		'changed-on-both-sides': 'changed on both devices; the later change is kept',
-		'deleted-and-changed': 'deleted on one device, changed on the other; the changed version is kept',
-		'moved-into-group': 'moved into a group on one device; the group is kept',
-		'deleted-category-in-use': 'deleted on one device but still used; the category is kept',
+		'changed-on-both-sides': 'changed on both sides; the later change is kept',
+		'deleted-and-changed': 'deleted on one side, changed on the other; it is kept',
+		'moved-into-group': 'moved into a group; the group is kept',
+		'deleted-category-in-use': 'deleted but still used; it is kept',
 	};
 
 	const WARNINGS: Record<ImportWarning, string> = {
-		'unrelated-file': 'This file has nothing in common with your data. Is it the right file?',
+		'unrelated-file': 'This file has nothing in common with your data. Is it the right one?',
 	};
 
 	function describe(counts: ChangeCounts, what: string): string | null {
@@ -69,9 +69,9 @@
 			<p class="warning" role="alert">{warning}</p>
 		{/each}
 		{#if changes.length === 0}
-			<p>Nothing new: your data already contains everything in this file.</p>
+			<p>Nothing new in this file.</p>
 		{:else}
-			<p>Importing adds to your data (nothing is removed):</p>
+			<p>Importing (nothing is removed):</p>
 			<ul>
 				{#each changes as line (line)}<li>{line}</li>{/each}
 			</ul>

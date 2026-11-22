@@ -229,7 +229,7 @@ test('the backup can be turned off', async ({ page }) => {
 
 test('the settings say where the app keeps its data', async ({ page }) => {
 	await page.getByRole('button', { name: 'Settings' }).click();
-	await expect(page.getByRole('dialog')).toContainText('Portable: the app keeps its data');
+	await expect(page.getByRole('dialog')).toContainText('Data folder (portable)');
 	await expect(page.getByRole('dialog')).toContainText('/home/me/CashGuard-data');
 });
 
