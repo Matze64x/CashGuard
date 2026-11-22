@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::files::write_atomic;
+use crate::files::write_private;
 
 pub const DEFAULT_PORT: u16 = 47652;
 
@@ -115,17 +115,8 @@ impl SyncState {
             std::fs::create_dir_all(dir)?;
         }
         let text = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        let new = !path.exists();
-        write_atomic(path, &text)?;
         // it holds the key: only for this user
-        #[cfg(unix)]
-        if new {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-        }
-        #[cfg(not(unix))]
-        let _ = new;
-        Ok(())
+        write_private(path, &text)
     }
 
     pub fn certificate_der(&self) -> Option<Vec<u8>> {

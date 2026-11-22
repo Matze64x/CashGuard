@@ -20,7 +20,9 @@
 		void (async () => {
 			try {
 				if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser can’t use the camera here.');
-				const [{ default: jsQR }, media] = await Promise.all([import('jsqr'), navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })]);
+				// (one after the other: if loading the decoder failed, the camera mustn't stay on)
+				const { default: jsQR } = await import('jsqr');
+				const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
 				stream = media;
 				if (stopped || !video) return void media.getTracks().forEach((t) => t.stop());
 				video.srcObject = media;

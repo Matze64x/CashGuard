@@ -135,6 +135,8 @@ class Link {
 	}
 
 	close() {
+		this.sessionA.close();
+		this.sessionB.close();
 		this.a.sessions = this.a.sessions.filter((s) => s !== this.sessionA);
 		this.b.sessions = this.b.sessions.filter((s) => s !== this.sessionB);
 	}
@@ -252,6 +254,86 @@ describe('two devices', () => {
 		// without a common base the deletion can't be told from a new record: kept (errs towards keeping data)
 		expect(phone.descriptions()).toEqual(['a', 'b']);
 		same(pc, phone);
+	});
+
+	it('a result lost on the way: the next round still knows what the merger deleted', async () => {
+		const pc = new Device('pc', 'pc');
+		const phone = new Device('phone', 'phone');
+		pc.add('keep');
+		pc.add('deleted on the PC');
+		const first = new Link(pc, phone, true);
+		await run(first);
+		first.close();
+		pc.edit((d) => deleteTransaction(d, d.transactions.find((t) => t.description === 'deleted on the PC')!.id));
+		phone.add('new on the phone');
+
+		// the connection drops just before the result reaches the phone
+		const second = new Link(pc, phone, true);
+		await settle();
+		for (;;) {
+			if (await second.step('a')) continue;
+			const next = second.toB[0];
+			if (!next) break;
+			if (next.type === 'result') break;
+			await second.step('b');
+		}
+		second.close();
+		expect(pc.descriptions()).toEqual(['keep', 'new on the phone']);
+		expect(phone.descriptions()).toEqual(['deleted on the PC', 'keep', 'new on the phone']);
+
+		const third = new Link(pc, phone, true);
+		await run(third);
+		expect(third.errors).toEqual([]);
+		expect(pc.descriptions()).toEqual(['keep', 'new on the phone']);
+		same(pc, phone);
+		// the PC keeps just the base the phone named last (the lost one is dropped)
+		const named = phone.bases.get('pc')!.hash;
+		pc.add('later');
+		await run(third);
+		expect(pc.bases.get('phone')!.previous?.hash).toBe(named);
+		same(pc, phone);
+	});
+
+	it('a client whose save of the result failed: the next round still knows what the merger deleted', async () => {
+		const pc = new Device('pc', 'pc');
+		const phone = new Device('phone', 'phone');
+		pc.add('keep');
+		pc.add('deleted on the PC');
+		const first = new Link(pc, phone, true);
+		await run(first);
+		first.close();
+		pc.edit((d) => deleteTransaction(d, d.transactions.find((t) => t.description === 'deleted on the PC')!.id));
+
+		const second = new Link(pc, phone, true);
+		await settle();
+		// (the phone's first transact reads its state; the second saves the result)
+		await second.step('b'); // hello to the phone: it reads and sends its state
+		await second.step('a'); // hello to the PC
+		await second.step('a'); // state to the PC: it merges and answers
+		phone.failNext = true;
+		await second.step('b'); // the result: saving it fails
+		expect(second.errors.map((e) => e.message)).toEqual(['storage failed']);
+		second.close();
+
+		const third = new Link(pc, phone, true);
+		await run(third);
+		expect(pc.descriptions()).toEqual(['keep']);
+		same(pc, phone);
+	});
+
+	it('a closed session saves nothing more', async () => {
+		const pc = new Device('pc', 'pc');
+		const phone = new Device('phone', 'phone');
+		phone.add('a');
+		const link = new Link(pc, phone, true);
+		await settle();
+		await link.step('b');
+		await link.step('a');
+		link.sessionA.close();
+		await link.step('a'); // the state reaches the closed PC session
+		expect(pc.descriptions()).toEqual([]);
+		expect(pc.bases.size).toBe(0);
+		expect(link.toB).toEqual([]);
 	});
 
 	it('a merger that lost its base asks for the data (resend) instead of guessing', async () => {

@@ -45,6 +45,8 @@ export class SyncManager {
 	readonly #attached = new Set<Attached>();
 	/** Connections and their state, for the screens */
 	connections = $state.raw<readonly ConnectionState[]>([]);
+	/** Why syncing with a device failed last, by device id (until a round with it succeeds); kept after it disconnected */
+	problems = $state.raw<Readonly<Record<string, string>>>({});
 	#stopListening: () => void;
 
 	/**
@@ -65,7 +67,7 @@ export class SyncManager {
 	 * side (phones connect over WebRTC). Returns the function to call with each received message,
 	 * and the one to call when the connection closed.
 	 */
-	attach(connection: SyncConnection, peerIsPhone: boolean): { receive: (text: string) => void; closed: () => void } {
+	attach(connection: SyncConnection, peerIsPhone: boolean, hooks: { synced?: () => void } = {}): { receive: (text: string) => void; closed: () => void } {
 		const self = this.#self();
 		const attached: Attached = {
 			connection,
@@ -78,10 +80,13 @@ export class SyncManager {
 				send: (message) => connection.send(JSON.stringify(message)),
 				onSynced: (report) => {
 					this.#update(attached, { peer: report.peer, lastSync: Date.now(), error: null });
+					this.#problem(connection.peerId, null);
+					hooks.synced?.();
 					if (totalChanges(report.changes) > 0) this.#report(report);
 				},
 				onFailed: (error) => {
 					this.#update(attached, { error: error.message });
+					this.#problem(connection.peerId, error.message);
 					connection.close();
 				},
 			}),
@@ -95,13 +100,17 @@ export class SyncManager {
 				try {
 					message = JSON.parse(text);
 				} catch (e) {
-					this.#update(attached, { error: `Unreadable message: ${errorMessage(e)}` });
+					const message = `The other device sent an unreadable message (${errorMessage(e)}).`;
+					this.#update(attached, { error: message });
+					this.#problem(connection.peerId, message);
+					attached.session.close();
 					connection.close();
 					return;
 				}
 				attached.session.receive(message);
 			},
 			closed: () => {
+				attached.session.close();
 				this.#attached.delete(attached);
 				this.#publish();
 			},
@@ -113,13 +122,27 @@ export class SyncManager {
 		this.#publish();
 	}
 
+	#problem(peerId: string, message: string | null): void {
+		if ((this.problems[peerId] ?? null) === message) return;
+		const { [peerId]: _, ...others } = this.problems;
+		this.problems = message === null ? others : { ...others, [peerId]: message };
+	}
+
+	/** Forgets a device's problem (it was unpaired) */
+	forgetProblem(peerId: string): void {
+		this.#problem(peerId, null);
+	}
+
 	#publish(): void {
 		this.connections = [...this.#attached].map((a) => a.state);
 	}
 
 	stop(): void {
 		this.#stopListening();
-		for (const a of this.#attached) a.connection.close();
+		for (const a of this.#attached) {
+			a.session.close();
+			a.connection.close();
+		}
 		this.#attached.clear();
 		this.#publish();
 	}

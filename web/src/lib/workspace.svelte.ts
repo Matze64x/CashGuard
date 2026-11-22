@@ -29,7 +29,7 @@ import * as desktop from './desktop';
 import { errorMessage } from './errors';
 import { saveFile } from './files';
 import { settings } from './settings.svelte';
-import { deleteBase, loadBase, loadWorkspace, requestPersistentStorage, saveWorkspace, watchWorkspace, type StoredBaseText, type StoredSnapshot } from './storage';
+import { deleteBase, loadBase, loadWorkspace, requestPersistentStorage, saveWorkspace, StaleWorkspaceError, watchWorkspace, type StoredBaseText, type StoredSnapshot } from './storage';
 
 const DEFAULT_FILE_NAME = 'cashguard.json';
 /** How long the backup waits after a change, so a burst of edits writes it once */
@@ -127,10 +127,13 @@ export class Workspace implements SyncStore {
 	/** The bases loaded so far (see `core/peer-sync.ts`), by peer; null: none stored */
 	#bases = new Map<string, StoredBase | null>();
 	#listeners = new Set<ChangeListener>();
+	/** The stored revision this tab loaded or saved last (see `saveWorkspace`) */
+	#savedRevision = 0;
 
 	/** Loads the stored data. Throws if storage is unavailable or the data is damaged. */
 	async load(): Promise<void> {
 		const stored = await loadWorkspace();
+		this.#savedRevision = stored?.revision ?? 0;
 		if (stored) {
 			this.#current = fromStored(stored.current);
 			try {
@@ -147,16 +150,7 @@ export class Workspace implements SyncStore {
 	async start(): Promise<() => void> {
 		void requestPersistentStorage();
 		await this.load();
-		const stopWatchingTabs = watchWorkspace(() =>
-			this.#serial(async () => {
-				const before = this.#current.working;
-				await this.load();
-				// (another tab may have synced too)
-				this.#bases.clear();
-				this.revision++;
-				if (this.#current.working !== before) this.#emit(null);
-			}),
-		);
+		const stopWatchingTabs = watchWorkspace(() => this.#serial(() => this.#reload()));
 		let stopWatchingClose = () => {};
 		if (this.isDesktop) {
 			stopWatchingClose = await desktop.onWindowClose(() => this.flushBackup());
@@ -351,7 +345,12 @@ export class Workspace implements SyncStore {
 			const workingChanged = result.working !== before;
 			const baseChanged = result.base !== base;
 			if (workingChanged || baseChanged) {
-				const stored: StoredBaseText | null = result.base && { text: serialize(result.base.data), hash: result.base.hash };
+				const previous = result.base?.previous;
+				const stored: StoredBaseText | null = result.base && {
+					text: serialize(result.base.data),
+					hash: result.base.hash,
+					previous: previous ? { text: serialize(previous.data), hash: previous.hash } : null,
+				};
 				// a sync's change invalidates "undo import" like an edit does
 				await this.#commit({ ...this.#current, working: result.working }, workingChanged ? null : this.#beforeImport, baseChanged ? { peer, value: stored } : undefined, peer);
 				this.#bases.set(peer, result.base);
@@ -364,14 +363,28 @@ export class Workspace implements SyncStore {
 		const cached = this.#bases.get(peer);
 		if (cached !== undefined) return cached;
 		const stored = await loadBase(peer);
+		// a damaged or outdated base only means merging without one (nothing counts as deleted)
+		const read = (text: string, hash: string) => {
+			const result = parseCashGuard(text);
+			return result.ok && hashText(text) === hash ? { data: result.data, hash } : null;
+		};
 		let base: StoredBase | null = null;
 		if (stored) {
-			const result = parseCashGuard(stored.text);
-			// a damaged or outdated base only means merging without one (nothing counts as deleted)
-			if (result.ok && hashText(stored.text) === stored.hash) base = { data: result.data, hash: stored.hash };
+			const current = read(stored.text, stored.hash);
+			if (current) base = { ...current, previous: stored.previous ? read(stored.previous.text, stored.previous.hash) : null };
 		}
 		this.#bases.set(peer, base);
 		return base;
+	}
+
+	/** Reloads what another tab saved. Must run inside `#serial`. */
+	async #reload(): Promise<void> {
+		const before = this.#current.working;
+		await this.load();
+		// (another tab may have synced too)
+		this.#bases.clear();
+		this.revision++;
+		if (this.#current.working !== before) this.#emit(null);
 	}
 
 	/** Forgets what was last agreed on with a device (it was unpaired). */
@@ -382,8 +395,22 @@ export class Workspace implements SyncStore {
 		});
 	}
 
+	/**
+	 * Runs a task after the ones before it. If another tab saved in between (`StaleWorkspaceError`),
+	 * reloads its data and runs the task again on it, so neither tab's change is lost.
+	 */
 	#serial<T>(task: () => Promise<T>): Promise<T> {
-		const run = this.#queue.then(task, task);
+		const attempt = async (): Promise<T> => {
+			for (let tries = 1; ; tries++) {
+				try {
+					return await task();
+				} catch (e) {
+					if (!(e instanceof StaleWorkspaceError) || tries >= 3) throw e;
+					await this.#reload();
+				}
+			}
+		};
+		const run = this.#queue.then(attempt, attempt);
 		this.#queue = run.catch(() => undefined);
 		return run;
 	}
@@ -393,7 +420,7 @@ export class Workspace implements SyncStore {
 	 * other than an import or export (e.g. editing) must pass null, so undo can't discard it.
 	 */
 	async #commit(next: Snapshot, beforeImport: Snapshot | null, base?: { peer: string; value: StoredBaseText | null }, cause: string | null = null): Promise<void> {
-		await saveWorkspace({ current: toStored(next), beforeImport: beforeImport && toStored(beforeImport) }, base);
+		this.#savedRevision = await saveWorkspace({ current: toStored(next), beforeImport: beforeImport && toStored(beforeImport) }, this.#savedRevision, base);
 		const changed = next.working !== this.#current.working;
 		this.#current = next;
 		this.#beforeImport = beforeImport;

@@ -336,3 +336,29 @@ test('saving never overwrites a change made in another tab meanwhile', async ({ 
 	await expect(row(page, 'Changed in the other tab')).toBeVisible();
 	await expect(row(page, 'Changed here')).toHaveCount(0);
 });
+
+test('two tabs saving at the same time both keep their change', async ({ page, context }) => {
+	await importFixture(page);
+	// the second tab misses the first one's "saved" message (as when both save at once)
+	const other = await context.newPage();
+	await other.addInitScript(() => {
+		BroadcastChannel.prototype.addEventListener = () => undefined;
+	});
+	await other.goto('/');
+	await expect(other.getByText('46 transactions')).toBeVisible();
+
+	const add = async (p: Page, description: string) => {
+		await p.keyboard.press('n');
+		await p.keyboard.type(description);
+		await p.getByRole('dialog').getByLabel('Amount', { exact: true }).fill('1');
+		await p.keyboard.press('Enter');
+		await expect(p.getByRole('dialog')).toBeHidden();
+	};
+	await add(page, 'Added in the first tab');
+	// the second tab still shows the old data, but its save notices the first tab's and builds on it
+	await add(other, 'Added in the second tab');
+	await expect(other.getByText('48 transactions')).toBeVisible();
+	await expect(page.getByText('48 transactions')).toBeVisible();
+	await page.reload();
+	await expect(page.getByText('48 transactions')).toBeVisible();
+});

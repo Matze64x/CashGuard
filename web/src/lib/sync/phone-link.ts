@@ -12,6 +12,8 @@ import type { PcAddress } from './pairing-code';
 /** Messages carry the whole data (about 5 MB at 20 000 transactions) */
 const MESSAGE_LIMIT = 256 * 1024 * 1024;
 const CONNECT_TIMEOUT_MS = 15_000;
+/** A connection that stays "disconnected" this long counts as lost (the PC may have dropped it) */
+const DISCONNECTED_MS = 5_000;
 /** Send more frames only while less than this is waiting in the browser's buffer */
 const HIGH_WATER = 1024 * 1024;
 const LOW_WATER = 256 * 1024;
@@ -24,8 +26,10 @@ export interface PcLink {
 	readonly reply: Reply & { t: 'ok' };
 	send(text: string): void;
 	close(): void;
-	/** Set these right away; messages received before are kept until then */
+	readonly closed: boolean;
+	/** Messages received before this is set are kept until then */
 	onMessage: ((text: string) => void) | null;
+	/** Called once when the connection ends (right away if it already did) */
 	onClose: (() => void) | null;
 }
 
@@ -78,6 +82,8 @@ export async function connectToPc(pc: PcAddress, first: FirstMessage): Promise<P
 	/** Messages that arrive before a handler is set */
 	const early: string[] = [];
 	let messageHandler: ((text: string) => void) | null = null;
+	let closeHandler: (() => void) | null = null;
+	let disconnectedTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const link: PcLink = {
 		reply: undefined as never,
@@ -89,6 +95,9 @@ export async function connectToPc(pc: PcAddress, first: FirstMessage): Promise<P
 		close() {
 			shutdown();
 		},
+		get closed() {
+			return closed;
+		},
 		get onMessage() {
 			return messageHandler;
 		},
@@ -96,7 +105,13 @@ export async function connectToPc(pc: PcAddress, first: FirstMessage): Promise<P
 			messageHandler = handler;
 			if (handler) for (const m of early.splice(0)) handler(m);
 		},
-		onClose: null,
+		get onClose() {
+			return closeHandler;
+		},
+		set onClose(handler) {
+			closeHandler = handler;
+			if (handler && closed && authenticated) handler();
+		},
 	};
 
 	function pump() {
@@ -106,16 +121,21 @@ export async function connectToPc(pc: PcAddress, first: FirstMessage): Promise<P
 	function shutdown() {
 		if (closed) return;
 		closed = true;
+		clearTimeout(disconnectedTimer);
 		replyReject?.(new LinkError('The connection closed.'));
 		channel.close();
 		peer.close();
-		if (authenticated) link.onClose?.();
+		if (authenticated) closeHandler?.();
 	}
 
 	channel.onbufferedamountlow = pump;
 	channel.onclose = shutdown;
 	peer.onconnectionstatechange = () => {
-		if (peer.connectionState === 'failed' || peer.connectionState === 'closed') shutdown();
+		const state = peer.connectionState;
+		if (state === 'failed' || state === 'closed') return shutdown();
+		clearTimeout(disconnectedTimer);
+		// (it may recover by itself; if not, it's gone: reconnecting is quicker than waiting)
+		if (state === 'disconnected') disconnectedTimer = setTimeout(shutdown, DISCONNECTED_MS);
 	};
 	channel.onmessage = (event) => {
 		if (typeof event.data !== 'string') return shutdown();

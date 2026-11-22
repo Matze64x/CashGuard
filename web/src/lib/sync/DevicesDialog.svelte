@@ -17,8 +17,19 @@
 	const phone = $derived(sync instanceof DesktopSync ? null : sync);
 	const connected = $derived(new Set(sync.manager.connections.map((c) => c.peerId)));
 
-	// svelte-ignore state_referenced_locally
-	let name = $state(desktop ? (desktop.info?.name ?? '') : (phone?.device?.name ?? ''));
+	const savedName = $derived(desktop ? (desktop.info?.name ?? '') : (phone?.device?.name ?? ''));
+	let name = $state('');
+	let nameShown = false;
+	// fills the field once the name is known (the desktop side may still be starting)
+	$effect(() => {
+		if (savedName && !nameShown) {
+			nameShown = true;
+			name = savedName;
+		}
+	});
+	/** Changing devices is only possible in the tab that syncs (phones and browsers) */
+	const canChange = $derived(desktop !== null || (phone?.canChange ?? false));
+	const problems = $derived(sync.manager.problems);
 	let message = $state<string | null>(null);
 	let failure = $state<string | null>(null);
 	/** The device whose removal waits for a second click */
@@ -54,11 +65,22 @@
 	// ---- PC: show a pairing code
 	let qr = $state.raw<PairingQr | null>(null);
 	let left = $state(0);
+	/** The address the shown code holds */
+	let qrAddress: string | null = null;
+	// a code with an old address would lead nowhere
+	$effect(() => {
+		const address = desktop?.info?.address ?? null;
+		if (qr && address !== qrAddress) {
+			hideCode();
+			message = address ? 'This PC’s network address changed: show a new code.' : null;
+		}
+	});
 	let timer: ReturnType<typeof setInterval> | undefined;
 
 	function showCode() {
 		void act(async () => {
 			qr = await desktop!.startPairing();
+			qrAddress = desktop!.info?.address ?? null;
 			left = qr.seconds;
 			clearInterval(timer);
 			timer = setInterval(() => {
@@ -135,6 +157,7 @@
 							<span class="name">{p.name}</span>
 							<span class="state" class:on={connected.has(p.id)}>{connected.has(p.id) ? 'connected' : 'not connected'}</span>
 							<button type="button" class:danger={confirming === p.id} onclick={() => remove(p.id)}>{confirming === p.id ? 'Remove for good' : 'Remove'}</button>
+							{#if problems[p.id]}<p class="error small problem">{problems[p.id]}</p>{/if}
 						</li>
 					{/each}
 				</ul>
@@ -157,7 +180,7 @@
 			{/if}
 		{:else if phone}
 			<p class="muted" aria-live="polite">{STATUS[phone.status]}</p>
-			{#if phone.status === 'unreachable' && phone.problem}<p class="muted small">{phone.problem}</p>{/if}
+			{#if phone.status !== 'connected' && phone.status !== 'other-tab' && phone.problem}<p class="muted small">{phone.problem}</p>{/if}
 
 			<h3>PCs</h3>
 			{#if phone.pairings.length === 0}
@@ -168,13 +191,16 @@
 						<li>
 							<span class="name">{p.name}</span>
 							<span class="state" class:on={connected.has(p.pcId)}>{connected.has(p.pcId) ? 'connected' : 'not connected'}</span>
-							<button type="button" class:danger={confirming === p.pcId} onclick={() => remove(p.pcId)}>{confirming === p.pcId ? 'Remove for good' : 'Remove'}</button>
+							<button type="button" class:danger={confirming === p.pcId} disabled={!canChange} onclick={() => remove(p.pcId)}>{confirming === p.pcId ? 'Remove for good' : 'Remove'}</button>
+							{#if problems[p.pcId]}<p class="error small problem">{problems[p.pcId]}</p>{/if}
 						</li>
 					{/each}
 				</ul>
 			{/if}
 
-			{#if scanning}
+			{#if !canChange}
+				<p class="muted small">Pairing and renaming work in the tab that syncs.</p>
+			{:else if scanning}
 				<QrScanner accept={(text) => parsePairingCode(text) !== null} onfound={pairWith} />
 				<button type="button" onclick={() => (scanning = false)}>Cancel</button>
 			{:else}
@@ -204,8 +230,8 @@
 		<h3>This device</h3>
 		<form class="rename" onsubmit={rename}>
 			<label for="device-name">Name</label>
-			<input id="device-name" type="text" autocomplete="off" maxlength="64" bind:value={name} />
-			<button type="submit">Save</button>
+			<input id="device-name" type="text" autocomplete="off" maxlength="64" disabled={!canChange} bind:value={name} />
+			<button type="submit" disabled={!canChange}>Save</button>
 		</form>
 
 		<div class="buttons"><button type="button" class="primary" onclick={onclose}>Done</button></div>
@@ -230,8 +256,12 @@
 	}
 	li {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.75rem;
+		gap: 0.25rem 0.75rem;
+	}
+	.problem {
+		flex-basis: 100%;
 	}
 	.name {
 		flex: 1;

@@ -14,6 +14,9 @@
  *   the new base, atomically
  *
  * - The client sends its data only if it differs from the base (else the merger knows it).
+ * - The merger also keeps the base before (`previous`: the one the client last named) until the
+ *   client names the new one: if a result never arrives (connection lost, the client's save
+ *   failed), the client names the old base again, and the merge still knows what was deleted.
  * - If the base the client names isn't the merger's (one side lost or never had it), the merge
  *   runs without a base: nothing counts as deleted, both sides are combined. That errs towards
  *   keeping data. If the client sent no data then, the merger asks for it (`resend`).
@@ -53,6 +56,11 @@ export interface StoredBase {
 	readonly data: CashGuardData;
 	/** `hashText` of its file text */
 	readonly hash: string;
+	/**
+	 * Merger only: the base the client named last, kept until the client names this one (it may not
+	 * have received the result that made this one)
+	 */
+	readonly previous?: { readonly data: CashGuardData; readonly hash: string } | null;
 }
 
 /** The working copy and the bases, as the app stores them. */
@@ -155,6 +163,7 @@ export class PeerSession {
 	#peer: DeviceInfo | null = null;
 	#started = false;
 	#failed = false;
+	#closed = false;
 	#queue: Promise<void> = Promise.resolve();
 	/** Client: a round is under way (state sent, result not yet received) */
 	#inRound = false;
@@ -179,6 +188,11 @@ export class PeerSession {
 		this.#options.send({ type: 'hello', protocol: SYNC_PROTOCOL, format: FORMAT_VERSION, device: self });
 	}
 
+	/** The connection is gone: nothing more is handled (nor saved). */
+	close(): void {
+		this.#closed = true;
+	}
+
 	receive(message: SyncMessage): void {
 		// (introduce ourselves before answering anything, whatever the order of events)
 		this.start();
@@ -187,7 +201,7 @@ export class PeerSession {
 
 	/** This device's data changed (an edit, or another device): pass it on. */
 	localChanged(): void {
-		if (this.#failed || !this.#peer) return;
+		if (this.#failed || this.#closed || !this.#peer) return;
 		if (this.#options.merger) this.#options.send({ type: 'changed' });
 		else this.#queue = this.#queue.then(() => this.#startRound()).catch((e: unknown) => this.#fail(e instanceof Error ? e : new Error(String(e))));
 	}
@@ -200,7 +214,7 @@ export class PeerSession {
 	}
 
 	async #handle(message: SyncMessage): Promise<void> {
-		if (this.#failed) return;
+		if (this.#failed || this.#closed) return;
 		if (message.type === 'error') throw new RemoteError(`The other device stopped syncing: ${message.message}`);
 		if (message.type === 'hello') return this.#hello(message);
 		if (!this.#peer) throw new SyncError('The other device did not introduce itself.');
@@ -234,6 +248,7 @@ export class PeerSession {
 	// ---------------------------------------------------------------- client
 
 	async #startRound(): Promise<void> {
+		if (this.#closed) return;
 		if (this.#inRound) {
 			this.#again = true;
 			return;
@@ -258,7 +273,8 @@ export class PeerSession {
 		const result = data === null ? sent : parseData(data);
 		const base = baseOf(result);
 		if (base.hash !== hash) throw new SyncError("The other device's result didn't arrive intact.");
-		const report = await this.#options.store.transact(peer.id, (working) => {
+		const report = await this.#options.store.transact(peer.id, (working, stored) => {
+			if (this.#closed) return { working, base: stored, value: null };
 			// edits made here since the state was sent are merged on top of the result
 			const merged = working === sent ? null : merge(sent, working, result);
 			const next = merged ? merged.data : result;
@@ -269,6 +285,7 @@ export class PeerSession {
 				value: { changes: summarizeChanges(working, unchanged ? working : next), conflicts: merged ? conflictCount(merged) : 0, again: merged !== null && !sameData(next, result) },
 			};
 		});
+		if (report === null) return;
 		this.#inRound = false;
 		this.#sent = null;
 		this.#options.onSynced?.({ peer, changes: report.changes, conflicts: report.conflicts });
@@ -281,23 +298,28 @@ export class PeerSession {
 		const peer = this.#peer!;
 		const theirsSent = data === null ? null : parseData(data);
 		const outcome = await this.#options.store.transact(peer.id, (working, stored) => {
-			const base = stored !== null && baseHash !== null && stored.hash === baseHash ? stored : null;
+			// (closed meanwhile: don't save a base for a result nobody receives)
+			if (this.#closed) return { working, base: stored, value: undefined };
+			const base = baseHash === null || stored === null ? null : stored.hash === baseHash ? stored : stored.previous?.hash === baseHash ? stored.previous : null;
 			// "unchanged" only means something if we have the same base
 			if (theirsSent === null && base === null) return { working, base: stored, value: null };
 			const theirs = theirsSent ?? base!.data;
-			// nothing changed on either side since the base: nothing to merge
-			if (base !== null && sameData(theirs, base.data) && sameData(working, base.data)) {
+			// nothing changed on either side since the (current) base: nothing to merge
+			if (base !== null && base === stored && sameData(theirs, base.data) && sameData(working, base.data)) {
 				return { working, base: stored, value: { next: working, newBase: base, theirs, changes: summarizeChanges(working, working), conflicts: 0 } };
 			}
 			const merged = merge(base?.data ?? null, working, theirs);
 			const next = sameData(merged.data, working) ? working : merged.data;
-			const newBase = baseOf(next);
+			// until the client names the new base, the one it named is still the common one
+			const confirmed = base && { data: base.data, hash: base.hash };
+			const newBase: StoredBase = { ...baseOf(next), previous: confirmed && confirmed.hash !== hashOf(next) ? confirmed : null };
 			return {
 				working: next,
 				base: newBase,
 				value: { next, newBase, theirs, changes: summarizeChanges(working, next), conflicts: conflictCount(merged) },
 			};
 		});
+		if (outcome === undefined) return;
 		if (outcome === null) {
 			this.#options.send({ type: 'resend' });
 			return;

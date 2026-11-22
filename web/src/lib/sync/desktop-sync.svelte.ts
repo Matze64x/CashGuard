@@ -55,13 +55,19 @@ export class DesktopSync {
 	/** Listens for phones, then starts the endpoint. Returns the function that stops listening. */
 	async start(): Promise<() => void> {
 		const { listen } = await import('@tauri-apps/api/event');
+		// a phone may connect before `sync_start` answered (this PC's id isn't known yet): its events
+		// wait until then, in order
+		let waiting: (() => void)[] | null = [];
+		const inOrder = (handle: () => void) => (waiting ? waiting.push(handle) : handle());
 		const stops = await Promise.all([
-			listen<{ conn: number; phoneId: string; phoneName: string }>('sync-connected', ({ payload }) => this.#connected(payload.conn, payload.phoneId)),
-			listen<{ conn: number; text: string }>('sync-message', ({ payload }) => this.#connections.get(payload.conn)?.receive(payload.text)),
-			listen<number>('sync-closed', ({ payload }) => {
-				this.#connections.get(payload)?.closed();
-				this.#connections.delete(payload);
-			}),
+			listen<{ conn: number; phoneId: string; phoneName: string }>('sync-connected', ({ payload }) => inOrder(() => this.#connected(payload.conn, payload.phoneId))),
+			listen<{ conn: number; text: string }>('sync-message', ({ payload }) => inOrder(() => this.#connections.get(payload.conn)?.receive(payload.text))),
+			listen<number>('sync-closed', ({ payload }) =>
+				inOrder(() => {
+					this.#connections.get(payload)?.closed();
+					this.#connections.delete(payload);
+				}),
+			),
 			listen<{ phoneId: string; phoneName: string }>('sync-paired', ({ payload }) => {
 				void this.refreshPhones();
 				this.onPaired?.(payload.phoneName);
@@ -72,6 +78,8 @@ export class DesktopSync {
 		]);
 		try {
 			this.info = await invoke<DesktopInfo>('sync_start');
+			for (const handle of waiting.splice(0)) handle();
+			waiting = null;
 			await this.refreshPhones();
 		} catch (e) {
 			this.problem = e instanceof Error ? e.message : String(e);
@@ -111,6 +119,7 @@ export class DesktopSync {
 	/** Unpairs a phone: it can't connect any more until it's paired again. */
 	async forget(phoneId: string): Promise<void> {
 		await invoke('sync_forget', { phoneId });
+		this.manager.forgetProblem(phoneId);
 		await this.#workspace.forgetPeer(phoneId);
 		await this.refreshPhones();
 	}

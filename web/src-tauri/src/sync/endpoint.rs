@@ -17,6 +17,7 @@ use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -30,8 +31,18 @@ use str0m::{Candidate, Event as RtcEvent, IceConnectionState, IceCreds, Input, O
 use super::framing::{split, Reassembler};
 use super::state::{constant_time_eq, random_hex, sha256_hex, Phone, SyncState};
 
-/// Connection attempts served at once (more are ignored until one ends)
+/// Connections served at once (more are ignored until one ends)
 const MAX_SESSIONS: usize = 16;
+/// Of those, the ones not authenticated yet (so strangers can't crowd out paired phones)
+const MAX_PENDING: usize = 8;
+/// A phone's ICE ufrag whose session ended isn't served again for this long: the browser's checks
+/// would revive the ICE side alone, without DTLS, and the phone would think it's still connected
+/// (it reconnects with a new ufrag instead)
+const ENDED_UFRAG_TIME: Duration = Duration::from_secs(120);
+
+/// Connection numbers, unique for the whole run of the app (the endpoint restarts when the address
+/// changes, and the window may still send to an old connection's number)
+static NEXT_CONN: AtomicU64 = AtomicU64::new(1);
 /// A phone must prove who it is within this time
 const AUTH_TIMEOUT: Duration = Duration::from_secs(15);
 /// The first message (the proof) is small
@@ -153,7 +164,8 @@ pub struct Endpoint {
     local: SocketAddr,
     config: EndpointConfig,
     sessions: Vec<Session>,
-    next_conn: u64,
+    /// ICE ufrags of ended sessions, and when they ended
+    ended: VecDeque<(String, Instant)>,
     pairing: Option<(String, Instant)>,
     events: Box<dyn Fn(EndpointEvent) + Send>,
 }
@@ -161,7 +173,7 @@ pub struct Endpoint {
 impl Endpoint {
     pub fn new(socket: UdpSocket, config: EndpointConfig, events: Box<dyn Fn(EndpointEvent) + Send>) -> std::io::Result<Self> {
         let local = socket.local_addr()?;
-        Ok(Endpoint { socket, local, config, sessions: Vec::new(), next_conn: 1, pairing: None, events })
+        Ok(Endpoint { socket, local, config, sessions: Vec::new(), ended: VecDeque::new(), pairing: None, events })
     }
 
     /// Serves until `Command::Stop` or the command channel closes.
@@ -249,8 +261,8 @@ impl Endpoint {
             }
             match self.sessions.iter().position(|s| s.remote_ufrag == theirs && !s.dead) {
                 Some(i) => Some(i),
-                None if self.sessions.len() < MAX_SESSIONS => Some(self.start_session(theirs, now)),
-                None => None,
+                None if self.may_start(&theirs, now) => Some(self.start_session(theirs, now)),
+                None => return,
             }
         } else {
             None
@@ -261,10 +273,21 @@ impl Endpoint {
         let Some(i) = index else { return };
         if let Err(e) = self.sessions[i].rtc.handle_input(input) {
             log::debug!("sync connection {}: {e}", self.sessions[i].conn);
-            self.sessions[i].dead = true;
+            // (a bad packet, perhaps forged by someone else, mustn't end a working connection)
+            if !self.sessions[i].rtc.is_alive() {
+                self.sessions[i].dead = true;
+            }
         }
         self.drive(i);
         self.reap();
+    }
+
+    fn may_start(&mut self, remote_ufrag: &str, now: Instant) -> bool {
+        while self.ended.front().is_some_and(|(_, at)| now.duration_since(*at) > ENDED_UFRAG_TIME) {
+            self.ended.pop_front();
+        }
+        let pending = self.sessions.iter().filter(|s| s.phone.is_none()).count();
+        self.sessions.len() < MAX_SESSIONS && pending < MAX_PENDING && !self.ended.iter().any(|(u, _)| u == remote_ufrag)
     }
 
     fn start_session(&mut self, remote_ufrag: String, now: Instant) -> usize {
@@ -285,8 +308,7 @@ impl Endpoint {
         api.start_dtls(false).expect("DTLS starts once");
         api.start_sctp(false);
         let cid = api.create_data_channel(ChannelConfig { label: "cashguard".into(), negotiated: Some(0), ..Default::default() });
-        let conn = self.next_conn;
-        self.next_conn += 1;
+        let conn = NEXT_CONN.fetch_add(1, Ordering::Relaxed);
         self.sessions.push(Session {
             conn,
             rtc,
@@ -460,11 +482,14 @@ impl Endpoint {
     /// Removes finished sessions, telling the window about authenticated ones.
     fn reap(&mut self) {
         let events = &self.events;
+        let ended = &mut self.ended;
+        let now = Instant::now();
         self.sessions.retain_mut(|s| {
             if !s.dead {
                 return true;
             }
             s.rtc.disconnect();
+            ended.push_back((std::mem::take(&mut s.remote_ufrag), now));
             if s.phone.is_some() {
                 events(EndpointEvent::Closed { conn: s.conn });
             }
@@ -711,6 +736,35 @@ mod tests {
         // nothing ever connected
         std::thread::sleep(Duration::from_millis(200));
         assert!(server.events.try_iter().all(|e| !matches!(e, EndpointEvent::Connected { .. })));
+    }
+
+    #[test]
+    fn strangers_and_ended_connections_are_limited() {
+        crypto();
+        let cert = str0m::crypto::from_feature_flags().dtls_provider.generate_certificate().unwrap();
+        let state = Arc::new(Mutex::new(serde_json::from_value::<SyncState>(serde_json::json!({
+            "deviceId": "00000000000000aa", "name": "Test PC", "certificate": "00", "privateKey": "00",
+            "iceUfrag": "pcufrag1", "icePass": "pcpassword-0123456789ab", "port": 0, "phones": []
+        })).unwrap()));
+        let ice = IceCreds { ufrag: "pcufrag1".into(), pass: "pcpassword-0123456789ab".into() };
+        let config = EndpointConfig { cert, ice, device_id: "00000000000000aa".into(), state, save: Box::new(|_| Ok(())) };
+        let mut endpoint = Endpoint::new(UdpSocket::bind("127.0.0.1:0").unwrap(), config, Box::new(|_| {})).unwrap();
+        let now = Instant::now();
+        // unauthenticated connections are capped
+        for i in 0..MAX_PENDING {
+            assert!(endpoint.may_start(&format!("u{i}"), now));
+            endpoint.start_session(format!("u{i}"), now);
+        }
+        assert!(!endpoint.may_start("another", now));
+        // connection numbers never repeat
+        let conns: std::collections::HashSet<u64> = endpoint.sessions.iter().map(|s| s.conn).collect();
+        assert_eq!(conns.len(), MAX_PENDING);
+        // an ended connection's ufrag isn't served again for a while
+        endpoint.sessions[0].dead = true;
+        endpoint.reap();
+        assert!(endpoint.may_start("another", now));
+        assert!(!endpoint.may_start("u0", now));
+        assert!(endpoint.may_start("u0", now + ENDED_UFRAG_TIME + Duration::from_secs(1)));
     }
 
     #[test]

@@ -13,6 +13,15 @@ export interface StoredWorkspace {
 	readonly current: StoredSnapshot;
 	/** The state before the last import, to undo it */
 	readonly beforeImport: StoredSnapshot | null;
+	/** Counts the saves, so a tab can tell that another one saved since it loaded (missing: 0) */
+	readonly revision?: number;
+}
+
+/** Another tab saved the workspace since this one loaded it: reload and try again. */
+export class StaleWorkspaceError extends Error {
+	constructor() {
+		super('Another tab changed the data at the same time. Please try again.');
+	}
 }
 
 const KEY = 'cashguard-workspace-v2';
@@ -25,6 +34,8 @@ const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastCh
 export interface StoredBaseText {
 	readonly text: string;
 	readonly hash: string;
+	/** The merger's base before this one, until the other device confirms this one */
+	readonly previous?: { readonly text: string; readonly hash: string } | null;
 }
 
 const baseKey = (peer: string) => `cashguard-base-v1:${peer}`;
@@ -39,19 +50,34 @@ export async function loadBase(peer: string): Promise<StoredBaseText | undefined
 
 /**
  * Saves the workspace and, if given, another device's base (null: delete it) in one transaction:
- * either both are saved or neither. Tells other open tabs, so they reload instead of overwriting
- * it later.
+ * either both are saved or neither. `revision` is the one this tab loaded or saved last: if another
+ * tab saved since, nothing is saved and it throws `StaleWorkspaceError` (else one tab's save would
+ * silently overwrite the other's). Returns the new revision. Tells other open tabs, so they reload.
  */
-export async function saveWorkspace(workspace: StoredWorkspace, base?: { peer: string; value: StoredBaseText | null }): Promise<void> {
+export async function saveWorkspace(workspace: Omit<StoredWorkspace, 'revision'>, revision: number, base?: { peer: string; value: StoredBaseText | null }): Promise<number> {
+	/** Why the transaction was aborted here (else the browser reports only "aborted") */
+	let failure: unknown = null;
 	await store('readwrite', (s) => {
-		s.put(workspace, KEY);
-		if (base) {
-			if (base.value) s.put(base.value, baseKey(base.peer));
-			else s.delete(baseKey(base.peer));
-		}
-		return promisifyRequest(s.transaction);
+		const request = s.get(KEY);
+		request.onsuccess = () => {
+			try {
+				if (((request.result as StoredWorkspace | undefined)?.revision ?? 0) !== revision) throw new StaleWorkspaceError();
+				s.put({ ...workspace, revision: revision + 1 } satisfies StoredWorkspace, KEY);
+				if (base) {
+					if (base.value) s.put(base.value, baseKey(base.peer));
+					else s.delete(baseKey(base.peer));
+				}
+			} catch (e) {
+				failure = e;
+				s.transaction.abort();
+			}
+		};
+		return promisifyRequest(s.transaction).catch((e: unknown) => {
+			throw failure ?? e;
+		});
 	});
 	channel?.postMessage('saved');
+	return revision + 1;
 }
 
 /** Forgets another device's base (when it's unpaired). */

@@ -72,10 +72,13 @@
 	/** The header's sync status: short, and only what matters */
 	const syncLabel = $derived.by(() => {
 		const connections = sync.manager.connections.length;
-		if (sync instanceof DesktopSync) return connections > 0 ? `${connections} connected` : 'Devices';
+		const failing = Object.keys(sync.manager.problems).length > 0;
+		if (sync instanceof DesktopSync) return connections > 0 ? `${connections} connected` : failing ? 'Sync problem' : 'Devices';
+		if (sync.status !== 'connected' && failing) return 'Sync problem';
 		switch (sync.status) {
 			case 'connected':
-				return 'Synced';
+				// (connected, but the first round may still be under way)
+				return sync.manager.connections.some((c) => c.lastSync !== null) ? 'Synced' : 'Connecting…';
 			case 'connecting':
 				return 'Connecting…';
 			case 'unreachable':

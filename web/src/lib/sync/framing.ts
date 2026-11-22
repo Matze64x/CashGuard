@@ -35,7 +35,7 @@ export class FrameError extends Error {}
 
 /** Puts frames back together, refusing messages larger than `limit` UTF-8 bytes. */
 export class Reassembler {
-	#parts: string[] = [];
+	#text = '';
 	#bytes = 0;
 
 	constructor(private readonly limit: number) {}
@@ -47,10 +47,10 @@ export class Reassembler {
 		const payload = frame.slice(1);
 		this.#bytes += encoder.encode(payload).length;
 		if (this.#bytes > this.limit) throw new FrameError('Message too large.');
-		this.#parts.push(payload);
+		this.#text += payload;
 		if (flag === '+') return null;
-		const message = this.#parts.join('');
-		this.#parts = [];
+		const message = this.#text;
+		this.#text = '';
 		this.#bytes = 0;
 		return message;
 	}

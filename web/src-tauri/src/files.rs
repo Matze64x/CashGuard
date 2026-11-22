@@ -26,16 +26,35 @@ fn split(path: &Path) -> std::io::Result<(PathBuf, OsString)> {
 
 /// Atomically replaces (or creates) the file, keeping an existing file's permissions.
 pub fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
+    write_atomic_with(path, contents, false)
+}
+
+/// Like `write_atomic`, for a file only this user may read (e.g. one holding a key): on Unix it's
+/// readable by the owner only from the start, not just after it was written.
+pub fn write_private(path: &Path, contents: &str) -> std::io::Result<()> {
+    write_atomic_with(path, contents, true)
+}
+
+fn write_atomic_with(path: &Path, contents: &str, private: bool) -> std::io::Result<()> {
     let path = resolve(path);
     let (dir, name) = split(&path)?;
     // the process id makes the name unique per app instance; the app writes one file at a time
     let tmp = dir.join(format!(".{}.tmp{}", name.to_string_lossy(), std::process::id()));
     let result = (|| {
-        let mut file = fs::File::create(&tmp)?;
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        if private {
+            use std::os::unix::fs::OpenOptionsExt;
+            // (a leftover temp file keeps its mode: remove it first)
+            let _ = fs::remove_file(&tmp);
+            options.mode(0o600);
+        }
+        let mut file = options.open(&tmp)?;
         file.write_all(contents.as_bytes())?;
         file.sync_all()?;
         drop(file);
-        if let Ok(metadata) = fs::metadata(&path) {
+        if !private && let Ok(metadata) = fs::metadata(&path) {
             fs::set_permissions(&tmp, metadata.permissions())?;
         }
         fs::rename(&tmp, &path)

@@ -147,6 +147,16 @@ fn start_endpoint(app: &AppHandle, inner: &mut Inner) -> Option<SocketAddr> {
     };
     let socket = (0..PORT_TRIES).find_map(|i| UdpSocket::bind(SocketAddr::new(ip, port.wrapping_add(i))).ok())?;
     let address = socket.local_addr().ok()?;
+    // phones paired from now on know this port: keep it (also for when the usual one is free again)
+    if address.port() != port {
+        let mut s = inner.state.lock().unwrap();
+        let mut next = s.clone();
+        next.port = address.port();
+        match next.save(&inner.path) {
+            Ok(()) => *s = next,
+            Err(e) => log::warn!("can't save the sync port: {e}"),
+        }
+    }
     let path = inner.path.clone();
     let config = EndpointConfig {
         cert: inner.cert.clone(),
@@ -209,7 +219,9 @@ pub fn sync_start(app: AppHandle, service: State<'_, SyncService>) -> Result<Syn
             if inner.generation != generation {
                 return;
             }
-            if lan_ip() != current.map(|a| a.ip()) {
+            // (also if the endpoint stopped, e.g. it panicked)
+            let stopped = inner.running.as_ref().is_some_and(|r| r.thread.as_ref().is_none_or(|t| t.is_finished()));
+            if stopped || lan_ip() != current.map(|a| a.ip()) {
                 current = start_endpoint(&watcher, inner);
                 let _ = watcher.emit("sync-address", current.map(|a| a.to_string()));
             }
@@ -237,9 +249,9 @@ pub fn sync_pairing_start(service: State<'_, SyncService>) -> Result<PairingCode
             (s.ice_ufrag.clone(), s.ice_pass.clone(), s.device_id.clone())
         };
         let payload = format!("CG1|{}|{}|{}|{}|{}|{}|{}", address.ip(), address.port(), ufrag, pass, inner.fingerprint, secret, id);
-        send(inner, Command::Pairing(Some((secret, Instant::now() + PAIRING_TIME))));
         let code = QrCode::new(payload.as_bytes()).map_err(|e| e.to_string())?;
         let svg = code.render::<svg::Color>().min_dimensions(240, 240).quiet_zone(true).build();
+        send(inner, Command::Pairing(Some((secret, Instant::now() + PAIRING_TIME))));
         Ok(PairingCode { payload, svg, seconds: PAIRING_TIME.as_secs() })
     })
 }
