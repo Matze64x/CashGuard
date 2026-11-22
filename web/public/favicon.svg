@@ -7,15 +7,18 @@
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="#000"/>
-  <path d="M256 84 L392 134 V252 C392 340 334 400 256 432 C178 400 120 340 120 252 V134 Z" fill="url(#shield)"/>
-  <g transform="rotate(-10 248 220)">
-    <rect x="150" y="164" width="196" height="112" rx="14" fill="#fff" stroke="#0E4F5E" stroke-width="10"/>
-    <circle cx="248" cy="220" r="30" fill="#0E4F5E"/>
-  </g>
-  <g fill="#fff" stroke="#0E4F5E" stroke-width="10" stroke-linejoin="round">
-    <path d="M236 306 V330 A64 21 0 0 0 364 330 V306 Z"/>
-    <ellipse cx="300" cy="306" rx="64" ry="21"/>
-    <path d="M236 266 V290 A64 21 0 0 0 364 290 V266 Z"/>
-    <ellipse cx="300" cy="266" rx="64" ry="21"/>
+  <!-- scaled up a little around the center: a smaller margin to the tile -->
+  <g transform="translate(256 256) scale(1.24) translate(-256 -256)">
+    <path d="M256 84 L408 136 V252 C408 342 340 402 256 434 C172 402 104 342 104 252 V136 Z" fill="url(#shield)"/>
+    <g transform="rotate(-10 248 220)">
+      <rect x="150" y="164" width="196" height="112" rx="14" fill="#fff" stroke="#0E4F5E" stroke-width="10"/>
+      <circle cx="248" cy="220" r="30" fill="#0E4F5E"/>
+    </g>
+    <g fill="#fff" stroke="#0E4F5E" stroke-width="10" stroke-linejoin="round">
+      <path d="M236 306 V330 A64 21 0 0 0 364 330 V306 Z"/>
+      <ellipse cx="300" cy="306" rx="64" ry="21"/>
+      <path d="M236 266 V290 A64 21 0 0 0 364 290 V266 Z"/>
+      <ellipse cx="300" cy="266" rx="64" ry="21"/>
+    </g>
   </g>
 </svg>

@@ -7,23 +7,26 @@
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="#000"/>
-  <!-- the shield -->
-  <path d="M256 84 L392 134 V252 C392 340 334 400 256 432 C178 400 120 340 120 252 V134 Z" fill="url(#shield)"/>
-  <!-- a bill, tilted -->
-  <g transform="rotate(-10 248 220)">
-    <rect x="150" y="164" width="196" height="112" rx="12" fill="#fff" stroke="#0E4F5E" stroke-width="6"/>
-    <rect x="162" y="176" width="172" height="88" rx="6" fill="none" stroke="#0E4F5E" stroke-width="4" stroke-opacity=".45"/>
-    <circle cx="180" cy="220" r="7" fill="#0E4F5E" fill-opacity=".6"/>
-    <circle cx="316" cy="220" r="7" fill="#0E4F5E" fill-opacity=".6"/>
-    <circle cx="248" cy="220" r="27" fill="#0E4F5E"/>
-  </g>
-  <!-- a stack of three coins in front -->
-  <g fill="#fff" stroke="#0E4F5E" stroke-width="6" stroke-linejoin="round">
-    <path d="M240 312 V332 A60 19 0 0 0 360 332 V312 Z"/>
-    <ellipse cx="300" cy="312" rx="60" ry="19"/>
-    <path d="M240 282 V302 A60 19 0 0 0 360 302 V282 Z"/>
-    <ellipse cx="300" cy="282" rx="60" ry="19"/>
-    <path d="M240 252 V272 A60 19 0 0 0 360 272 V252 Z"/>
-    <ellipse cx="300" cy="252" rx="60" ry="19"/>
+  <!-- scaled up a little around the center: a smaller margin to the tile -->
+  <g transform="translate(256 256) scale(1.24) translate(-256 -256)">
+    <!-- the shield -->
+    <path d="M256 84 L408 136 V252 C408 342 340 402 256 434 C172 402 104 342 104 252 V136 Z" fill="url(#shield)"/>
+    <!-- a bill, tilted -->
+    <g transform="rotate(-10 248 220)">
+      <rect x="150" y="164" width="196" height="112" rx="12" fill="#fff" stroke="#0E4F5E" stroke-width="6"/>
+      <rect x="162" y="176" width="172" height="88" rx="6" fill="none" stroke="#0E4F5E" stroke-width="4" stroke-opacity=".45"/>
+      <circle cx="180" cy="220" r="7" fill="#0E4F5E" fill-opacity=".6"/>
+      <circle cx="316" cy="220" r="7" fill="#0E4F5E" fill-opacity=".6"/>
+      <circle cx="248" cy="220" r="27" fill="#0E4F5E"/>
+    </g>
+    <!-- a stack of three coins in front -->
+    <g fill="#fff" stroke="#0E4F5E" stroke-width="6" stroke-linejoin="round">
+      <path d="M240 312 V332 A60 19 0 0 0 360 332 V312 Z"/>
+      <ellipse cx="300" cy="312" rx="60" ry="19"/>
+      <path d="M240 282 V302 A60 19 0 0 0 360 302 V282 Z"/>
+      <ellipse cx="300" cy="282" rx="60" ry="19"/>
+      <path d="M240 252 V272 A60 19 0 0 0 360 272 V252 Z"/>
+      <ellipse cx="300" cy="252" rx="60" ry="19"/>
+    </g>
   </g>
 </svg>
