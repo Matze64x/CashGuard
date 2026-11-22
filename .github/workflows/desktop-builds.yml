@@ -1,7 +1,8 @@
 # Builds the desktop app's packages, by hand only (Actions tab -> "Desktop builds" -> Run workflow).
 # The packages are attached to the run as artifacts (kept 30 days):
-#   Linux:   .deb, and the portable version (.tar.gz: the program + CashGuard-data folder); both
-#            use the system's WebKitGTK 4.1 (most desktops have it; else install it)
+#   Linux:   an installer for the current user (-install.sh: program, menu entry and icons under
+#            ~/.local; run with sh), .deb, and the portable version (.tar.gz: the program +
+#            CashGuard-data folder); all use the system's WebKitGTK 4.1 (most desktops have it)
 #   Windows: installer (-setup.exe, no admin rights needed), and the portable version (.zip:
 #            CashGuard.exe + CashGuard-data folder; needs the WebView2 runtime, which Windows 10
 #            and 11 have)
@@ -38,12 +39,15 @@ jobs:
         working-directory: web
       - run: sh scripts/package-portable.sh
         working-directory: web
+      - run: sh scripts/package-installer.sh
+        working-directory: web
       - uses: actions/upload-artifact@v7
         with:
           name: cashguard-linux
           path: |
             web/src-tauri/target/release/bundle/deb/*.deb
             web/src-tauri/target/release/bundle/portable/*.tar.gz
+            web/src-tauri/target/release/bundle/installer/*.sh
           retention-days: 30
 
   windows:
