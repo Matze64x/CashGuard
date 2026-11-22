@@ -9,6 +9,7 @@
 	first; the wheel, pinching or the slider zoom.
 -->
 <script lang="ts">
+	import { touchFirst } from '../pointer';
 	import type { EChartsType } from 'echarts/core';
 	import { untrack } from 'svelte';
 	import {
@@ -369,7 +370,7 @@
 	{:else}
 		<span class="legend">
 			{side === 'expense' ? 'Expenses' : 'Income'}
-			{stacks?.more ? `of the ${TOP_CATEGORIES} largest categories` : 'by category'}{filter.current.categories.length === 1 ? '' : '; click one to show only it'}
+			{stacks?.more ? `of the ${TOP_CATEGORIES} largest categories` : 'by category'}{filter.current.categories.length === 1 ? '' : `; ${touchFirst ? 'tap' : 'click'} one to show only it`}
 		</span>
 	{/if}
 </div>
@@ -378,7 +379,7 @@
 	<Chart {option} {onready} />
 </div>
 <p class="hint">
-	Click a month to show it, Shift+click for several. Zoom with the wheel or the slider.{current && (stacks ? stacks.estimate : estimate) ? ' Dashed: where this month is heading.' : ''}
+	{touchFirst ? 'Tap a month to show it. Pinch or use the slider to zoom.' : 'Click a month to show it, Shift+click for several. Zoom with the wheel or the slider.'}{current && (stacks ? stacks.estimate : estimate) ? ' Dashed: where this month is heading.' : ''}
 </p>
 {#if range.outside.length > 0}
 	<p class="outside" role="note">

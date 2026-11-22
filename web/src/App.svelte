@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { touchFirst } from './lib/pointer';
 	import { tick } from 'svelte';
 	import { clock } from './lib/clock.svelte';
 	import DueInbox from './lib/DueInbox.svelte';
@@ -254,7 +255,7 @@
 	</nav>
 	<div class="tools">
 		<button class="tab sync" title="Devices and syncing" onclick={() => (devicesOpen = true)}>{syncLabel}</button>
-		<button class="tab icon help" aria-label="Keyboard shortcuts" title="?" onclick={() => (shortcuts.helpOpen = true)}>?</button>
+		{#if !touchFirst}<button class="tab icon help" aria-label="Keyboard shortcuts" title="?" onclick={() => (shortcuts.helpOpen = true)}>?</button>{/if}
 		<button class="tab icon" aria-label="Settings" title={displayKeys('Mod+,')} onclick={() => (settingsOpen = true)}>
 			<svg viewBox="0 0 24 24" aria-hidden="true"
 				><path
@@ -305,7 +306,7 @@
 	{#each notices.list as n (n.id)}
 		<p class="notice" class:error={n.error} role={n.error ? 'alert' : 'status'}>
 			<span>{n.text}</span>
-			{#if n.undo && workspace.undoLabel}<button class="link" onclick={undo}>Undo <kbd>{displayKeys('Mod+z')}</kbd></button>{/if}
+			{#if n.undo && workspace.undoLabel}<button class="link" onclick={undo}>Undo{#if !touchFirst} <kbd>{displayKeys('Mod+z')}</kbd>{/if}</button>{/if}
 			<button class="dismiss" aria-label="Dismiss" title="Dismiss" onclick={() => notices.dismiss(n.id)}>×</button>
 		</p>
 	{/each}

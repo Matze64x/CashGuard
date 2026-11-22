@@ -362,3 +362,21 @@ test('two tabs saving at the same time both keep their change', async ({ page, c
 	await page.reload();
 	await expect(page.getByText('48 transactions')).toBeVisible();
 });
+
+test('the editor can also delete or copy the transaction (for the mouse and touch screens)', async ({ page }) => {
+	await importFixture(page);
+	await page.keyboard.press('j');
+	await page.keyboard.press('Enter');
+	let editor = page.getByRole('dialog', { name: 'Edit transaction' });
+	const description = await editor.getByLabel('Description').inputValue();
+	await editor.getByRole('button', { name: 'Copy' }).click();
+	editor = page.getByRole('dialog', { name: 'New transaction (copy)' });
+	await expect(editor.getByLabel('Description')).toHaveValue(description);
+	await editor.getByRole('button', { name: 'Cancel' }).click();
+
+	await page.keyboard.press('Enter');
+	await page.getByRole('dialog', { name: 'Edit transaction' }).getByRole('button', { name: 'Delete' }).click();
+	await expect(page.getByText('45 transactions')).toBeVisible();
+	await page.keyboard.press(`${MOD}+z`);
+	await expect(page.getByText('46 transactions')).toBeVisible();
+});

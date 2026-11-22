@@ -1,7 +1,7 @@
 <!--
 	A keyboard-operated list (listbox): the focus stays on the list while j/k or the arrow keys
-	(PageUp/PageDown, Home/End) move the selection. A double click or the view's own shortcut (Enter)
-	opens a row. Without a selection, moving starts at the first row on screen, so nothing jumps.
+	(PageUp/PageDown, Home/End) move the selection. A double click, a tap on a touch screen or the
+	view's own shortcut (Enter) opens a row. Without a selection, moving starts at the first row on screen, so nothing jumps.
 	Showing the view (`active` becomes true) puts the focus into the list. Several lists in one view
 	(`shared`): their keys only apply while the list has the focus, and only the first takes it.
 	Only the rows on and near the screen are in the page (the list scrolls with the page): the
@@ -270,6 +270,9 @@
 		const k = (event.target as HTMLElement).closest('[data-key]')?.getAttribute('data-key');
 		return k == null ? undefined : items.find((item) => key(item) === k);
 	}
+
+	/** How the last click came about (mouse, touch, pen) */
+	let lastPointer = '';
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events (the keys are shortcuts, see the registry) -->
@@ -283,9 +286,13 @@
 	onfocus={() => {
 		if (selectedIndex < 0) move(1);
 	}}
+	onpointerdown={(e) => (lastPointer = e.pointerType)}
 	onclick={(e) => {
 		const item = itemAt(e);
-		if (item !== undefined) selected = key(item);
+		if (item === undefined) return;
+		selected = key(item);
+		// (a double tap is no gesture on phones: a tap opens the row there)
+		if (lastPointer === 'touch' || lastPointer === 'pen') onopen(item);
 	}}
 	ondblclick={(e) => {
 		const item = itemAt(e);

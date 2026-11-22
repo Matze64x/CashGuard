@@ -104,6 +104,20 @@ input[aria-invalid='true'] {
 	border-color: var(--negative);
 }
 
+/* destructive actions (delete) */
+button.danger {
+	color: var(--negative);
+	border-color: var(--negative);
+}
+
+/* a dialog's buttons for the item itself (delete, copy, …), apart from Cancel and Save */
+.buttons .item-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-right: auto;
+}
+
 kbd {
 	font: 0.85em ui-monospace, monospace;
 	border: 1px solid var(--control-border);

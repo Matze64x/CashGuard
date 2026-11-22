@@ -155,9 +155,16 @@
 			</ul>
 		</div>
 	</div>
+	<!-- (Escape closes it too; a touch screen needs a button) -->
+	<div class="close"><button type="button" onclick={onclose}>Close</button></div>
 </Modal>
 
 <style>
+	.close {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: 1rem;
+	}
 	.inbox {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 15rem;

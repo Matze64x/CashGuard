@@ -118,6 +118,13 @@
 		list.focus();
 	}
 
+	/** An action on the transaction being edited, from its editor: the editor closes first */
+	const fromEditor = (action: (t: Transaction) => unknown, t: Transaction) => () => {
+		close();
+		selectedId = t.id;
+		void action(t);
+	};
+
 	async function save(draft: TransactionDraft, another: boolean, account: Account | null) {
 		const target = editing;
 		// a second Enter while saving must not add the transaction twice
@@ -256,6 +263,8 @@
 			onclose={close}
 			{failure}
 			onmakerecurring={editing.id === null ? undefined : (template, edited) => void makeRecurring(template, edited)}
+			ondelete={editing.original && fromEditor(remove, editing.original)}
+			oncopy={editing.original && fromEditor(openCopy, editing.original)}
 		/>
 	{/key}
 {/if}

@@ -40,6 +40,8 @@
 		onsave,
 		onclose,
 		onmakerecurring,
+		ondelete,
+		oncopy,
 		failure = null,
 	}: {
 		data: CashGuardData;
@@ -55,6 +57,10 @@
 		onclose: () => void;
 		/** Offered for an existing transaction: a recurring transaction like it (`edited`: the transaction as in the form, to save first) */
 		onmakerecurring?: (template: RecurringDraft, edited: TransactionDraft) => void;
+		/** Offered for an existing transaction: deletes it (as stored, not as in the form) */
+		ondelete?: () => void;
+		/** Offered for an existing transaction: a new one like it */
+		oncopy?: () => void;
 		/** Why saving failed, shown in the form */
 		failure?: string | null;
 	} = $props();
@@ -246,7 +252,13 @@
 		{#if error ?? failure}<p class="error" role="alert">{error ?? failure}</p>{/if}
 
 		<div class="buttons">
-			{#if onmakerecurring}<button type="button" class="left" onclick={makeRecurring}>Make recurring…</button>{/if}
+			{#if ondelete || oncopy || onmakerecurring}
+				<div class="item-actions">
+					{#if ondelete}<button type="button" class="danger" onclick={ondelete}>Delete</button>{/if}
+					{#if oncopy}<button type="button" onclick={oncopy}>Copy</button>{/if}
+					{#if onmakerecurring}<button type="button" onclick={makeRecurring}>Make recurring…</button>{/if}
+				</div>
+			{/if}
 			<button type="button" onclick={onclose}>Cancel</button>
 			<button type="button" onclick={() => save(true)} title={displayKeys('Mod+Shift+Enter')}>Save and add another</button>
 			<button type="submit" class="primary" title={`Enter or ${displayKeys('Mod+Enter')}`}>Save</button>
@@ -330,9 +342,6 @@
 	}
 	.split {
 		margin: 1rem 0 0;
-	}
-	.buttons .left {
-		margin-right: auto;
 	}
 	.error {
 		color: var(--negative);

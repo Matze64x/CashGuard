@@ -4,6 +4,7 @@
 	ones happens in the inbox (d).
 -->
 <script lang="ts">
+	import { touchFirst } from './pointer';
 	import {
 		addRecurring,
 		deleteRecurring,
@@ -84,6 +85,13 @@
 		failure = null;
 		list.focus();
 	}
+
+	/** Deleting from the editor: it closes first */
+	const deleteEdited = (r: Recurring) => () => {
+		close();
+		selectedId = r.id;
+		void remove(r);
+	};
 
 	async function save(draft: RecurringDraft) {
 		const target = editing;
@@ -175,7 +183,7 @@
 </SelectableList>
 
 {#if dueCount > 0}
-	<p class="due-note">{plural(dueCount, 'occurrence is', 'occurrences are')} due. Press <kbd>d</kbd> to enter them.</p>
+	<p class="due-note">{plural(dueCount, 'occurrence is', 'occurrences are')} due.{#if !touchFirst} Press <kbd>d</kbd> to enter them.{/if}</p>
 {/if}
 
 {#if editing}
@@ -188,6 +196,7 @@
 		title={editing.id === null ? 'New recurring transaction' : 'Edit recurring transaction'}
 		onsave={(draft) => void save(draft)}
 		onclose={close}
+		ondelete={editing.original && deleteEdited(editing.original)}
 	/>
 {/if}
 

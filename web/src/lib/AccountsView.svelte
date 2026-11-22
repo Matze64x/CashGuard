@@ -77,6 +77,15 @@
 		if (saved) close();
 	}
 
+	/** Deleting from the editor: it closes first */
+	function deleteEdited() {
+		const id = editing?.original?.id;
+		close();
+		if (id === undefined) return;
+		selectedKey = id;
+		void remove(rows.find((r) => r.account.id === id));
+	}
+
 	async function remove(row: Row | undefined) {
 		if (!row) return;
 		const { account } = row;
@@ -156,6 +165,9 @@
 			<AmountInput id="account-amount" label="Current balance" bind:value={editing.amount} autofocus={editing.original !== null} />
 			{#if failure}<p class="error" role="alert">{failure}</p>{/if}
 			<div class="buttons">
+				{#if editing.original}
+					<div class="item-actions"><button type="button" class="danger" onclick={deleteEdited}>Delete</button></div>
+				{/if}
 				<button type="button" onclick={close}>Cancel</button>
 				<button type="submit" class="primary">Save</button>
 			</div>

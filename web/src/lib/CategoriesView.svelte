@@ -81,6 +81,16 @@
 		if (saved) close();
 	}
 
+	/** Deleting from the editor: it closes first */
+	function deleteEdited() {
+		const id = editing?.original?.id;
+		close();
+		const c = categories.find((x) => x.id === id);
+		if (!c) return;
+		selectedId = c.id;
+		void remove(c);
+	}
+
 	async function remove(c: Category | undefined) {
 		if (!c) return;
 		const use = usage.get(c.id);
@@ -147,6 +157,9 @@
 			<ColorPicker bind:value={editing.color} />
 			{#if failure}<p class="error" role="alert">{failure}</p>{/if}
 			<div class="buttons">
+				{#if editing.original}
+					<div class="item-actions"><button type="button" class="danger" onclick={deleteEdited}>Delete</button></div>
+				{/if}
 				<button type="button" onclick={close}>Cancel</button>
 				<button type="submit" class="primary">Save</button>
 			</div>

@@ -8,6 +8,7 @@
 	the breakdown.
 -->
 <script lang="ts">
+	import { touchFirst } from './pointer';
 	import { addMonths, categoryTotalsOverTime, chartPeriod, monthOf, monthsBetween, ofSide, projection, projectionBasis, yearOf, type Cents, type CivilDate, type Id, type Side, type Transaction } from '../core';
 	import { clock } from './clock.svelte';
 	import { formatEuro, formatMonth } from './display';
@@ -152,7 +153,7 @@
 	<Segmented bind:value={unit} options={UNITS} label="Months or years" />
 </div>
 <p class="hint">
-	Each line is scaled to its own highest amount; dotted: average{basis ? `, dashed: where this ${unit} is heading` : ''}. Click a category to show only it.
+	Each line is scaled to its own highest amount; dotted: average{basis ? `, dashed: where this ${unit} is heading` : ''}. {touchFirst ? 'Tap' : 'Click'} a category to show only it.
 </p>
 
 {#if trends.length === 0}

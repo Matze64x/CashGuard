@@ -37,6 +37,7 @@
 		failure = null,
 		onsave,
 		onclose,
+		ondelete,
 	}: {
 		data: CashGuardData;
 		initial: RecurringDraft;
@@ -49,6 +50,8 @@
 		failure?: string | null;
 		onsave: (draft: RecurringDraft) => void;
 		onclose: () => void;
+		/** Offered for an existing template: deletes it */
+		ondelete?: () => void;
 	} = $props();
 
 	// the form keeps its own copy; `initial` only seeds it
@@ -213,6 +216,7 @@
 		{#if error ?? failure}<p class="error" role="alert">{error ?? failure}</p>{/if}
 
 		<div class="buttons">
+			{#if ondelete}<div class="item-actions"><button type="button" class="danger" onclick={ondelete}>Delete</button></div>{/if}
 			<button type="button" onclick={onclose}>Cancel</button>
 			<button type="submit" class="primary" title="Enter">Save</button>
 		</div>
