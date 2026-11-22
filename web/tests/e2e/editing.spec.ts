@@ -409,3 +409,13 @@ test('the category picker shows colors and finds a category by typing', async ({
 	await expect(page.getByRole('dialog')).toBeVisible();
 	await expect(page.getByRole('dialog').getByLabel('Category')).toHaveValue('Restaurants & Cafés');
 });
+
+test('Cancel and Save stay together in one row, also when the dialog has more buttons', async ({ page }) => {
+	await importFixture(page);
+	await page.keyboard.press('j');
+	await page.keyboard.press('Enter');
+	const editor = page.getByRole('dialog', { name: 'Edit transaction' });
+	const top = async (name: string) => (await editor.getByRole('button', { name, exact: true }).boundingBox())!.y;
+	expect(await top('Cancel')).toBe(await top('Save'));
+	expect(await top('Save and add another')).toBe(await top('Save'));
+});

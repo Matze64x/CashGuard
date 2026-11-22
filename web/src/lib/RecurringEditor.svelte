@@ -215,8 +215,10 @@
 
 		<div class="buttons">
 			{#if ondelete}<div class="item-actions"><button type="button" class="danger" onclick={ondelete}>Delete</button></div>{/if}
-			<button type="button" onclick={onclose}>Cancel</button>
-			<button type="submit" class="primary" title="Enter">Save</button>
+			<div class="main-actions">
+				<button type="button" onclick={onclose}>Cancel</button>
+				<button type="submit" class="primary" title="Enter">Save</button>
+			</div>
 		</div>
 	</form>
 </Modal>

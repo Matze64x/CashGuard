@@ -158,12 +158,22 @@ button.danger {
 	border-color: var(--negative);
 }
 
-/* a dialog's buttons for the item itself (delete, copy, …), apart from Cancel and Save */
-.buttons .item-actions {
+/*
+ * A dialog's buttons for the item itself (delete, copy, …), apart from Cancel and Save, which stay
+ * together as one group (on the right; on the next line if both don't fit on one)
+ */
+.buttons .item-actions,
+.buttons .main-actions {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 0.5rem;
+}
+.buttons .item-actions {
 	margin-right: auto;
+}
+.buttons .main-actions {
+	margin-left: auto;
+	justify-content: flex-end;
 }
 
 kbd {

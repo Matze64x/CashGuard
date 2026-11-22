@@ -168,8 +168,10 @@
 				{#if editing.original}
 					<div class="item-actions"><button type="button" class="danger" onclick={deleteEdited}>Delete</button></div>
 				{/if}
-				<button type="button" onclick={close}>Cancel</button>
-				<button type="submit" class="primary">Save</button>
+				<div class="main-actions">
+					<button type="button" onclick={close}>Cancel</button>
+					<button type="submit" class="primary">Save</button>
+				</div>
 			</div>
 		</form>
 	</Modal>

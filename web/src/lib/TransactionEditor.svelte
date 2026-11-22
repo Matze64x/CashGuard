@@ -254,9 +254,11 @@
 					{#if onmakerecurring}<button type="button" onclick={makeRecurring}>Make recurring…</button>{/if}
 				</div>
 			{/if}
-			<button type="button" onclick={onclose}>Cancel</button>
-			<button type="button" onclick={() => save(true)} title={displayKeys('Mod+Shift+Enter')}>Save and add another</button>
-			<button type="submit" class="primary" title={`Enter or ${displayKeys('Mod+Enter')}`}>Save</button>
+			<div class="main-actions">
+				<button type="button" onclick={onclose}>Cancel</button>
+				<button type="button" onclick={() => save(true)} title={displayKeys('Mod+Shift+Enter')}>Save and add another</button>
+				<button type="submit" class="primary" title={`Enter or ${displayKeys('Mod+Enter')}`}>Save</button>
+			</div>
 		</div>
 	</form>
 </Modal>
