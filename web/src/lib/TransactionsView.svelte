@@ -244,7 +244,7 @@
 					<span class="dot" style:background={categories.get(t.categoryId)?.color ?? 'transparent'}></span>{categories.get(t.categoryId)?.name ?? ''}
 				</span>
 			</span>
-			<span class="amount" class:income={t.amount > 0}>{formatEuro(t.amount)}</span>
+			<span class="amount" class:income={t.amount > 0} class:expense={t.amount < 0}>{formatEuro(t.amount)}</span>
 		</div>
 	{/snippet}
 	{#snippet empty()}
@@ -346,6 +346,9 @@
 	}
 	.amount.income {
 		color: var(--positive);
+	}
+	.amount.expense {
+		color: var(--negative);
 	}
 	.date,
 	.category {

@@ -166,7 +166,7 @@
 				{r.description || '—'}
 				{#if dueNow && dueNow.dates.length > 0}<span class="badge">{dueNow.more ? `${dueNow.dates.length}+` : dueNow.dates.length} due</span>{/if}
 			</span>
-			<span class="amount" class:income={r.amount !== null && r.amount > 0}>{r.amount === null ? 'asked each time' : formatEuro(r.amount)}</span>
+			<span class="amount" class:income={r.amount !== null && r.amount > 0} class:expense={r.amount !== null && r.amount < 0}>{r.amount === null ? 'asked each time' : formatEuro(r.amount)}</span>
 			<span class="meta">
 				{describeSchedule(r.schedule)}
 				{#if category}· <span class="dot" style:background={category.color}></span>{category.name}{/if}
@@ -235,6 +235,9 @@
 	}
 	.amount.income {
 		color: var(--positive);
+	}
+	.amount.expense {
+		color: var(--negative);
 	}
 	.meta {
 		grid-area: meta;

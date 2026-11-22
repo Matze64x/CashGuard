@@ -130,7 +130,7 @@
 		<div class="row">
 			<span class="name">{account.name || '(unnamed)'}</span>
 			<span class="edited">updated {formatDay(account.edited)}</span>
-			<span class="amount" class:income={account.amount > 0}>{formatEuro(account.amount)}</span>
+			<span class="amount" class:income={account.amount > 0} class:expense={account.amount < 0}>{formatEuro(account.amount)}</span>
 		</div>
 	{/snippet}
 	{#snippet empty()}
@@ -210,6 +210,9 @@
 	}
 	.amount.income {
 		color: var(--positive);
+	}
+	.amount.expense {
+		color: var(--negative);
 	}
 	.check {
 		display: grid;
