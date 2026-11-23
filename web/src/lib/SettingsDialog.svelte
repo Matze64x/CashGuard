@@ -34,8 +34,7 @@
 <Modal title="Settings" {onclose}>
 	<div class="settings">
 		<label for="date-style">Date format</label>
-		<!-- svelte-ignore a11y_autofocus -->
-		<select id="date-style" value={settings.dateStyle} onchange={(e) => (settings.dateStyle = e.currentTarget.value as DateStyle)} autofocus>
+		<select id="date-style" value={settings.dateStyle} onchange={(e) => (settings.dateStyle = e.currentTarget.value as DateStyle)}>
 			{#each DATE_STYLES as style (style)}
 				<option value={style}>{style} ({formatDateAs(sample, style)})</option>
 			{/each}

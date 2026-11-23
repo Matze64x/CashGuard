@@ -33,6 +33,9 @@
 	$effect(() => {
 		const closeScope = shortcuts.openDialog();
 		dialog.showModal();
+		// Without a field marked `autofocus` (where data is entered), the dialog itself takes the
+		// focus: browsers would focus its first control (e.g. a dropdown in Settings) on their own.
+		if (!dialog.querySelector('[autofocus]')) dialog.focus();
 		return () => {
 			unmounting = true;
 			closeScope();
@@ -44,6 +47,7 @@
 
 <dialog
 	bind:this={dialog}
+	tabindex="-1"
 	class:wide
 	aria-labelledby={id}
 	oncancel={releaseFocus}
@@ -75,6 +79,9 @@
 	}
 	dialog.wide {
 		width: min(52rem, calc(100vw - 2rem));
+	}
+	dialog:focus {
+		outline: none;
 	}
 	dialog::backdrop {
 		background: rgb(0 0 0 / 0.4);

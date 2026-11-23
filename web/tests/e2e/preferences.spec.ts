@@ -65,6 +65,13 @@ test('a custom category color as hex', async ({ page }) => {
 	await expect(page.getByLabel('Choose a color')).toHaveValue('#33aa77');
 });
 
+test('opening Settings focuses no field', async ({ page }) => {
+	await page.getByRole('button', { name: 'Settings' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Settings' });
+	await expect(dialog).toBeFocused();
+	await expect(dialog.getByLabel('Date format')).not.toBeFocused();
+});
+
 test('the date format setting applies to the list and the editor', async ({ page }) => {
 	await importFixture(page);
 	await page.keyboard.press(`${MOD}+,`);
