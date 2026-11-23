@@ -2,7 +2,7 @@
 # The desktop app on Linux in one place (run from anywhere):
 #
 #   sh web/scripts/desktop.sh build       builds the program (web/src-tauri/target/release/cashguard)
-#   sh web/scripts/desktop.sh test        all tests: web app (types, unit, Firefox, WebKit in Docker)
+#   sh web/scripts/desktop.sh test        all tests: web app (types, unit, Firefox and WebKit in Docker)
 #                                         and Rust (tests, clippy); Docker must be running
 #   sh web/scripts/desktop.sh install     builds it, then installs it for you: program in ~/.local/bin,
 #                                         menu entry and icons (no root rights); also updates it

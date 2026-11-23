@@ -2,9 +2,10 @@
  * The phone side end to end, over a real WebRTC connection: the desktop app's endpoint runs as a
  * test program (`src-tauri/examples/sync_endpoint.rs`, built with `cargo build --example
  * sync_endpoint`), the PC's side of the sync runs here in the test (`core/peer-sync.ts` is plain
- * TypeScript), and the browser is the phone: it pairs through the Devices dialog and syncs.
- * Firefox only (the WebKit tests run in Docker, where the endpoint program can't run); skipped if
- * the program isn't built (e.g. in CI, which doesn't build the desktop app).
+ * TypeScript), and the browser is the phone: it pairs through Settings and syncs.
+ * Firefox on the host only (`npm run test:phone-sync`): the other tests run in Docker, where the
+ * endpoint program can't run. Skipped if the program isn't built (e.g. in CI, which doesn't build
+ * the desktop app).
  */
 import { expect, test } from '@playwright/test';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -88,7 +89,7 @@ class Pc {
 	}
 }
 
-test.skip(({ browserName }) => browserName !== 'firefox', 'the endpoint program runs on the host only');
+test.skip(({ browserName }) => browserName !== 'firefox' || Boolean(process.env['CASHGUARD_IN_CONTAINER']), 'the endpoint program runs on the host only (npm run test:phone-sync)');
 test.skip(() => !existsSync(ENDPOINT), 'the endpoint program isn’t built (cargo build --example sync_endpoint)');
 
 test('a phone pairs with a PC by its code, syncs both ways, and reconnects by itself after a restart', async ({ page }) => {

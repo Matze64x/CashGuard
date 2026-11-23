@@ -6,6 +6,8 @@ const FIXTURE = fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta
 let MOD = 'Control';
 
 async function importFixture(page: Page) {
+	// (shortcuts work once the data is loaded)
+	await expect(page.getByRole('button', { name: 'Import' })).toBeEnabled();
 	const chooser = page.waitForEvent('filechooser');
 	await page.keyboard.press(`${MOD}+o`);
 	await (await chooser).setFiles(FIXTURE);

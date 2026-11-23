@@ -33,11 +33,9 @@ jobs:
         working-directory: web
       - run: npm test
         working-directory: web
-      - name: Install browsers (Firefox, and WebKit as on the iPhone)
-        run: npx playwright install --with-deps firefox webkit
-        working-directory: web
-      # also builds the app exactly as published (web/dist-pages) and tests that build
-      - run: npx playwright test
+      # Firefox and WebKit (as on the iPhone) in Playwright's Docker image, exactly as run locally
+      # (npm run test:e2e); also builds the app as published (web/dist-pages) and tests that build
+      - run: sh scripts/test-e2e.sh
         working-directory: web
       - if: failure()
         uses: actions/upload-artifact@v7

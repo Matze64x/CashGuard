@@ -10,9 +10,10 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.core.json && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "npm run test:firefox && npm run test:webkit",
+    "test:e2e": "sh scripts/test-e2e.sh && npm run test:phone-sync",
     "test:firefox": "playwright test --project=firefox",
-    "test:webkit": "sh scripts/test-webkit.sh",
+    "test:webkit": "sh scripts/test-e2e.sh --project=iphone",
+    "test:phone-sync": "playwright test --project=firefox phone-sync",
     "test:all": "npm run check && npm test && npm run test:e2e",
     "tauri": "tauri"
   },

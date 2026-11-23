@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 	await page.clock.setFixedTime(new Date('2026-12-02T12:00:00'));
 	await page.goto('/');
 	MOD = await page.evaluate(() => (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? 'Meta' : 'Control'));
-	// (the shortcuts work once the data is loaded)
+	// (shortcuts work once the data is loaded)
 	await expect(page.getByRole('button', { name: 'Import' })).toBeEnabled();
 	const chooser = page.waitForEvent('filechooser');
 	await page.keyboard.press(`${MOD}+o`);

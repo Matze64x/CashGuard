@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 // End-to-end tests against the dev server, and against the build exactly as it's published on
 // GitHub Pages (below /CashGuard/, in dist-pages; the publish workflow uploads that directory).
-// Run with: npm run test:e2e
+// Run with: npm run test:e2e (in Docker, as in CI: scripts/test-e2e.sh)
 export default defineConfig({
 	testDir: 'tests/e2e',
 	outputDir: 'tests/e2e-results',
