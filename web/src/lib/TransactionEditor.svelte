@@ -256,7 +256,8 @@
 			{/if}
 			<div class="main-actions">
 				<button type="button" onclick={onclose}>Cancel</button>
-				<button type="button" onclick={() => save(true)} title={displayKeys('Mod+Shift+Enter')}>Save and add another</button>
+				<!-- (not on phones: three buttons don't fit in one row there, and Save + New does the same) -->
+				<button type="button" class="add-another" onclick={() => save(true)} title={displayKeys('Mod+Shift+Enter')}>Save and add another</button>
 				<button type="submit" class="primary" title={`Enter or ${displayKeys('Mod+Enter')}`}>Save</button>
 			</div>
 		</div>
@@ -264,6 +265,11 @@
 </Modal>
 
 <style>
+	@media (max-width: 40rem) {
+		.add-another {
+			display: none;
+		}
+	}
 	.fields {
 		display: grid;
 		grid-template-columns: auto 1fr;

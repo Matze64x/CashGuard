@@ -417,5 +417,6 @@ test('Cancel and Save stay together in one row, also when the dialog has more bu
 	const editor = page.getByRole('dialog', { name: 'Edit transaction' });
 	const top = async (name: string) => (await editor.getByRole('button', { name, exact: true }).boundingBox())!.y;
 	expect(await top('Cancel')).toBe(await top('Save'));
-	expect(await top('Save and add another')).toBe(await top('Save'));
+	// (phones leave it out: it wouldn't fit in the row)
+	if (await editor.getByRole('button', { name: 'Save and add another' }).isVisible()) expect(await top('Save and add another')).toBe(await top('Save'));
 });
