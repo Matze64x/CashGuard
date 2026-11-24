@@ -1,7 +1,8 @@
 <!--
 	Amount entry: the number without sign, plus an expense/income toggle (expense by default).
 	Typing "+" or "-" anywhere in the field switches the sign. Accepts "12,50" and "12.50".
-	Focusing the field selects its content, so typing replaces a prefilled amount. An invalid amount
+	Focusing the field selects its content, so typing replaces a prefilled amount. ↑/↓ change the
+	number by a cent (not below 0). An invalid amount
 	only turns the border red (no text that would shift the layout); screen readers hear why.
 -->
 <script lang="ts">
@@ -58,6 +59,15 @@
 		update();
 	}
 
+	function step(event: KeyboardEvent) {
+		if ((event.key !== 'ArrowUp' && event.key !== 'ArrowDown') || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+		if (invalid) return;
+		event.preventDefault();
+		const next = Math.max(0, (magnitude ?? 0) + (event.key === 'ArrowUp' ? 1 : -1));
+		text = toText(cents(next));
+		update();
+	}
+
 	function toggle() {
 		negative = !negative;
 		update();
@@ -89,6 +99,7 @@
 		{required}
 		value={text}
 		{oninput}
+		onkeydown={step}
 	/>
 	<span class="currency" aria-hidden="true">€</span>
 	<span id={`${id}-invalid`} class="hidden">{invalid ? 'Not an amount: enter one like 12,50' : ''}</span>

@@ -422,3 +422,20 @@ test('Cancel and Save stay together in one row, also when the dialog has more bu
 	// (phones leave it out: it wouldn't fit in the row)
 	if (await editor.getByRole('button', { name: 'Save and add another' }).isVisible()) expect(await top('Save and add another')).toBe(await top('Save'));
 });
+
+test('↑ and ↓ in an amount change it by a cent', async ({ page }) => {
+	await page.keyboard.press('n');
+	const amount = page.getByRole('dialog', { name: 'New transaction' }).getByLabel('Amount', { exact: true });
+	await amount.focus();
+	await page.keyboard.press('ArrowDown');
+	await expect(amount).toHaveValue('0,00');
+	await amount.fill('12,5');
+	await page.keyboard.press('ArrowUp');
+	await page.keyboard.press('ArrowUp');
+	await expect(amount).toHaveValue('12,52');
+	for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+	await expect(amount).toHaveValue('12,49');
+	await amount.fill('9,99');
+	await page.keyboard.press('ArrowUp');
+	await expect(amount).toHaveValue('10,00');
+});
