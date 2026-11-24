@@ -1,7 +1,8 @@
 <!--
 	The form for one due occurrence of a recurring transaction, created anew for each one (so
 	nothing typed for one, not even the amount's sign, carries over to the next): the amount is
-	focused, empty if it's asked each time (with the sign it had last time); the rest prefilled.
+	focused and selected; if it's asked each time, it starts as last time's (it usually changes only
+	a little, e.g. in the cents), else empty with an expense's sign; the rest prefilled.
 -->
 <script lang="ts">
 	import { addCents, lastUseOf, MAX_YEAR, MIN_YEAR, NO_CATEGORY, type CashGuardData, type Cents, type CivilDate, type Id, type Recurring, type TransactionDraft } from '../core';
@@ -37,16 +38,15 @@
 	const r = recurring;
 	// svelte-ignore state_referenced_locally
 	let date = $state<CivilDate | null>(occurrence);
-	let amount = $state<Cents | null>(r.amount);
+	// svelte-ignore state_referenced_locally
+	const last = r.amount === null ? lastUseOf(data, r.description) : null;
+	let amount = $state<Cents | null>(r.amount ?? last?.amount ?? null);
 	let description = $state(r.description);
 	// svelte-ignore state_referenced_locally
 	let categoryId = $state<Id>(data.categories.some((c) => c.id === r.categoryId) ? r.categoryId : NO_CATEGORY);
 	// a template's account that was deleted meanwhile means none
 	// svelte-ignore state_referenced_locally
 	let accountId = $state<Id | ''>(r.accountId !== null && data.accounts.some((a) => a.id === r.accountId) ? r.accountId : '');
-	// an amount asked each time starts with the sign it had last time (a salary is income)
-	// svelte-ignore state_referenced_locally
-	const income = r.amount === null && (lastUseOf(data, r.description)?.amount ?? 0) > 0;
 
 	const categories = $derived([...data.categories].sort((a, b) => a.name.localeCompare(b.name)));
 	// (as they are now: one deleted meanwhile, e.g. on another device, counts as none)
@@ -74,7 +74,7 @@
 >
 	<div class="fields">
 		<label for="due-amount">Amount</label>
-		<AmountInput id="due-amount" bind:value={amount} {income} />
+		<AmountInput id="due-amount" bind:value={amount} />
 
 		<label for="due-date">Date</label>
 		<DateInput id="due-date" bind:value={date} />

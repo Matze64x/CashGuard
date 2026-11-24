@@ -172,6 +172,8 @@ test('a month of the savings plan: four times the amount and Enter', async ({ pa
 
 	for (const [due, amount] of [['22.11.2026', '49,80'], ['01.12.2026', '51,20'], ['08.12.2026', '50,05'], ['15.12.2026', '48,90']] as const) {
 		await expect(dialog).toContainText(`due ${due}`);
+		// (after the first: last time's amount, selected, so typing replaces it)
+		if (due !== '22.11.2026') await expect(dialog.getByLabel('Amount', { exact: true })).not.toHaveValue('');
 		await page.keyboard.type(amount);
 		await page.keyboard.press('Enter');
 		await expect(dialog).toContainText(`Entered “Savings plan (ETF)” of ${due}: -${amount} €`);
@@ -201,4 +203,23 @@ test('an invalid date only turns its field red: no text appears that moves the f
 	expect(await offset()).toBeCloseTo(before, 0);
 	// it still tells screen readers what's wrong
 	await expect(ends).toHaveAccessibleDescription(/Not a date/);
+});
+
+test('an amount asked each time starts as last time’s, selected', async ({ page }) => {
+	await page.keyboard.press('d');
+	const dialog = inbox(page);
+	const amount = dialog.getByLabel('Amount', { exact: true });
+	await dialog.getByRole('button', { name: /Savings plan \(ETF\)/ }).click();
+	await page.keyboard.type('49,80');
+	await page.keyboard.press('Enter');
+	await expect(dialog).toContainText('due 01.12.2026');
+	await expect(amount).toHaveValue('49,80');
+	await expect(dialog.getByRole('button', { name: /Expense \(press for income\)/ })).toBeVisible();
+	// only the cents changed: to the end, two characters back, the new ones
+	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.type('15');
+	await page.keyboard.press('Enter');
+	await expect(dialog).toContainText('Entered “Savings plan (ETF)” of 01.12.2026: -49,15 €');
 });
