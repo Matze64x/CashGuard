@@ -69,6 +69,17 @@ function serialize(data: CashGuardData): string {
 	return text;
 }
 
+/**
+ * Formats loaded data once while the browser is idle, so saving after the first edit formats only
+ * what changed (data read from storage has no formatted transactions yet; with years of data,
+ * formatting everything takes a noticeable moment on a phone).
+ */
+function prepareSaving(...data: (CashGuardData | null | undefined)[]): void {
+	const run = () => data.forEach((d) => d && serialize(d));
+	// (not before the app has shown the data: an idle moment comes even before that)
+	setTimeout(() => (typeof requestIdleCallback === 'function' ? requestIdleCallback(run, { timeout: 2000 }) : run()), 1000);
+}
+
 /** The file text, after making sure it reads back: a file is never written if it couldn't be opened again. */
 function fileText(data: CashGuardData): string {
 	const text = serialize(data);
@@ -142,6 +153,7 @@ export class Workspace implements SyncStore {
 				// a damaged undo snapshot must not prevent loading the data itself
 				this.#beforeImport = null;
 			}
+			prepareSaving(this.#current.working, this.#beforeImport?.working);
 		}
 		this.ready = true;
 	}

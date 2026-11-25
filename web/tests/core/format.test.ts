@@ -1,7 +1,21 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { FORMAT_VERSION, LEGACY_FORMAT_VERSION, NO_CATEGORY, parseCashGuard, serializeCashGuard, type CashGuardData, type ParseResult } from '../../src/core';
+import {
+	addTransaction,
+	cents,
+	deleteTransaction,
+	FORMAT_VERSION,
+	LEGACY_FORMAT_VERSION,
+	NO_CATEGORY,
+	parseCashGuard,
+	serializeCashGuard,
+	updateTransaction,
+	type CashGuardData,
+	type CivilDate,
+	type ParseResult,
+	type UtcSeconds,
+} from '../../src/core';
 import { randomDocument } from './random-data';
 
 const FIXTURES = fileURLToPath(new URL('../fixtures', import.meta.url));
@@ -249,5 +263,43 @@ describe('validation', () => {
 		const result = parseCashGuard(doc({ Note: 'hi' }, { Budgets: [] }));
 		expect(result.ok).toBe(true);
 		expect(result.warnings.map((w) => w.path)).toEqual(['Budgets', 'Transactions[0].Note']);
+	});
+});
+
+describe('formatting after edits (each transaction’s text is kept per object)', () => {
+	it('gives the same text as formatting fresh data, after random edits', () => {
+		const parsed = parseCashGuard(readFileSync(`${FIXTURES}/edge-cases.json`, 'utf8'));
+		if (!parsed.ok) throw new Error('fixture');
+		let data: CashGuardData = parsed.data;
+		serializeCashGuard(data);
+		let seed = 7;
+		const random = (n: number) => ((seed = (seed * 1103515245 + 12345) % 2 ** 31), seed % n);
+		const date = () => `20${10 + random(16)}-${String(1 + random(12)).padStart(2, '0')}-${String(1 + random(28)).padStart(2, '0')}` as CivilDate;
+		for (let i = 0; i < 200; i++) {
+			const now = (1_900_000_000 + i) as UtcSeconds;
+			const pick = data.transactions[random(data.transactions.length)]!;
+			const draft = { date: date(), description: `edit ${i}`, categoryId: NO_CATEGORY, amount: cents(random(10_000) - 5_000) };
+			switch (random(4)) {
+				case 0:
+					data = addTransaction(data, draft, now).data;
+					break;
+				case 1:
+					data = deleteTransaction(data, pick.id);
+					break;
+				case 2:
+					data = updateTransaction(data, pick.id, pick.subTransactions ? { ...draft, subTransactions: pick.subTransactions.map((s) => ({ ...s, amount: cents(s.amount + 1) })) } : draft, now);
+					break;
+				default:
+					data = addTransaction(data, { ...draft, subTransactions: [{ ...draft, amount: cents(1) }, { ...draft, amount: cents(-250) }] }, now).data;
+			}
+			if (i % 20 === 0 || i === 199) expect(serializeCashGuard(data)).toBe(serializeCashGuard(structuredClone(data)));
+		}
+	});
+
+	it('sorts transactions that aren’t in order', () => {
+		const parsed = parseCashGuard(readFileSync(`${FIXTURES}/edge-cases.json`, 'utf8'));
+		if (!parsed.ok) throw new Error('fixture');
+		const shuffled = { ...parsed.data, transactions: [...parsed.data.transactions].reverse() };
+		expect(serializeCashGuard(shuffled)).toBe(serializeCashGuard(parsed.data));
 	});
 });

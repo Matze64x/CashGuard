@@ -7,7 +7,7 @@
 import { formatFileDate, formatFileDateTime, MAX_YEAR, MIN_YEAR, parseFileDate, parseFileDateTime } from './dates';
 import { legacyAccountIds, NO_CATEGORY, parseId, type Id } from './ids';
 import { formatAmount, parseAmount } from './money';
-import { normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Recurring, type Transaction } from './model';
+import { compareTransactions, normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Recurring, type Transaction } from './model';
 
 export const FORMAT_VERSION = 'cgt_0.6.0';
 /** The version before account ids: still read (accounts get ids from their names, see `legacyAccountIds`) */
@@ -329,12 +329,31 @@ function transactionToJson(t: Transaction): JsonValue {
 }
 
 /**
+ * Each transaction's text as written in the file's list, kept per (immutable) transaction object:
+ * an edit replaces only the transactions it changes, so saving after it formats only those (with
+ * years of data, formatting everything took a noticeable moment per edit on a phone).
+ */
+const transactionTexts = new WeakMap<Transaction, string>();
+const TRANSACTION_INDENT = '        ';
+function transactionText(t: Transaction): string {
+	let text = transactionTexts.get(t);
+	if (text === undefined) transactionTexts.set(t, (text = write(transactionToJson(normalizeGroup(t)), TRANSACTION_INDENT)));
+	return text;
+}
+
+/** Newest first: as given if they already are (the data's list always is), else a sorted copy */
+function newestFirst(transactions: readonly Transaction[]): readonly Transaction[] {
+	for (let i = 1; i < transactions.length; i++) if (compareTransactions(transactions[i - 1]!, transactions[i]!) < 0) return sortNewestFirst(transactions);
+	return transactions;
+}
+
+/**
  * Serializes to the exact text the C++ client would write (no trailing newline). The canonical
  * form (sort order, group sums, uppercase colors, no category 0) is enforced here too, so data
  * built by UI code can't produce a file the C++ client would rewrite differently.
  */
 export function serializeCashGuard(data: CashGuardData): string {
-	return write(
+	const head = write(
 		{
 			Version: FORMAT_VERSION,
 			Categories: data.categories
@@ -342,8 +361,13 @@ export function serializeCashGuard(data: CashGuardData): string {
 				.map((c) => ({ ID: c.id, Name: c.name, Color: c.color.toUpperCase() })),
 			Accounts: data.accounts.map((a) => ({ ID: a.id, Name: a.name, Amount: formatAmount(a.amount), Edited: formatFileDateTime(a.edited) })),
 			Recurring: data.recurring.map(recurringToJson),
-			Transactions: sortNewestFirst(data.transactions.map(normalizeGroup)).map(transactionToJson),
+			Transactions: [],
 		},
 		'',
 	);
+	// (the transactions, last, from their cached texts in place of the empty list)
+	const transactions = newestFirst(data.transactions);
+	if (transactions.length === 0) return head;
+	const list = `[\n${transactions.map((t) => TRANSACTION_INDENT + transactionText(t)).join(',\n')}\n    ]`;
+	return `${head.slice(0, head.length - '[]\n}'.length)}${list}\n}`;
 }
