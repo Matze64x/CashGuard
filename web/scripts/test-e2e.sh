@@ -7,8 +7,10 @@
 set -eu
 cd "$(dirname "$0")/.."
 version=$(node -p "require('@playwright/test/package.json').version")
+# the app's version (vite.config.ts): there's no git in the image
+app_version=$(git log -1 --format="%cd %h" --date=format:%Y-%m-%d)
 exec docker run --rm --init --ipc=host \
-	--user "$(id -u):$(id -g)" --env HOME=/tmp --env CI --env CASHGUARD_IN_CONTAINER=1 \
+	--user "$(id -u):$(id -g)" --env HOME=/tmp --env CI --env CASHGUARD_IN_CONTAINER=1 --env CASHGUARD_VERSION="$app_version" \
 	--volume "$PWD:/work" --workdir /work \
 	"mcr.microsoft.com/playwright:v$version-noble" \
 	npx playwright test "$@"

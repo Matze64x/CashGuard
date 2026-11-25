@@ -17,6 +17,8 @@
 	import { displayKeys, shortcuts } from './lib/shortcuts.svelte';
 	import TransactionsView from './lib/TransactionsView.svelte';
 	import ShortcutHelp from './lib/ui/ShortcutHelp.svelte';
+	import { settings } from './lib/settings.svelte';
+	import { updates } from './lib/updates.svelte';
 	import { Workspace, type ImportCandidate } from './lib/workspace.svelte';
 
 	const SECTIONS = [
@@ -68,6 +70,14 @@
 			});
 		return () => void stop.then((f) => f());
 	});
+
+	// the installed web app: its service worker, and new versions (see updates.svelte.ts)
+	$effect(() => {
+		const stop = updates.start(() => workspace.settled());
+		return () => void stop.then((f) => f());
+	});
+	/** "New version available" was closed (until the next start) */
+	let updateDismissed = $state(false);
 
 	// raw: a proxy would break the identity check of `candidate.from` in the workspace
 	let candidate = $state.raw<ImportCandidate | null>(null);
@@ -272,6 +282,13 @@
 		<p class="notice error" role="alert">
 			<span>The backup file couldn't be written: {workspace.backupError} It's tried again with the next change.</span>
 			<button class="dismiss" aria-label="Dismiss" title="Dismiss" onclick={() => (workspace.backupError = null)}>×</button>
+		</p>
+	{/if}
+	{#if updates.available && settings.updates === 'ask' && !updateDismissed}
+		<p class="notice" role="status">
+			<span>New version available.</span>
+			<button class="link" disabled={updates.busy} onclick={() => void updates.apply()}>Update</button>
+			<button class="dismiss" aria-label="Dismiss" title="Dismiss" onclick={() => (updateDismissed = true)}>×</button>
 		</p>
 	{/if}
 	{#each notices.list as n (n.id)}

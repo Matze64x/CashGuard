@@ -1,7 +1,7 @@
 <!--
 	Preferences of this device (stored in the browser, not in the data file), the devices it syncs
-	with, and at the bottom the data: importing and exporting the file, the backup file. Changes
-	apply at once.
+	with, the data (importing and exporting the file, the backup file), and the app's version and
+	updates. Changes apply at once.
 -->
 <script lang="ts">
 	import { DATE_STYLES, formatDateAs, today, type DateStyle } from '../core';
@@ -9,6 +9,8 @@
 	import { chooseFileToSave, dataLocation, isDesktop } from './desktop';
 	import { settings } from './settings.svelte';
 	import { displayKeys } from './shortcuts.svelte';
+	import Segmented from './ui/Segmented.svelte';
+	import { APP_VERSION, updates } from './updates.svelte';
 	import type { DesktopSync } from './sync/desktop-sync.svelte';
 	import Devices from './sync/Devices.svelte';
 	import type { PhoneSync } from './sync/phone-sync.svelte';
@@ -99,6 +101,32 @@
 				{/if}
 			{/await}
 		{/if}
+		<hr />
+		<h3>App</h3>
+		<p class="muted version">Version {APP_VERSION}</p>
+		{#if updates.supported}
+			<div class="row">
+				{#if updates.available}
+					<button type="button" class="primary" disabled={updates.busy} onclick={() => void updates.apply()}>Update</button>
+					<span class="muted status">New version available.</span>
+				{:else}
+					<button type="button" disabled={updates.busy} onclick={() => void updates.check()}>Check for updates</button>
+					{#if updates.checked !== null && !updates.busy}<span class="muted status">Up to date.</span>{/if}
+				{/if}
+			</div>
+			{#if updates.failure}<p class="error" role="alert">{updates.failure}</p>{/if}
+			<span class="label-text">Updates</span>
+			<div class="choice">
+				<Segmented
+					label="Updates"
+					options={[
+						{ value: 'auto', label: 'Automatic' },
+						{ value: 'ask', label: 'Manual' },
+					]}
+					bind:value={() => settings.updates, (v) => void updates.setAutomatic(v === 'auto')}
+				/>
+			</div>
+		{/if}
 		<div class="buttons"><button type="button" class="primary" onclick={onclose}>Done</button></div>
 	</div>
 </Modal>
@@ -115,6 +143,20 @@
 	.muted {
 		font-size: 0.85rem;
 		margin: 0.5rem 0 0;
+	}
+	.version {
+		margin: 0;
+	}
+	.status {
+		margin: 0;
+		align-self: center;
+	}
+	.label-text {
+		color: var(--muted);
+	}
+	/* (as wide as its options, not the dialog) */
+	.choice {
+		justify-self: start;
 	}
 	h3 {
 		margin: 0;

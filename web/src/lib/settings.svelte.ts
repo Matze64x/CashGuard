@@ -15,11 +15,13 @@ interface Values {
 	 * just paid with, on the computer none.
 	 */
 	balanceAccount: string | null;
+	/** Installed web app: new versions automatically, or only when the user taps "Update" */
+	updates: 'auto' | 'ask';
 	/** Desktop app: the file the data is backed up to, or null for none */
 	backupPath: string | null;
 }
 
-const DEFAULTS: Values = { dateStyle: 'DD.MM.YYYY', balanceAccount: null, backupPath: null };
+const DEFAULTS: Values = { dateStyle: 'DD.MM.YYYY', balanceAccount: null, updates: 'auto', backupPath: null };
 
 function load(): Values {
 	try {
@@ -27,6 +29,7 @@ function load(): Values {
 		return {
 			dateStyle: DATE_STYLES.includes(raw.dateStyle as DateStyle) ? raw.dateStyle! : DEFAULTS.dateStyle,
 			balanceAccount: typeof raw.balanceAccount === 'string' ? raw.balanceAccount : null,
+			updates: raw.updates === 'ask' ? 'ask' : 'auto',
 			backupPath: typeof raw.backupPath === 'string' && raw.backupPath !== '' ? raw.backupPath : null,
 		};
 	} catch {
@@ -53,6 +56,13 @@ class Settings {
 	}
 	set balanceAccount(balanceAccount: string | null) {
 		this.#set({ balanceAccount });
+	}
+
+	get updates(): 'auto' | 'ask' {
+		return this.#values.updates;
+	}
+	set updates(updates: 'auto' | 'ask') {
+		this.#set({ updates });
 	}
 
 	get backupPath(): string | null {
