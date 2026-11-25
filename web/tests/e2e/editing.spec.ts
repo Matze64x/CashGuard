@@ -3,6 +3,7 @@
  * controllable). Mouse use is covered implicitly by the other specs.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { waitForApp } from './app';
 import { fileURLToPath } from 'node:url';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta.url));
@@ -11,7 +12,7 @@ let MOD = 'Control';
 
 async function importFixture(page: Page) {
 	// (shortcuts work once the data is loaded)
-	await expect(page.getByRole('button', { name: 'Import' })).toBeEnabled();
+	await waitForApp(page);
 	const chooser = page.waitForEvent('filechooser');
 	await page.keyboard.press(`${MOD}+o`);
 	await (await chooser).setFiles(FIXTURE);
@@ -228,7 +229,7 @@ test.describe('keys reach the right place', () => {
 	test('Enter and Backspace on a focused button operate the button, not the list', async ({ page }) => {
 		await importFixture(page);
 		await page.keyboard.press('j');
-		await page.getByRole('button', { name: 'Import', exact: true }).focus();
+		await page.getByRole('button', { name: 'Explore' }).focus();
 		await page.keyboard.press('Backspace');
 		await page.keyboard.press('Delete');
 		await expect(page.getByText('46 transactions')).toBeVisible();

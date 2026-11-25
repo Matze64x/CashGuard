@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { fileAction, openSettings } from './app';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -7,7 +8,7 @@ const fixtureText = () => readFileSync(FIXTURE, 'utf8');
 
 async function importFile(page: Page, path: string) {
 	const chooser = page.waitForEvent('filechooser');
-	await page.getByRole('button', { name: 'Import', exact: true }).click();
+	await fileAction(page, 'Import');
 	await (await chooser).setFiles(path);
 }
 
@@ -32,7 +33,9 @@ test('import, persist, export and undo', async ({ page }) => {
 	// the working copy survives a reload
 	await page.reload();
 	await expect(page.getByText('46 transactions')).toBeVisible();
-	await expect(page.getByText('edge-cases.json')).toBeVisible();
+	let settings = await openSettings(page);
+	await expect(settings).toContainText('Last file: edge-cases.json');
+	await settings.getByRole('button', { name: 'Done' }).click();
 
 	// importing the same file again changes nothing
 	await importFile(page, FIXTURE);
@@ -43,19 +46,20 @@ test('import, persist, export and undo', async ({ page }) => {
 	// export gives back exactly the imported file
 	if (!test.info().project.use.hasTouch) {
 		const download = page.waitForEvent('download');
-		await page.getByRole('button', { name: 'Export' }).click();
+		await fileAction(page, 'Export');
 		const file = await download;
 		expect(file.suggestedFilename()).toBe('edge-cases.json');
 		expect(readFileSync(await file.path(), 'utf8')).toBe(fixtureText());
 	}
 
 	// undo restores the empty state including the file name, also after a reload
-	await page.getByRole('button', { name: 'Undo import' }).click();
+	await fileAction(page, 'Undo import');
 	await expect(page.getByText('No transactions yet')).toBeVisible();
 	await page.reload();
 	await expect(page.getByText('No transactions yet')).toBeVisible();
-	await expect(page.getByText('edge-cases.json')).toBeHidden();
-	await expect(page.getByRole('button', { name: 'Undo import' })).toBeHidden();
+	settings = await openSettings(page);
+	await expect(settings).not.toContainText('edge-cases.json');
+	await expect(settings.getByRole('button', { name: 'Undo import' })).toBeHidden();
 });
 
 test('a second import adds and updates, but never removes', async ({ page }, testInfo) => {
@@ -141,7 +145,7 @@ test('on touch devices, export uses the share sheet', async ({ page }) => {
 	await page.goto('/');
 	await importFile(page, FIXTURE);
 	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
-	await page.getByRole('button', { name: 'Export' }).click();
+	await fileAction(page, 'Export');
 	await expect(page.getByRole('status')).toContainText('Exported');
 	const shared = await page.evaluate(() => (window as unknown as { shared: { name: string; text: string } }).shared);
 	expect(shared.name).toBe('edge-cases.json');
@@ -160,5 +164,5 @@ test('if saving fails, nothing changes and the error is shown', async ({ page })
 	// (syncing reports that it can't start too: storage is broken)
 	await expect(page.getByRole('alert').filter({ hasText: 'Something went wrong' })).toContainText('The disk is full');
 	await expect(page.getByText('No transactions yet')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Undo import' })).toBeHidden();
+	await expect((await openSettings(page)).getByRole('button', { name: 'Undo import' })).toBeHidden();
 });

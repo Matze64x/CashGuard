@@ -4,6 +4,7 @@
  * network. Uses the dev-only `__cashguardTest` hook (see `App.svelte`).
  */
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { fileAction } from './app';
 import { fileURLToPath } from 'node:url';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta.url));
@@ -77,7 +78,7 @@ async function connect(a: Device, b: Device) {
 
 async function importFixture(page: Page) {
 	const chooser = page.waitForEvent('filechooser');
-	await page.getByRole('button', { name: 'Import' }).click();
+	await fileAction(page, 'Import');
 	await (await chooser).setFiles(FIXTURE);
 	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
 	await expect(page.getByText('46 transactions')).toBeVisible();

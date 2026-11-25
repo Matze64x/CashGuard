@@ -5,6 +5,7 @@
  * command and `sync-message` events.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { fileAction } from './app';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { addTransaction, cents, EMPTY_DATA, PeerSession, type CashGuardData, type CivilDate, type DeviceInfo, type StoredBase, type SyncMessage, type UtcSeconds } from '../../src/core';
@@ -149,7 +150,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function importFixture(page: Page) {
-	await page.getByRole('button', { name: 'Import' }).click();
+	await fileAction(page, 'Import');
 	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
 	await expect(page.getByText('46 transactions')).toBeVisible();
 }

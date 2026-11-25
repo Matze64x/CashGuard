@@ -1,5 +1,6 @@
 /** The build exactly as published on GitHub Pages (below /CashGuard/), see playwright.config.ts. */
 import { expect, test } from '@playwright/test';
+import { fileAction } from './app';
 import { fileURLToPath } from 'node:url';
 
 const PUBLISHED = 'http://localhost:5299/CashGuard/';
@@ -11,7 +12,7 @@ test('the installed app works offline, with its data', async ({ page, context })
 	await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
 
 	const chooser = page.waitForEvent('filechooser');
-	await page.getByRole('button', { name: 'Import', exact: true }).click();
+	await fileAction(page, 'Import');
 	await (await chooser).setFiles(FIXTURE);
 	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
 	await expect(page.getByText('46 transactions')).toBeVisible();

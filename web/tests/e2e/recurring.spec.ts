@@ -1,5 +1,6 @@
 /** Recurring transactions: entering the due ones in the inbox, and managing the templates. */
 import { expect, test, type Page } from '@playwright/test';
+import { waitForApp } from './app';
 import { fileURLToPath } from 'node:url';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta.url));
@@ -12,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 	await page.goto('/');
 	MOD = await page.evaluate(() => (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? 'Meta' : 'Control'));
 	// (shortcuts work once the data is loaded)
-	await expect(page.getByRole('button', { name: 'Import' })).toBeEnabled();
+	await waitForApp(page);
 	const chooser = page.waitForEvent('filechooser');
 	await page.keyboard.press(`${MOD}+o`);
 	await (await chooser).setFiles(FIXTURE);

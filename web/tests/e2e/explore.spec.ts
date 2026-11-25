@@ -1,5 +1,6 @@
 /** The Explore section: the timeline sets the shared period filter, by keyboard and mouse. */
 import { expect, test, type Page } from '@playwright/test';
+import { waitForApp } from './app';
 import { fileURLToPath } from 'node:url';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta.url));
@@ -7,7 +8,7 @@ let MOD = 'Control';
 
 async function importFixture(page: Page) {
 	// (shortcuts work once the data is loaded)
-	await expect(page.getByRole('button', { name: 'Import' })).toBeEnabled();
+	await waitForApp(page);
 	const chooser = page.waitForEvent('filechooser');
 	await page.keyboard.press(`${MOD}+o`);
 	await (await chooser).setFiles(FIXTURE);

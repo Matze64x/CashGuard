@@ -216,14 +216,6 @@
 <header>
 	<div class="title">
 		<h1>CashGuard</h1>
-		{#if workspace.fileName}<span class="file" title={workspace.fileName}>{workspace.fileName}</span>{/if}
-	</div>
-	<div class="actions">
-		{#if workspace.canUndoImport}
-			<button disabled={busy} onclick={undoImport}>Undo import</button>
-		{/if}
-		<button disabled={busy} title={displayKeys('Mod+o')} onclick={importFile}>Import</button>
-		<button class="primary" disabled={busy} title={displayKeys('Mod+s')} onclick={exportFile}>Export</button>
 	</div>
 	<nav aria-label="Sections">
 		{#each SECTIONS as s (s.id)}
@@ -262,7 +254,7 @@
 				{dueLabel}
 				onreviewdue={() => (inboxOpen = true)}
 				onmakerecurring={makeRecurring}
-				emptyHint="Import a file, or press n to add a transaction."
+				emptyHint="Import a file in Settings, or press n to add a transaction."
 			/>
 		</div>
 		<div hidden={section !== 'explore'}>
@@ -300,7 +292,24 @@
 {/if}
 
 {#if settingsOpen}
-	<SettingsDialog {workspace} {sync} onclose={() => (settingsOpen = false)} />
+	<SettingsDialog
+		{workspace}
+		{sync}
+		{busy}
+		onimport={() => {
+			settingsOpen = false;
+			importFile();
+		}}
+		onexport={() => {
+			settingsOpen = false;
+			exportFile();
+		}}
+		onundoimport={() => {
+			settingsOpen = false;
+			undoImport();
+		}}
+		onclose={() => (settingsOpen = false)}
+	/>
 {/if}
 
 {#if candidate}
@@ -312,8 +321,9 @@
 		position: sticky;
 		top: 0;
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		grid-template-areas: 'title actions' 'nav tools';
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		grid-template-areas: 'title nav tools';
+		column-gap: 1.25rem;
 		gap: 0.5rem;
 		align-items: center;
 		padding: max(0.75rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.75rem max(1rem, env(safe-area-inset-left));
@@ -331,19 +341,6 @@
 	h1 {
 		margin: 0;
 		font-size: 1.25rem;
-	}
-	.file {
-		color: var(--muted);
-		font-size: 0.85rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.actions {
-		grid-area: actions;
-		justify-self: end;
-		display: flex;
-		gap: 0.5rem;
 	}
 	.tools {
 		grid-area: tools;
@@ -378,10 +375,8 @@
 	   shortcut help is for keyboards (? still opens it) */
 	@media (max-width: 40rem) {
 		header {
-			grid-template-areas: 'title tools' 'actions actions' 'nav nav';
-		}
-		.actions {
-			justify-self: start;
+			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-areas: 'title tools' 'nav nav';
 		}
 		.tab {
 			padding: 0.45rem 0.45rem;

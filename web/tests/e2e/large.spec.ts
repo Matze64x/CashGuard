@@ -1,5 +1,6 @@
 /** A large file (years of data): the list only renders rows near the screen and still behaves like a whole list. */
 import { expect, test } from '@playwright/test';
+import { waitForApp } from './app';
 import { writeFileSync } from 'node:fs';
 import { FORMAT_VERSION } from '../../src/core/format';
 
@@ -28,7 +29,7 @@ test('a long list: only rows near the screen exist, and keys reach both ends', a
 	await page.goto('/');
 	const MOD = await page.evaluate(() => (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? 'Meta' : 'Control'));
 	// (shortcuts work once the data is loaded)
-	await expect(page.getByRole('button', { name: 'Import' })).toBeEnabled();
+	await waitForApp(page);
 	const chooser = page.waitForEvent('filechooser');
 	await page.keyboard.press(`${MOD}+o`);
 	await (await chooser).setFiles(file);

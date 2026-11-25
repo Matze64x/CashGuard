@@ -11,7 +11,8 @@ test.skip(({ hasTouch }) => !hasTouch, 'a touch screen only');
 
 async function importFixture(page: Page) {
 	const chooser = page.waitForEvent('filechooser');
-	await page.getByRole('button', { name: 'Import' }).tap();
+	await page.getByRole('button', { name: 'Settings' }).tap();
+	await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'Import', exact: true }).tap();
 	await (await chooser).setFiles(FIXTURE);
 	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).tap();
 	await expect(page.getByText('46 transactions')).toBeVisible();

@@ -1,19 +1,40 @@
 <!--
-	Preferences of this device (stored in the browser, not in the data file) and the devices it syncs
-	with. Changes apply at once.
+	Preferences of this device (stored in the browser, not in the data file), the devices it syncs
+	with, and at the bottom the data: importing and exporting the file, the backup file. Changes
+	apply at once.
 -->
 <script lang="ts">
 	import { DATE_STYLES, formatDateAs, today, type DateStyle } from '../core';
 	import { attempt } from './attempt';
 	import { chooseFileToSave, dataLocation, isDesktop } from './desktop';
 	import { settings } from './settings.svelte';
+	import { displayKeys } from './shortcuts.svelte';
 	import type { DesktopSync } from './sync/desktop-sync.svelte';
 	import Devices from './sync/Devices.svelte';
 	import type { PhoneSync } from './sync/phone-sync.svelte';
 	import Modal from './ui/Modal.svelte';
 	import type { Workspace } from './workspace.svelte';
 
-	let { workspace, sync, onclose }: { workspace: Workspace; sync: DesktopSync | PhoneSync; onclose: () => void } = $props();
+	let {
+		workspace,
+		sync,
+		busy,
+		onimport,
+		onexport,
+		onundoimport,
+		onclose,
+	}: {
+		workspace: Workspace;
+		sync: DesktopSync | PhoneSync;
+		/** The data isn't loaded (yet): no file actions */
+		busy: boolean;
+		/** The file actions; each closes the dialog first. They must start right in the click
+		 * (browsers allow a file chooser or download only directly after one) */
+		onimport: () => void;
+		onexport: () => void;
+		onundoimport: () => void;
+		onclose: () => void;
+	} = $props();
 	const sample = today();
 	const location = isDesktop ? dataLocation().catch(() => null) : null;
 	/** Why choosing the backup file failed (shown here: a notice would be behind the dialog) */
@@ -40,8 +61,18 @@
 			{/each}
 		</select>
 		<p class="muted">These settings apply to this device only.</p>
+		<hr />
+		<Devices {sync} />
+		<hr />
+		<h3>Data</h3>
+		<div class="row">
+			<button type="button" disabled={busy} title={displayKeys('Mod+o')} onclick={onimport}>Import</button>
+			<button type="button" disabled={busy} title={displayKeys('Mod+s')} onclick={onexport}>Export</button>
+			{#if workspace.canUndoImport}<button type="button" disabled={busy} onclick={onundoimport}>Undo import</button>{/if}
+		</div>
+		{#if workspace.fileName}<p class="muted file">Last file: <span class="name">{workspace.fileName}</span></p>{/if}
 		{#if isDesktop}
-			<span class="label">Backup file</span>
+			<h4>Backup file</h4>
 			<div class="backup">
 				{#if settings.backupPath}
 					<code class="path">{settings.backupPath}</code>
@@ -68,8 +99,6 @@
 				{/if}
 			{/await}
 		{/if}
-		<hr />
-		<Devices {sync} />
 		<div class="buttons"><button type="button" class="primary" onclick={onclose}>Done</button></div>
 	</div>
 </Modal>
@@ -87,9 +116,17 @@
 		font-size: 0.85rem;
 		margin: 0.5rem 0 0;
 	}
-	.label {
-		color: var(--muted);
-		margin-top: 0.75rem;
+	h3 {
+		margin: 0;
+		font-size: 1.1rem;
+	}
+	h4 {
+		margin: 0.75rem 0 0;
+		font-size: 1rem;
+	}
+	.file {
+		margin: 0;
+		overflow-wrap: anywhere;
 	}
 	.backup {
 		display: grid;
