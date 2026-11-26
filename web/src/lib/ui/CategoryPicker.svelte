@@ -243,9 +243,13 @@
 		padding: 0.4rem 0.75rem;
 		cursor: pointer;
 	}
-	li.active,
-	li:hover {
+	li.active {
 		background: var(--accent-soft);
+	}
+	@media (hover: hover) {
+		li:hover {
+			background: var(--accent-soft);
+		}
 	}
 	li.none {
 		color: var(--muted);

@@ -230,8 +230,10 @@
 		border-radius: 0.5rem;
 		min-height: 0;
 	}
-	.queue button:hover {
-		background: var(--accent-soft);
+	@media (hover: hover) {
+		.queue button:hover {
+			background: var(--accent-soft);
+		}
 	}
 	.queue button.current {
 		background: var(--accent-soft);

@@ -198,8 +198,10 @@
 		background: none;
 		text-align: left;
 	}
-	.name:hover:not(:disabled) {
-		background: var(--accent-soft);
+	@media (hover: hover) {
+		.name:hover:not(:disabled) {
+			background: var(--accent-soft);
+		}
 	}
 	.name:disabled {
 		opacity: 1;

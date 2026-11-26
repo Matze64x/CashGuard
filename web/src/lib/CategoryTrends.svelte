@@ -264,8 +264,10 @@
 		min-height: 0;
 		font-variant-numeric: tabular-nums;
 	}
-	.trend:hover {
-		background: var(--accent-soft);
+	@media (hover: hover) {
+		.trend:hover {
+			background: var(--accent-soft);
+		}
 	}
 	.name {
 		display: flex;
@@ -329,8 +331,10 @@
 		stroke: var(--surface);
 		stroke-width: 2.5;
 	}
-	.trend:hover .hollow {
-		stroke: var(--accent-soft-on-surface);
+	@media (hover: hover) {
+		.trend:hover .hollow {
+			stroke: var(--accent-soft-on-surface);
+		}
 	}
 	.spark .average-line {
 		stroke: var(--muted);

@@ -45,9 +45,17 @@
 	box-sizing: border-box;
 }
 
+/* (no double-tap zoom on phones, it got in the way of quick taps; pinching still zooms) */
+html {
+	touch-action: manipulation;
+}
+
 body {
 	margin: 0;
 	min-height: 100dvh;
+	/* (anything wider than the screen would make a phone shrink the whole page to fit; clip, not
+	   hidden: sticky headers keep working) */
+	overflow-x: clip;
 }
 
 button {
@@ -61,8 +69,12 @@ button {
 	cursor: pointer;
 }
 
-button:hover:not(:disabled) {
-	border-color: var(--accent);
+/* (only where a pointer really hovers: a phone keeps a tapped button "hovered", lit up, until the
+   next tap elsewhere) */
+@media (hover: hover) {
+	button:hover:not(:disabled) {
+		border-color: var(--accent);
+	}
 }
 
 button.primary {

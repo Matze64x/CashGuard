@@ -78,6 +78,21 @@ test('filtering, the due inbox, settings and devices are reachable by touch', as
 	await page.getByRole('button', { name: 'Settings' }).tap();
 	await expect(page.getByRole('dialog', { name: 'Settings' }).getByRole('heading', { name: 'Devices' })).toBeVisible();
 	await page.getByRole('dialog').getByRole('button', { name: 'Done' }).tap();
+	// a tapped button doesn't stay lit up (phones keep it "hovered" until the next tap elsewhere)
+	const accent = await page.evaluate(() => {
+		const probe = document.body.appendChild(document.createElement('div'));
+		probe.style.border = '1px solid var(--accent)';
+		const color = getComputedStyle(probe).borderColor;
+		probe.remove();
+		return color;
+	});
+	const settingsButton = page.getByRole('button', { name: 'Settings' });
+	await settingsButton.tap();
+	await page.keyboard.press('Escape');
+	expect(await settingsButton.evaluate((b) => getComputedStyle(b).borderColor)).not.toBe(accent);
+	// no double-tap zoom (pinching still zooms), and nothing widens the page
+	expect(await page.evaluate(() => getComputedStyle(document.documentElement).touchAction)).toBe('manipulation');
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 	// the sync switch: tapping its text turns it on and off
 	await page.locator('header .sync').getByText('Sync off').tap();
 	await expect(page.getByRole('switch', { name: 'Sync' })).toBeChecked();

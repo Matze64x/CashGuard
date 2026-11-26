@@ -107,8 +107,10 @@
 		text-align: left;
 		min-height: 0;
 	}
-	.row:hover:not(:disabled) {
-		background: var(--accent-soft);
+	@media (hover: hover) {
+		.row:hover:not(:disabled) {
+			background: var(--accent-soft);
+		}
 	}
 	/* not choosable, but just as readable */
 	.row:disabled {
