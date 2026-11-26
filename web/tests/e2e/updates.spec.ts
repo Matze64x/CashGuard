@@ -6,7 +6,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { openSettings, waitForApp } from './app';
 
-test.describe.configure({ mode: 'serial' });
+// (serial: they switch the server; slow: they wait for downloads and installs on purpose)
+test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
 let server = '';
 let PUBLISHED = '';
@@ -24,6 +25,11 @@ async function openPublished(page: Page) {
 	await page.reload();
 	await waitForApp(page);
 	expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+	// (the app checks for a new version when it starts: let that be done before one is published)
+	const settings = await openSettings(page);
+	await settings.getByRole('button', { name: 'Check for updates' }).click();
+	await expect(settings).toContainText('Up to date.');
+	await page.keyboard.press('Escape');
 }
 
 /** From now on the server offers the next version */
@@ -39,6 +45,9 @@ async function runningVersion(page: Page): Promise<string> {
 
 const updateNotice = (page: Page) => page.getByRole('status').filter({ hasText: 'New version available.' });
 
+/** Whether the page marked before the update is still there (while it reloads: yes, ask again) */
+const stillOld = (page: Page) => page.evaluate(() => 'beforeUpdate' in window).catch(() => true);
+
 test('the settings show the version and check for updates', async ({ page }) => {
 	await openPublished(page);
 	const settings = await openSettings(page);
@@ -53,7 +62,11 @@ test('“Manual”: a new version waits until Update, then takes over', async ({
 	const settings = await openSettings(page);
 	await settings.getByText('Manual').click();
 	await publishNext(page);
-	await settings.getByRole('button', { name: 'Check for updates' }).click();
+	// (the app may notice the new version by itself first: the button then says Update)
+	await settings
+		.getByRole('button', { name: 'Check for updates' })
+		.click({ timeout: 5000 })
+		.catch(() => undefined);
 	await expect(settings).toContainText('New version available.');
 	await page.keyboard.press('Escape');
 	await expect(updateNotice(page)).toBeVisible();
@@ -79,7 +92,7 @@ test('“Manual”: a new version waits until Update, then takes over', async ({
 	// Update: installs it, and the app reloads with it (with its settings)
 	await page.evaluate(() => Object.assign(window, { beforeUpdate: true }));
 	await updateNotice(page).getByRole('button', { name: 'Update' }).click();
-	await expect.poll(() => page.evaluate(() => 'beforeUpdate' in window), { timeout: 30_000 }).toBe(false);
+	await expect.poll(() => stillOld(page), { timeout: 30_000 }).toBe(false);
 	await waitForApp(page);
 	expect(await runningVersion(page)).toBe('next');
 	await expect(updateNotice(page)).toHaveCount(0);
@@ -114,7 +127,7 @@ test('automatic: a new version installs in the background and takes over when th
 
 	// the app goes to the background: it switches
 	await hide();
-	await expect.poll(() => page.evaluate(() => 'beforeUpdate' in window), { timeout: 30_000 }).toBe(false);
+	await expect.poll(() => stillOld(page), { timeout: 30_000 }).toBe(false);
 	await waitForApp(page);
 	expect(await runningVersion(page)).toBe('next');
 });
