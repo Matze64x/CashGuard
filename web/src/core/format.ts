@@ -5,15 +5,12 @@
  * can be loaded and saved by either client without spurious diffs. All values are JSON strings.
  */
 import { formatFileDate, formatFileDateTime, MAX_YEAR, MIN_YEAR, parseFileDate, parseFileDateTime } from './dates';
-import { legacyAccountIds, NO_CATEGORY, parseId, type Id } from './ids';
+import { NO_CATEGORY, parseId, type Id } from './ids';
 import { formatAmount, parseAmount } from './money';
 import { compareTransactions, normalizeGroup, sortNewestFirst, type Account, type CashGuardData, type Category, type Recurring, type Transaction } from './model';
 
+/** The only version read (earlier ones were from before the app was in use) */
 export const FORMAT_VERSION = 'cgt_0.6.0';
-/** The version before account ids: still read (accounts get ids from their names, see `legacyAccountIds`) */
-export const LEGACY_FORMAT_VERSION = 'cgt_0.4.0';
-/** The versions still read: before account ids, before recurring transactions, and the current one */
-const READABLE_VERSIONS = [LEGACY_FORMAT_VERSION, 'cgt_0.5.0', FORMAT_VERSION];
 
 export interface Issue {
 	/** Location in the file, e.g. `Transactions[3].Transactions[1].Amount` */
@@ -52,8 +49,6 @@ class Parser {
 	readonly transactionIds = new Set<Id>();
 	readonly accountIds = new Set<Id>();
 	readonly recurringIds = new Set<Id>();
-	/** Reading a file from before account ids (`LEGACY_FORMAT_VERSION`) */
-	legacy = false;
 
 	error(path: string, message: string): null {
 		this.errors.push({ path, message });
@@ -106,18 +101,16 @@ class Parser {
 		return { id, name, color };
 	}
 
-	/** In a legacy file, accounts have no id yet: `id` is null, to be derived from all names */
-	account(value: unknown, path: string): (Omit<Account, 'id'> & { id: Id | null }) | null {
+	account(value: unknown, path: string): Account | null {
 		const object = this.object(value, path, ['ID', 'Name', 'Amount', 'Edited']);
 		if (!object) return null;
-		if (this.legacy && 'ID' in object) this.warnings.push({ path: join(path, 'ID'), message: `Ignored: in files of version ${LEGACY_FORMAT_VERSION}, account ids come from the names` });
-		const id = this.legacy ? null : this.field(object, 'ID', path, parseId, 'id');
+		const id = this.field(object, 'ID', path, parseId, 'id');
 		const name = this.string(object, 'Name', path);
 		const amount = this.field(object, 'Amount', path, parseAmount, 'amount');
 		const edited = this.field(object, 'Edited', path, parseFileDateTime, TIMESTAMP_FORMAT);
 		if (id !== null && this.accountIds.has(id)) return this.error(join(path, 'ID'), `Duplicate account id ${id}`);
-		if ((id === null && !this.legacy) || name === null || amount === null || edited === null) return null;
-		if (id !== null) this.accountIds.add(id);
+		if (id === null || name === null || amount === null || edited === null) return null;
+		this.accountIds.add(id);
 		return { id, name, amount, edited };
 	}
 
@@ -225,7 +218,7 @@ export function parseCashGuard(content: string): ParseResult {
 	}
 	const version = p.string(root, 'Version', '');
 	if (version === null) return failed();
-	if (!READABLE_VERSIONS.includes(version)) {
+	if (version !== FORMAT_VERSION) {
 		p.error(
 			'Version',
 			isNewerVersion(version)
@@ -234,30 +227,20 @@ export function parseCashGuard(content: string): ParseResult {
 		);
 		return failed();
 	}
-	p.legacy = version === LEGACY_FORMAT_VERSION;
-	// recurring transactions came with the current version
-	const hasRecurring = version === FORMAT_VERSION;
-	p.object(root, '', hasRecurring ? ['Version', 'Categories', 'Accounts', 'Recurring', 'Transactions'] : ['Version', 'Categories', 'Accounts', 'Transactions']);
+	p.object(root, '', ['Version', 'Categories', 'Accounts', 'Recurring', 'Transactions']);
 
 	const categories = p.array(root, 'Categories', '').map((value, i) => p.category(value, `Categories[${i}]`));
 	const accounts = p.array(root, 'Accounts', '').map((value, i) => p.account(value, `Accounts[${i}]`));
-	const recurring = hasRecurring ? p.array(root, 'Recurring', '').map((value, i) => p.recurring(value, `Recurring[${i}]`)) : [];
+	const recurring = p.array(root, 'Recurring', '').map((value, i) => p.recurring(value, `Recurring[${i}]`));
 	const transactions = p.array(root, 'Transactions', '').map((value, i) => p.transaction(value, `Transactions[${i}]`));
 
 	if (p.errors.length > 0) return failed();
 	const valid = <T>(items: (T | null)[]): T[] => items.filter((item) => item !== null);
-	const parsedAccounts = valid(accounts);
-	const ids = p.legacy ? legacyAccountIds(parsedAccounts.map((a) => a.name)) : parsedAccounts.map((a) => a.id!);
-	// (derived ids can't repeat for valid names, short of a 64-bit hash collision)
-	if (new Set(ids).size !== ids.length) {
-		p.error('Accounts', 'Two accounts got the same id from their names; rename one of them in the other CashGuard client, then open the file again');
-		return failed();
-	}
 	return {
 		ok: true,
 		data: {
 			categories: valid(categories),
-			accounts: parsedAccounts.map((a, i) => ({ ...a, id: ids[i]! })),
+			accounts: valid(accounts),
 			recurring: valid(recurring),
 			transactions: sortNewestFirst(valid(transactions)),
 		},

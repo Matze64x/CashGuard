@@ -1134,7 +1134,7 @@ mod tests {
     fn state(id: &str, name: &str) -> SyncState {
         serde_json::from_value(json!({
             "deviceId": id, "name": name, "certificate": "00", "privateKey": "00",
-            "iceUfrag": "u", "icePass": "p", "port": 0, "tcpPort": 0, "phones": []
+            "iceUfrag": "u", "icePass": "p", "port": 0, "tcpPort": 0, "phones": [], "pcs": []
         }))
         .unwrap()
     }

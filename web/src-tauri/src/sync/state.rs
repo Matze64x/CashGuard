@@ -33,12 +33,7 @@ pub struct PairedPc {
     /// Unix seconds
     pub paired_at: u64,
     /// "ip:port" it was reached at last (besides finding it on the network)
-    #[serde(default)]
     pub last_address: Option<String>,
-}
-
-fn default_port() -> u16 {
-    DEFAULT_PORT
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,11 +49,8 @@ pub struct SyncState {
     /// UDP port for phones
     pub port: u16,
     /// TCP port for other PCs
-    #[serde(default = "default_port")]
     pub tcp_port: u16,
-    #[serde(default)]
     pub phones: Vec<Phone>,
-    #[serde(default)]
     pub pcs: Vec<PairedPc>,
 }
 

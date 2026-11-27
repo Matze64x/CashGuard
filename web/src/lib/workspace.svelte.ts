@@ -92,7 +92,6 @@ function toStored({ working, fileName }: Snapshot): StoredSnapshot {
 }
 
 function fromStored(stored: StoredSnapshot): Snapshot {
-	// (older versions also stored an import base and the last export: no longer needed)
 	return { working: parseStored(stored.working), fileName: stored.fileName };
 }
 

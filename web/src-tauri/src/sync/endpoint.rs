@@ -571,7 +571,7 @@ mod tests {
         let cert = str0m::crypto::from_feature_flags().dtls_provider.generate_certificate().unwrap();
         let state = Arc::new(Mutex::new(serde_json::from_value::<SyncState>(serde_json::json!({
             "deviceId": "00000000000000aa", "name": "Test PC", "certificate": "00", "privateKey": "00",
-            "iceUfrag": "pcufrag1", "icePass": "pcpassword-0123456789ab", "port": 0, "phones": []
+            "iceUfrag": "pcufrag1", "icePass": "pcpassword-0123456789ab", "port": 0, "tcpPort": 0, "phones": [], "pcs": []
         })).unwrap()));
         let socket = UdpSocket::bind(SocketAddr::new(ip, 0)).unwrap();
         let address = socket.local_addr().unwrap();
@@ -749,7 +749,7 @@ mod tests {
         let cert = str0m::crypto::from_feature_flags().dtls_provider.generate_certificate().unwrap();
         let state = Arc::new(Mutex::new(serde_json::from_value::<SyncState>(serde_json::json!({
             "deviceId": "00000000000000aa", "name": "Test PC", "certificate": "00", "privateKey": "00",
-            "iceUfrag": "pcufrag1", "icePass": "pcpassword-0123456789ab", "port": 0, "phones": []
+            "iceUfrag": "pcufrag1", "icePass": "pcpassword-0123456789ab", "port": 0, "tcpPort": 0, "phones": [], "pcs": []
         })).unwrap()));
         let ice = IceCreds { ufrag: "pcufrag1".into(), pass: "pcpassword-0123456789ab".into() };
         let config = EndpointConfig { cert, ice, device_id: "00000000000000aa".into(), state, save: Box::new(|_| Ok(())) };

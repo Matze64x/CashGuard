@@ -6,7 +6,6 @@ import {
 	cents,
 	deleteTransaction,
 	FORMAT_VERSION,
-	LEGACY_FORMAT_VERSION,
 	NO_CATEGORY,
 	parseCashGuard,
 	serializeCashGuard,
@@ -182,36 +181,9 @@ describe('validation', () => {
 		expect(errorsOf(parseCashGuard(doc({}, { Accounts: [{ ...account, ID: undefined }] })))).toEqual(['Accounts[0].ID: Missing']);
 	});
 
-	it('reads files from before account ids: ids derived from the names, alike on every device', () => {
-		const account = { Name: 'Bank', Amount: '+1.00', Edited: '01.01.2026 10:00:00' };
-		const accounts = [account, { ...account, Name: 'Café 💶' }, { ...account, Amount: '+2.00' }];
-		const legacy = parsed(doc({}, { Version: LEGACY_FORMAT_VERSION, Accounts: accounts, Recurring: undefined }));
-		// FNV-1a 64 of "Bank", "Café 💶" and the second "Bank" ("Bank", NUL, "1"); the C++ client agrees (conformance test)
-		expect(legacy.accounts.map((a) => [a.id, a.name, a.amount])).toEqual([
-			['13925658533498293399', 'Bank', 100],
-			['13691665715867055498', 'Café 💶', 100],
-			['3087832629438022316', 'Bank', 200],
-		]);
-		// written in the current version, with the ids
-		expect(serializeCashGuard(legacy)).toContain(`"Version": "${FORMAT_VERSION}"`);
-		expect(parsed(serializeCashGuard(legacy))).toEqual(legacy);
-		// an id in a legacy file is ignored
-		expect(parseCashGuard(doc({}, { Version: LEGACY_FORMAT_VERSION, Accounts: [{ ...account, ID: '3' }], Recurring: undefined })).warnings).toEqual([
-			{ path: 'Accounts[0].ID', message: 'Ignored: in files of version cgt_0.4.0, account ids come from the names' },
-		]);
-	});
-
-	// (the C++ client upgrades them alike: conformance test)
-	it.each(readdirSync(`${FIXTURES}/legacy`).filter((name) => name.endsWith('.json') && !name.endsWith('.upgraded.json')))('upgrades the older version in legacy/%s', (name) => {
-		const upgraded = readFileSync(`${FIXTURES}/legacy/${name.replace(/\.json$/, '.upgraded.json')}`, 'utf8');
-		expect(serializeCashGuard(parsed(readFileSync(`${FIXTURES}/legacy/${name}`, 'utf8')))).toBe(upgraded);
-	});
-
-	it('reads files from before recurring transactions', () => {
-		const before = parsed(doc({}, { Version: 'cgt_0.5.0', Recurring: undefined }));
-		expect(before.recurring).toEqual([]);
-		expect(serializeCashGuard(before)).toContain('"Recurring": []');
-		expect(parseCashGuard(doc({}, { Version: 'cgt_0.5.0' })).warnings.map((w) => w.path)).toEqual(['Recurring']);
+	it('reads no versions from before the app was in use', () => {
+		for (const version of ['cgt_0.4.0', 'cgt_0.5.0'])
+			expect(errorsOf(parseCashGuard(doc({}, { Version: version })))).toEqual([`Version: Unsupported version "${version}", expected "cgt_0.6.0"`]);
 		expect(errorsOf(parseCashGuard(doc({}, { Recurring: undefined })))).toEqual(['Recurring: Missing']);
 	});
 
