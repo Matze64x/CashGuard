@@ -202,10 +202,8 @@ test('clear data: asks first, deletes everything here, with no undo; not while s
 	await expect(settings).not.toContainText('Last file:');
 });
 
-test('stored data the app can no longer read (an old format) can be cleared to start over', async ({ page }) => {
-	await page.goto('/');
-	await expect(page.getByText('No transactions yet')).toBeVisible();
-	const old = fixtureText().replace('"cgt_0.6.0"', '"cgt_0.5.0"');
+/** Stores a working copy directly, as if an earlier (or later) version of the app had saved it */
+async function storeWorking(page: Page, working: string) {
 	await page.evaluate(async (working) => {
 		const db = await new Promise<IDBDatabase>((resolve, reject) => {
 			const request = indexedDB.open('keyval-store');
@@ -215,7 +213,24 @@ test('stored data the app can no longer read (an old format) can be cleared to s
 		const transaction = db.transaction('keyval', 'readwrite');
 		transaction.objectStore('keyval').put({ current: { working, fileName: null }, beforeImport: null, revision: 5 }, 'cashguard-workspace-v2');
 		await new Promise((resolve) => (transaction.oncomplete = resolve));
-	}, old);
+	}, working);
+}
+
+test("data from a newer version: update the app, clearing isn't offered", async ({ page }) => {
+	await page.goto('/');
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	await storeWorking(page, fixtureText().replace('"cgt_0.6.0"', '"cgt_9.0.0"'));
+	await page.reload();
+	await expect(page.getByRole('alert')).toContainText('newer version of CashGuard');
+	await expect(page.getByRole('alert')).not.toContainText('clear it');
+	const settings = await openSettings(page);
+	await expect(settings.getByRole('button', { name: 'Clear data…' })).toBeDisabled();
+});
+
+test('stored data the app can no longer read (an old format) can be cleared to start over', async ({ page }) => {
+	await page.goto('/');
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	await storeWorking(page, fixtureText().replace('"cgt_0.6.0"', '"cgt_0.5.0"'));
 	await page.reload();
 	await expect(page.getByRole('alert')).toContainText("Your data can't be loaded");
 	await expect(page.getByRole('alert')).toContainText('To start over, clear it in Settings.');

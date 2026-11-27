@@ -51,11 +51,23 @@ export type ImportCandidate =
 	| (ImportSource & { readonly ok: true; readonly plan: ImportPlan; readonly warnings: readonly Issue[] })
 	| (ImportSource & { readonly ok: false; readonly errors: readonly Issue[] });
 
+/** The stored data can't be read: damaged, or from a version the app no longer reads (or not yet) */
+class UnreadableDataError extends Error {
+	constructor(
+		message: string,
+		/** Written by a newer version: updating the app helps, clearing would lose it */
+		readonly newer: boolean,
+	) {
+		super(message);
+	}
+}
+
 function parseStored(text: string): CashGuardData {
 	const result = parseCashGuard(text);
 	if (result.ok) return result.data;
 	const [first] = result.errors;
-	throw new Error(`The data stored in this browser is damaged (${first?.path || 'file'}: ${first?.message}).`);
+	const newer = first?.path === 'Version' && first.message.includes('newer version');
+	throw new UnreadableDataError(`The data stored in this browser can't be read (${first?.path || 'file'}: ${first?.message}).`, newer);
 }
 
 /**
@@ -111,6 +123,8 @@ export class Workspace implements SyncStore {
 	#current = $state.raw<Snapshot>({ working: EMPTY_DATA, fileName: null });
 	#beforeImport = $state.raw<Snapshot | null>(null);
 	ready = $state(false);
+	/** The stored data couldn't be read (and isn't from a newer version): clearing it is the way out */
+	unreadable = $state(false);
 	/** Increases whenever another tab changed the data and it was reloaded */
 	revision = $state(0);
 	/** Desktop app: why the last backup failed (null: it worked, or there is none) */
@@ -145,7 +159,13 @@ export class Workspace implements SyncStore {
 		const stored = await loadWorkspace();
 		this.#savedRevision = stored?.revision ?? 0;
 		if (stored) {
-			this.#current = fromStored(stored.current);
+			try {
+				this.#current = fromStored(stored.current);
+			} catch (e) {
+				this.unreadable = e instanceof UnreadableDataError && !e.newer;
+				throw e;
+			}
+			this.unreadable = false;
 			try {
 				this.#beforeImport = stored.beforeImport && fromStored(stored.beforeImport);
 			} catch {
@@ -252,7 +272,9 @@ export class Workspace implements SyncStore {
 			const path = settings.backupPath;
 			if (!this.isDesktop || !path) return;
 			const data = this.#current.working;
-			if (data === this.#backedUp) return;
+			// (no data, e.g. just cleared: the backup keeps the last data instead, as a way back)
+			const empty = data.transactions.length + data.categories.length + data.accounts.length + data.recurring.length === 0;
+			if (data === this.#backedUp || empty) return;
 			try {
 				await desktop.writeFile(path, fileText(data));
 				this.#backedUp = data;

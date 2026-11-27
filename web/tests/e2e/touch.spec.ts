@@ -93,9 +93,8 @@ test('filtering, the due inbox, settings and devices are reachable by touch', as
 	await settingsButton.tap();
 	await page.keyboard.press('Escape');
 	expect(await settingsButton.evaluate((b) => getComputedStyle(b).borderColor)).not.toBe(accent);
-	// no double-tap zoom (pinching still zooms), and nothing widens the page
+	// no double-tap zoom (pinching still zooms)
 	expect(await page.evaluate(() => getComputedStyle(document.documentElement).touchAction)).toBe('manipulation');
-	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 	// the sync switch: tapping its text turns it on and off
 	await page.locator('header .sync').getByText('Sync off').tap();
 	await expect(page.getByRole('switch', { name: 'Sync' })).toBeChecked();

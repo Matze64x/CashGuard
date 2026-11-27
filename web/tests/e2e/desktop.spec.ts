@@ -216,6 +216,29 @@ test('changes made before restarting are backed up after the restart', async ({ 
 	await expect.poll(() => transactionsIn(page, BACKUP), { timeout: 8000 }).toBe(47);
 });
 
+test('clearing the data leaves the backup file as it was', async ({ page }) => {
+	// (waits on purpose: the backup is written seconds after a change)
+	test.slow();
+	await importFile(page);
+	await chooseBackup(page);
+	expect(await transactionsIn(page, BACKUP)).toBe(46);
+	await page.getByRole('button', { name: 'Settings' }).click();
+	await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'Clear data…' }).click();
+	const confirm = page.getByRole('dialog', { name: 'Clear data?' });
+	await expect(confirm).toContainText('and so does the backup file');
+	await confirm.getByRole('button', { name: 'Clear data' }).click();
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	// not even after a while, on closing, or after a restart
+	await page.waitForTimeout(3500);
+	await page.reload();
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	await page.waitForTimeout(3500);
+	expect(await transactionsIn(page, BACKUP)).toBe(46);
+	// the next change is backed up as usual
+	await addTransaction(page, 'Starting over');
+	await expect.poll(() => transactionsIn(page, BACKUP), { timeout: 8000 }).toBe(1);
+});
+
 test('the backup can be turned off', async ({ page }) => {
 	await importFile(page);
 	await chooseBackup(page);

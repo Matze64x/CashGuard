@@ -143,7 +143,7 @@
 
 {#if confirmingClear}
 	<Modal title="Clear data?" onclose={() => (confirmingClear = false)}>
-		<p class="ask">Deletes all transactions, categories, accounts and recurring transactions on this device. Other devices keep theirs. Export first to keep a copy.</p>
+		<p class="ask">Deletes all transactions, categories, accounts and recurring transactions on this device. Other devices keep theirs{isDesktop && settings.backupPath ? ', and so does the backup file' : ''}. Export first to keep a copy.</p>
 		<div class="buttons">
 			<button type="button" onclick={() => (confirmingClear = false)}>Cancel</button>
 			<button type="button" class="primary danger" onclick={onclear}>Clear data</button>

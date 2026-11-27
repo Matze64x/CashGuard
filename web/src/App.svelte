@@ -251,7 +251,7 @@
 <main class:wide={section === 'explore'}>
 
 	{#if loadError}
-		<p class="notice error" role="alert">Your data can't be loaded: {loadError} To start over, clear it in Settings.</p>
+		<p class="notice error" role="alert">Your data can't be loaded: {loadError}{workspace.unreadable ? ' To start over, clear it in Settings.' : ''}</p>
 	{:else if workspace.ready}
 		<!-- each view stays mounted (keeps its selection and search); only the shown one is active -->
 		<div hidden={section !== 'transactions'}>
@@ -313,7 +313,7 @@
 		{workspace}
 		{sync}
 		{busy}
-		loadFailed={loadError !== null}
+		loadFailed={workspace.unreadable}
 		onimport={() => {
 			settingsOpen = false;
 			importFile();
@@ -328,7 +328,7 @@
 		}}
 		onclear={() => {
 			settingsOpen = false;
-			const failed = loadError !== null;
+			const failed = workspace.unreadable;
 			void run(async () => {
 				await workspace.clear();
 				// (nothing was started on data that couldn't be loaded: start again, on the cleared data)
