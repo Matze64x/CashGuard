@@ -340,10 +340,5 @@
 	}
 	.option.selected {
 		background: var(--accent-soft);
-		box-shadow: inset 3px 0 0 var(--accent);
-	}
-	/* a grey bar: the keys don't go to the list right now */
-	.list:not(:focus) .option.selected {
-		box-shadow: inset 3px 0 0 var(--control-border);
 	}
 </style>
