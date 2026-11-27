@@ -12,6 +12,7 @@
 -->
 <script lang="ts" generics="T, K extends string">
 	import { tick, untrack, type Snippet } from 'svelte';
+	import { touchFirst } from '../pointer';
 	import { shortcuts } from '../shortcuts.svelte';
 
 	let {
@@ -315,7 +316,7 @@
 				id={domId(key(item))}
 				data-key={key(item)}
 				class="option"
-				class:selected={key(item) === selected}
+				class:selected={!touchFirst && key(item) === selected}
 				role="option"
 				use:observed
 				aria-selected={key(item) === selected}

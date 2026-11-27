@@ -37,6 +37,9 @@ test('a transaction: tap opens it; edit, copy, delete and undo by touch', async 
 	await expect(copy.getByLabel('Description')).toHaveValue(first);
 	await copy.getByRole('button', { name: 'Save', exact: true }).tap();
 	await expect(page.getByText('47 transactions')).toBeVisible();
+	// the new one is selected, but not highlighted: there's no keyboard cursor on a touch screen
+	await expect(page.locator('[role="option"][aria-selected="true"]')).toHaveCount(1);
+	await expect(page.locator('[role="option"].selected')).toHaveCount(0);
 
 	// delete, then undo from the notice
 	await rows.first().tap();
