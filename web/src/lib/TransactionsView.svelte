@@ -354,7 +354,7 @@
 		padding: 0.5rem 0.75rem 0.5rem 1.15rem;
 		position: relative;
 	}
-	/* the category's color, to scan the list by (inside the edge, where the selection has its bar) */
+	/* the category's color, to scan the list by (a bit inside the edge: it looks better there) */
 	.row::before {
 		content: '';
 		position: absolute;
