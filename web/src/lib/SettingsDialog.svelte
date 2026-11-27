@@ -54,7 +54,7 @@
 	}
 </script>
 
-<Modal title="Settings" {onclose}>
+<Modal title="Settings" closeButton {onclose}>
 	<div class="settings">
 		<label for="date-style">Date format</label>
 		<select id="date-style" value={settings.dateStyle} onchange={(e) => (settings.dateStyle = e.currentTarget.value as DateStyle)}>

@@ -1,6 +1,6 @@
 /** Balances, custom colors and the date format, operated with the keyboard. */
 import { expect, test, type Page } from '@playwright/test';
-import { waitForApp } from './app';
+import { openSettings, waitForApp } from './app';
 import { fileURLToPath } from 'node:url';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta.url));
@@ -109,4 +109,11 @@ test('dates can be typed short', async ({ page }) => {
 	await page.getByRole('dialog').getByLabel('Amount', { exact: true }).fill('1');
 	await page.keyboard.press(`${MOD}+Enter`);
 	await expect(page.getByRole('option', { name: /Short date/ })).toContainText(`05.03.${new Date().getFullYear()}`);
+});
+
+test('the settings close with the × at their top', async ({ page }) => {
+	await waitForApp(page);
+	const settings = await openSettings(page);
+	await settings.getByRole('button', { name: 'Close' }).click();
+	await expect(settings).toBeHidden();
 });
