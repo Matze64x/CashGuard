@@ -166,3 +166,38 @@ test('if saving fails, nothing changes and the error is shown', async ({ page })
 	await expect(page.getByText('No transactions yet')).toBeVisible();
 	await expect((await openSettings(page)).getByRole('button', { name: 'Undo import' })).toBeHidden();
 });
+
+test('clear data: asks first, deletes everything here, with no undo; not while syncing', async ({ page }) => {
+	await page.goto('/');
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	await importFile(page, FIXTURE);
+	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByText('46 transactions')).toBeVisible();
+
+	// cancelled: nothing happens
+	let settings = await openSettings(page);
+	await settings.getByRole('button', { name: 'Clear data…' }).click();
+	const confirm = page.getByRole('dialog', { name: 'Clear data?' });
+	await confirm.getByRole('button', { name: 'Cancel' }).click();
+	await expect(confirm).toBeHidden();
+	await expect(settings).toBeVisible();
+
+	// not while sync is on
+	await page.getByRole('switch', { name: 'Sync' }).evaluate((s: HTMLInputElement) => s.click());
+	await expect(settings.getByRole('button', { name: 'Clear data…' })).toBeDisabled();
+	await expect(settings).toContainText('To clear the data, turn off sync first.');
+	await page.getByRole('switch', { name: 'Sync' }).evaluate((s: HTMLInputElement) => s.click());
+
+	await settings.getByRole('button', { name: 'Clear data…' }).click();
+	await confirm.getByRole('button', { name: 'Clear data' }).click();
+	await expect(settings).toBeHidden();
+	await expect(page.getByRole('status')).toContainText('Cleared the data on this device.');
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	// no undo, and it stays cleared after a restart
+	await page.keyboard.press('Control+z');
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	await page.reload();
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	settings = await openSettings(page);
+	await expect(settings).not.toContainText('Last file:');
+});

@@ -336,6 +336,28 @@ export class Workspace implements SyncStore {
 		});
 	}
 
+	/**
+	 * Deletes all data on this device, with no undo. Every device's base is forgotten too, so the
+	 * next sync brings their data back here instead of deleting it there. Only while sync is off: a
+	 * running connection still has its base.
+	 */
+	clear(): Promise<void> {
+		return this.#serial(async () => {
+			const next: Snapshot = { working: EMPTY_DATA, fileName: null };
+			this.#savedRevision = await saveWorkspace({ current: toStored(next), beforeImport: null }, this.#savedRevision, 'forget all');
+			this.#bases.clear();
+			this.#undo = [];
+			this.#redo = [];
+			const changed = next.working !== this.#current.working;
+			this.#current = next;
+			this.#beforeImport = null;
+			if (changed) {
+				this.#scheduleBackup();
+				this.#emit(null);
+			}
+		});
+	}
+
 	/** Must run inside `#serial`. An edit invalidates "undo import" (it would discard the edit). */
 	async #replaceWorking(working: CashGuardData): Promise<void> {
 		await this.#commit({ ...this.#current, working }, null);

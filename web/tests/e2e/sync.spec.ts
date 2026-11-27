@@ -4,7 +4,7 @@
  * network. Uses the dev-only `__cashguardTest` hook (see `App.svelte`).
  */
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { fileAction } from './app';
+import { fileAction, openSettings } from './app';
 import { fileURLToPath } from 'node:url';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/edge-cases.json', import.meta.url));
@@ -142,6 +142,32 @@ test('two devices sync additions, edits and deletions both ways, and keep their 
 	await expect(phone.page.getByText('46 transactions')).toBeVisible();
 	await phone.page.getByRole('searchbox').fill('Added on the PC while apart');
 	await expect(phone.page.getByText('1 match of 46')).toBeVisible();
+
+	await pcContext.close();
+	await phoneContext.close();
+});
+
+test('clearing the data on one device deletes nothing elsewhere: the next sync brings it back', async ({ browser }) => {
+	const pcContext = await browser.newContext();
+	const phoneContext = await browser.newContext();
+	const pc = await openDevice(pcContext, 'pc-1', 'pc');
+	const phone = await openDevice(phoneContext, 'phone-1', 'phone');
+	await importFixture(pc.page);
+	await connect(pc, phone);
+	await expect(phone.page.getByText('46 transactions')).toBeVisible();
+
+	// apart (restarted), the phone clears its data; its base for the PC goes with it
+	await phone.page.reload();
+	await pc.page.reload();
+	await expect(phone.page.getByText('46 transactions')).toBeVisible();
+	const settings = await openSettings(phone.page);
+	await settings.getByRole('button', { name: 'Clear data…' }).click();
+	await phone.page.getByRole('dialog', { name: 'Clear data?' }).getByRole('button', { name: 'Clear data' }).click();
+	await expect(phone.page.getByText('No transactions yet')).toBeVisible();
+
+	await connect(pc, phone);
+	await expect(phone.page.getByText('46 transactions')).toBeVisible();
+	await expect(pc.page.getByText('46 transactions')).toBeVisible();
 
 	await pcContext.close();
 	await phoneContext.close();

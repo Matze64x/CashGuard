@@ -325,6 +325,13 @@
 			settingsOpen = false;
 			undoImport();
 		}}
+		onclear={() => {
+			settingsOpen = false;
+			void run(async () => {
+				await workspace.clear();
+				return 'Cleared the data on this device.';
+			});
+		}}
 		onclose={() => (settingsOpen = false)}
 	/>
 {/if}
