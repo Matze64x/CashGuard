@@ -20,6 +20,9 @@ test.beforeEach(async ({ page }) => {
 	await page.goto('/');
 	MOD = await page.evaluate(() => (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? 'Meta' : 'Control'));
 	await expect(page.getByText('No transactions yet')).toBeVisible();
+	// (amounts are hidden at every start)
+	await page.keyboard.press('h');
+	await expect(page.getByRole('button', { name: 'Hide amounts' })).toBeVisible();
 });
 
 test('a new transaction can update an account balance, remembered for the next one', async ({ page }) => {

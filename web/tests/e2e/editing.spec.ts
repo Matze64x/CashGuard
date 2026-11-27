@@ -33,6 +33,9 @@ test.beforeEach(async ({ page }) => {
 	await page.goto('/');
 	MOD = await page.evaluate(() => (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? 'Meta' : 'Control'));
 	await expect(page.getByText('No transactions yet')).toBeVisible();
+	// (amounts are hidden at every start)
+	await page.keyboard.press('h');
+	await expect(page.getByRole('button', { name: 'Hide amounts' })).toBeVisible();
 });
 
 test('add a transaction with the keyboard only', async ({ page }) => {
@@ -48,6 +51,25 @@ test('add a transaction with the keyboard only', async ({ page }) => {
 	await expect(row(page, 'Coffee')).toContainText('-3,50 €');
 	await expect(row(page, 'Coffee')).toHaveAttribute('aria-selected', 'true');
 	await expect(page.getByRole('listbox', { name: 'Transactions' })).toBeFocused();
+});
+
+test('amounts hide (at every start) and show with the eye button or h', async ({ page }) => {
+	await page.keyboard.press('n');
+	await page.keyboard.type('Coffee');
+	await tabTo(page, 'Amount');
+	await page.keyboard.type('3,5');
+	await page.keyboard.press('Enter');
+	const balance = page.locator('.summary .balance');
+	await expect(row(page, 'Coffee')).toContainText('-3,50 €');
+	await expect(balance).toHaveText('-3,50 €');
+	await page.keyboard.press('h');
+	await expect(row(page, 'Coffee')).not.toContainText('3,50');
+	await expect(balance).toHaveText('••••');
+	await page.getByRole('button', { name: 'Show amounts' }).click();
+	await expect(row(page, 'Coffee')).toContainText('-3,50 €');
+	await page.reload();
+	await expect(row(page, 'Coffee')).toContainText('••••');
+	await expect(balance).toHaveText('••••');
 });
 
 test('income via a typed +, and save and add another', async ({ page }) => {

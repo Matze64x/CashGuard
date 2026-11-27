@@ -65,6 +65,10 @@
 	} = $props();
 
 	const data = $derived(workspace.data);
+
+	/** Whether the amounts are hidden (from onlookers): at every start, until the eye button shows them */
+	let hidden = $state(true);
+	const money = (amount: Cents) => (hidden ? '••••' : formatEuro(amount));
 	const categories = $derived(new Map<Id, Category>(data.categories.map((c) => [c.id, c])));
 
 	// do the accounts still match the transactions? (only worth showing once there are accounts)
@@ -145,7 +149,7 @@
 					return adjusted;
 				});
 				selectedId = created;
-				if (account && balance !== null) notify(`${account.name} is now at ${formatEuro(balance)}.`, true);
+				if (account && balance !== null) notify(`${account.name} is now at ${money(balance)}.`, true);
 			} else {
 				const id = target.id;
 				await workspace.edit(`Edit “${draft.description || 'transaction'}”`, (d, now) => updateTransaction(d, id, draft, now, target.original));
@@ -186,6 +190,7 @@
 	$effect(() =>
 		shortcuts.add([
 			{ keys: ['n'], description: 'New transaction', group: 'Transactions', when: () => active, run: () => openNew() },
+			{ keys: ['h'], description: 'Hide or show the amounts', group: 'Transactions', when: () => active, run: () => (hidden = !hidden) },
 			// these act on the selection, so only while the list (not a button elsewhere) has the focus
 			...[
 				{ keys: ['Enter', 'e'], description: 'Edit the selected transaction', run: () => openEdit(selected) },
@@ -209,13 +214,20 @@
 {/if}
 
 <section class="summary" aria-live="polite">
-	<span class="balance">{formatEuro(result.total)}</span>
+	<span class="balance" class:hidden>{money(result.total)}</span>
+	<button class="eye" aria-label={hidden ? 'Show amounts' : 'Hide amounts'} title="h" onclick={() => (hidden = !hidden)}>
+		<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12" />
+			<circle cx="12" cy="12" r="3" />
+			{#if hidden}<path d="M3 3l18 18" />{/if}
+		</svg>
+	</button>
 	<span class="muted">
 		{filtered ? `${plural(visible.length, 'match', 'matches')} of ${data.transactions.length}` : plural(data.transactions.length, 'transaction')}
 	</span>
 	{#if accountsDifference !== null}
 		<button class="accounts" class:off={accountsDifference !== 0} title="Compare with the accounts (g m)" onclick={onshowaccounts}>
-			{accountsDifference === 0 ? '✓ Accounts match' : `Accounts differ by ${formatEuro(accountsDifference as Cents)}`}
+			{accountsDifference === 0 ? '✓ Accounts match' : hidden ? 'Accounts differ' : `Accounts differ by ${formatEuro(accountsDifference as Cents)}`}
 		</button>
 	{/if}
 </section>
@@ -244,7 +256,7 @@
 					<span class="dot" style:background={categories.get(t.categoryId)?.color ?? 'transparent'}></span>{categories.get(t.categoryId)?.name ?? ''}
 				</span>
 			</span>
-			<span class="amount" class:income={t.amount > 0} class:expense={t.amount < 0}>{formatEuro(t.amount)}</span>
+			<span class="amount" class:income={!hidden && t.amount > 0} class:expense={!hidden && t.amount < 0} class:hidden>{money(t.amount)}</span>
 		</div>
 	{/snippet}
 	{#snippet empty()}
@@ -303,8 +315,22 @@
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 	}
-	.muted {
+	.muted,
+	.hidden {
 		color: var(--muted);
+	}
+	.eye {
+		align-self: center;
+		display: grid;
+		place-items: center;
+		min-width: 2.25rem;
+		min-height: 2.25rem;
+		padding: 0;
+		color: var(--muted);
+	}
+	.eye svg {
+		width: 1.25rem;
+		height: 1.25rem;
 	}
 	.accounts {
 		margin-left: auto;
