@@ -21,6 +21,7 @@
 		workspace,
 		sync,
 		busy,
+		loadFailed,
 		onimport,
 		onexport,
 		onundoimport,
@@ -31,6 +32,8 @@
 		sync: DesktopSync | PhoneSync;
 		/** The data isn't loaded (yet): no file actions */
 		busy: boolean;
+		/** The stored data couldn't be read: clearing it is the way out */
+		loadFailed: boolean;
 		/** The file actions; each closes the dialog first. They must start right in the click
 		 * (browsers allow a file chooser or download only directly after one) */
 		onimport: () => void;
@@ -76,7 +79,7 @@
 			<button type="button" disabled={busy} title={displayKeys('Mod+o')} onclick={onimport}>Import</button>
 			<button type="button" disabled={busy} title={displayKeys('Mod+s')} onclick={onexport}>Export</button>
 			{#if workspace.canUndoImport}<button type="button" disabled={busy} onclick={onundoimport}>Undo import</button>{/if}
-			<button type="button" class="danger" disabled={busy || sync.enabled} onclick={() => (confirmingClear = true)}>Clear data…</button>
+			<button type="button" class="danger" disabled={(busy && !loadFailed) || sync.enabled} onclick={() => (confirmingClear = true)}>Clear data…</button>
 		</div>
 		{#if sync.enabled}<p class="muted file">To clear the data, turn off sync first.</p>{/if}
 		{#if workspace.fileName}<p class="muted file">Last file: <span class="name">{workspace.fileName}</span></p>{/if}

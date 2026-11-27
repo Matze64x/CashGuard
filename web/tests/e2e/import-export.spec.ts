@@ -201,3 +201,33 @@ test('clear data: asks first, deletes everything here, with no undo; not while s
 	settings = await openSettings(page);
 	await expect(settings).not.toContainText('Last file:');
 });
+
+test('stored data the app can no longer read (an old format) can be cleared to start over', async ({ page }) => {
+	await page.goto('/');
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	const old = fixtureText().replace('"cgt_0.6.0"', '"cgt_0.5.0"');
+	await page.evaluate(async (working) => {
+		const db = await new Promise<IDBDatabase>((resolve, reject) => {
+			const request = indexedDB.open('keyval-store');
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error);
+		});
+		const transaction = db.transaction('keyval', 'readwrite');
+		transaction.objectStore('keyval').put({ current: { working, fileName: null }, beforeImport: null, revision: 5 }, 'cashguard-workspace-v2');
+		await new Promise((resolve) => (transaction.oncomplete = resolve));
+	}, old);
+	await page.reload();
+	await expect(page.getByRole('alert')).toContainText("Your data can't be loaded");
+	await expect(page.getByRole('alert')).toContainText('To start over, clear it in Settings.');
+
+	const settings = await openSettings(page);
+	await expect(settings.getByRole('button', { name: 'Import' })).toBeDisabled();
+	await settings.getByRole('button', { name: 'Clear data…' }).click();
+	await page.getByRole('dialog', { name: 'Clear data?' }).getByRole('button', { name: 'Clear data' }).click();
+	await expect(page.getByText('No transactions yet')).toBeVisible();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	// and it works again
+	await importFile(page, FIXTURE);
+	await page.getByRole('dialog').getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByText('46 transactions')).toBeVisible();
+});
