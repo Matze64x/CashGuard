@@ -245,7 +245,7 @@
 	onopen={openEdit}
 >
 	{#snippet row(t)}
-		<div class="row">
+		<div class="row" style:--category={categories.get(t.categoryId)?.color ?? 'transparent'}>
 			<span class="date">{formatDate(t.date)}</span>
 			<span class="description">
 				{t.description || '—'}
@@ -253,7 +253,7 @@
 			</span>
 			<span class="meta">
 				<span class="category">
-					<span class="dot" style:background={categories.get(t.categoryId)?.color ?? 'transparent'}></span>{categories.get(t.categoryId)?.name ?? ''}
+					<span class="dot"></span>{categories.get(t.categoryId)?.name ?? ''}
 				</span>
 			</span>
 			<span class="amount" class:income={!hidden && t.amount > 0} class:expense={!hidden && t.amount < 0} class:hidden>{money(t.amount)}</span>
@@ -351,7 +351,19 @@
 		grid-template-areas: 'date description meta amount';
 		gap: 0.75rem;
 		align-items: baseline;
-		padding: 0.5rem 0.75rem;
+		padding: 0.5rem 0.75rem 0.5rem 1.15rem;
+		position: relative;
+	}
+	/* the category's color, to scan the list by (inside the edge, where the selection has its bar) */
+	.row::before {
+		content: '';
+		position: absolute;
+		left: 0.3rem;
+		top: 0.4rem;
+		bottom: 0.4rem;
+		width: 4px;
+		border-radius: 2px;
+		background: var(--category);
 	}
 	.date {
 		grid-area: date;
@@ -378,10 +390,15 @@
 	}
 	.date,
 	.category {
-		color: var(--muted);
 		font-size: 0.9rem;
 	}
+	.date {
+		color: var(--muted);
+	}
 	.category {
+		/* its own color, toned towards the text so it stays readable in light and dark */
+		color: color-mix(in oklab, var(--category) 65%, var(--text));
+		font-weight: 500;
 		display: block;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -389,8 +406,9 @@
 	}
 	.dot {
 		display: inline-block;
-		width: 0.6rem;
-		height: 0.6rem;
+		width: 0.75rem;
+		height: 0.75rem;
+		background: var(--category);
 		border-radius: 50%;
 		margin-right: 0.4rem;
 	}
